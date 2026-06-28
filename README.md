@@ -33,6 +33,11 @@ When the agent calls `ask_user` the run **pauses** (status *awaiting input*) and
 resumes exactly where it left off once you answer. Any files it produces are
 **listed and downloadable** from the task view.
 
+**Bring your own files.** Attach a spreadsheet (`.xlsx`), Word doc (`.docx`), or
+data file when you publish a task and the agent edits it in place — openpyxl,
+python-docx and pandas are preinstalled. "Add a Total column and save it" really
+edits your spreadsheet, and the verifier re-opens it to prove the edit holds.
+
 It keeps looping until one of these is true, whichever comes first:
 
 | Stop condition       | Meaning                                            |

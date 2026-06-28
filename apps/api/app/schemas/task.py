@@ -25,6 +25,9 @@ class LimitsIn(BaseModel):
 class TaskCreate(BaseModel):
     goal: str = Field(min_length=4, max_length=4_000)
     limits: LimitsIn = Field(default_factory=LimitsIn)
+    # When false, the task is created as a draft (PENDING, not started) so files
+    # can be uploaded into its workspace before the agent runs. Start with /start.
+    autostart: bool = True
 
 
 class RespondIn(BaseModel):

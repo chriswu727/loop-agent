@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, BackgroundTasks, Query, status
+from fastapi import APIRouter, BackgroundTasks, File, Query, UploadFile, status
 from fastapi.responses import FileResponse
 
 from app.api.v1.deps import TaskServiceDep, rate_limit
@@ -54,8 +54,31 @@ async def publish_task(
     payload: TaskCreate, service: TaskServiceDep, background: BackgroundTasks
 ) -> TaskRead:
     task = await service.publish(payload)
-    # Runs after the response (and the request commit), so the loop's own
-    # session reliably finds the row.
+    # autostart=false leaves the task a draft so files can be uploaded first;
+    # the client then calls /start. Otherwise run after the response/commit.
+    if payload.autostart:
+        background.add_task(trigger_task, task.id)
+    return TaskRead.from_model(task)
+
+
+@router.post(
+    "/{task_id}/files",
+    response_model=list[FileEntry],
+    summary="Upload a file into the task workspace (before it runs)",
+)
+async def upload_file(
+    task_id: uuid.UUID, service: TaskServiceDep, file: UploadFile = File(...)
+) -> list[FileEntry]:
+    data = await file.read()
+    await service.save_upload(task_id, file.filename or "upload.bin", data)
+    return [FileEntry(path=p, size=s) for p, s in await service.list_files(task_id)]
+
+
+@router.post("/{task_id}/start", response_model=TaskRead, summary="Start a draft task")
+async def start_task(
+    task_id: uuid.UUID, service: TaskServiceDep, background: BackgroundTasks
+) -> TaskRead:
+    task = await service.start(task_id)
     background.add_task(trigger_task, task.id)
     return TaskRead.from_model(task)
 

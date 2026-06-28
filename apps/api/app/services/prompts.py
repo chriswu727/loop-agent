@@ -50,7 +50,10 @@ def plan_prompts(
         "claims will be rejected.\n"
         "- Call finish ONLY when every success criterion is demonstrably met, with "
         "evidence in your observations.\n"
-        "- Paths are relative to the workspace. Keep commands simple and safe."
+        "- Paths are relative to the workspace. Keep commands simple and safe.\n"
+        "- Uploaded files already in the workspace are your input — edit them in "
+        "place. Python with openpyxl (xlsx), python-docx (docx) and pandas (csv) "
+        "is available for editing spreadsheets and documents."
     )
     criteria = "\n".join(f"- {c}" for c in rubric) or "- Fully satisfies the task"
     user = (

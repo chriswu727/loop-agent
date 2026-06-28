@@ -14,8 +14,8 @@ const FALLBACK: LimitDefaults = {
 
 const EXAMPLES = [
   'Write a Python script that prints the first 15 Fibonacci numbers, then run it to confirm the output.',
-  'Create a small project: a CSV of 5 sample sales rows and a script that prints the total revenue.',
-  'Write and run a script that checks whether 2027 is a leap year and explains the result.',
+  'Attach a spreadsheet, then: add a Total column summing each row, and save it.',
+  'Attach a .docx, then: fix typos and add a one-paragraph summary at the top.',
 ];
 
 export function PublishForm({ defaults }: { defaults: LimitDefaults | null }) {
@@ -25,6 +25,7 @@ export function PublishForm({ defaults }: { defaults: LimitDefaults | null }) {
   const [goal, setGoal] = useState('');
   const [maxSteps, setMaxSteps] = useState(d.max_steps_default);
   const [tokenBudget, setTokenBudget] = useState(d.token_budget_default);
+  const [files, setFiles] = useState<File[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -34,14 +35,17 @@ export function PublishForm({ defaults }: { defaults: LimitDefaults | null }) {
     setSubmitting(true);
     setError(null);
     try {
-      const task = await tasksApi.publish({
-        goal: goal.trim(),
-        limits: {
-          max_steps: maxSteps,
-          token_budget: tokenBudget,
-        },
-      });
-      router.push(`/tasks/${task.id}`);
+      const limits = { max_steps: maxSteps, token_budget: tokenBudget };
+      if (files.length > 0) {
+        // Draft first so files land in the workspace, then start the agent.
+        const task = await tasksApi.publish({ goal: goal.trim(), limits, autostart: false });
+        for (const file of files) await tasksApi.upload(task.id, file);
+        await tasksApi.start(task.id);
+        router.push(`/tasks/${task.id}`);
+      } else {
+        const task = await tasksApi.publish({ goal: goal.trim(), limits });
+        router.push(`/tasks/${task.id}`);
+      }
     } catch (err) {
       const message =
         err instanceof ApiError ? err.message : 'Could not reach the API. Is it running?';
@@ -78,6 +82,28 @@ export function PublishForm({ defaults }: { defaults: LimitDefaults | null }) {
             {ex.length > 42 ? `${ex.slice(0, 42)}…` : ex}
           </button>
         ))}
+      </div>
+
+      <div className="mt-3 flex flex-wrap items-center gap-3 text-xs">
+        <label className="cursor-pointer rounded-lg border border-black/10 px-3 py-1.5 opacity-80 hover:opacity-100 dark:border-white/15">
+          Attach files
+          <input
+            type="file"
+            multiple
+            className="hidden"
+            onChange={(e) => setFiles(Array.from(e.target.files ?? []))}
+          />
+        </label>
+        {files.map((f) => (
+          <span key={f.name} className="rounded-full bg-blue-500/10 px-2 py-1 text-blue-600 dark:text-blue-400">
+            {f.name}
+          </span>
+        ))}
+        {files.length > 0 && (
+          <button type="button" onClick={() => setFiles([])} className="opacity-50 hover:opacity-100">
+            clear
+          </button>
+        )}
       </div>
 
       <div className="mt-5 grid gap-5 sm:grid-cols-2">

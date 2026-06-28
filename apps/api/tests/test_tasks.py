@@ -99,3 +99,34 @@ async def test_respond_conflicts_when_not_awaiting_input(client: AsyncClient) ->
 async def test_pending_question_is_exposed(client: AsyncClient) -> None:
     created = (await client.post("/api/v1/tasks", json={"goal": "another thing"})).json()
     assert created["pending_question"] is None  # field is part of the contract
+
+
+async def test_draft_upload_and_start_flow(client: AsyncClient) -> None:
+    # Create a draft (no autostart) so a file can be uploaded before the run.
+    created = (
+        await client.post("/api/v1/tasks", json={"goal": "edit my data file", "autostart": False})
+    ).json()
+    task_id = created["id"]
+
+    up = await client.post(
+        f"/api/v1/tasks/{task_id}/files",
+        files={"file": ("data.csv", b"a,b\n1,2\n", "text/csv")},
+    )
+    assert up.status_code == 200
+    assert any(f["path"] == "data.csv" for f in up.json())
+
+    # The uploaded file is now readable through the files API.
+    listed = await client.get(f"/api/v1/tasks/{task_id}/files")
+    assert any(f["path"] == "data.csv" for f in listed.json())
+    view = await client.get(f"/api/v1/tasks/{task_id}/files/data.csv")
+    assert "a,b" in view.json()["content"]
+
+    started = await client.post(f"/api/v1/tasks/{task_id}/start")
+    assert started.status_code == 200  # trigger is stubbed in conftest
+
+    # Starting an already-started/terminal task conflicts.
+    created2 = (await client.post("/api/v1/tasks", json={"goal": "auto one"})).json()
+    again = await client.post(f"/api/v1/tasks/{created2['id']}/cancel")
+    assert again.status_code == 200
+    conflict = await client.post(f"/api/v1/tasks/{created2['id']}/start")
+    assert conflict.status_code == 409

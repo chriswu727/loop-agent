@@ -65,10 +65,26 @@ export type { FileContent, FileEntry, LimitDefaults, Page, Step, Task };
 
 export interface PublishBody {
   goal: string;
+  autostart?: boolean;
   limits?: {
     max_steps?: number;
     token_budget?: number;
   };
+}
+
+/** Multipart upload — bypasses apiFetch's JSON content-type. */
+export async function uploadFile(taskId: string, file: File): Promise<FileEntry[]> {
+  const body = new FormData();
+  body.append('file', file);
+  const res = await fetch(`${apiBaseUrl()}/api/v1/tasks/${taskId}/files`, {
+    method: 'POST',
+    body,
+  });
+  if (!res.ok) {
+    const problem = (await res.json().catch(() => ({}))) as { code?: string; detail?: string };
+    throw new ApiError(res.status, problem.code ?? 'error', problem.detail ?? res.statusText);
+  }
+  return (await res.json()) as FileEntry[];
 }
 
 export const tasksApi = {
@@ -88,6 +104,8 @@ export const tasksApi = {
     apiFetch<Task>('/api/v1/tasks', { method: 'POST', body: JSON.stringify(body) }),
   cancel: (id: string) =>
     apiFetch<Task>(`/api/v1/tasks/${id}/cancel`, { method: 'POST' }),
+  upload: uploadFile,
+  start: (id: string) => apiFetch<Task>(`/api/v1/tasks/${id}/start`, { method: 'POST' }),
   respond: (id: string, answer: string) =>
     apiFetch<Task>(`/api/v1/tasks/${id}/respond`, {
       method: 'POST',

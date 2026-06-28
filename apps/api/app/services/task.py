@@ -79,6 +79,35 @@ class TaskService:
             return None
         return Workspace(Path(task.workspace_path))
 
+    async def ensure_workspace(self, task_id: uuid.UUID) -> Workspace:
+        """Create the task's workspace if it doesn't exist yet, so files can be
+        uploaded before the agent runs. The agent run reuses this same path."""
+        task = await self.get(task_id)
+        if task.workspace_path and Path(task.workspace_path).is_dir():  # noqa: ASYNC240
+            return Workspace(Path(task.workspace_path))
+        workspace = Workspace(Path(settings.agent_workspaces_root) / str(task.id))
+        task.workspace_path = str(workspace.root)
+        await self.tasks.session.flush()
+        await self.tasks.session.refresh(task)
+        await self.tasks.session.commit()
+        return workspace
+
+    async def save_upload(self, task_id: uuid.UUID, filename: str, data: bytes) -> str:
+        """Write an uploaded file into the task workspace (sandbox-checked)."""
+        workspace = await self.ensure_workspace(task_id)
+        # Use only the basename so an upload can't path-escape via its name.
+        safe_name = Path(filename or "upload.bin").name
+        target = workspace.resolve(safe_name)
+        target.write_bytes(data)
+        return safe_name
+
+    async def start(self, task_id: uuid.UUID) -> TaskModel:
+        """Begin a draft task (one published with autostart=false)."""
+        task = await self.get(task_id)
+        if task.status != TaskStatus.PENDING.value or task.steps_used > 0:
+            raise ConflictError(f"Task is {task.status} and cannot be started")
+        return task
+
     async def list_files(self, task_id: uuid.UUID) -> list[tuple[str, int]]:
         ws = await self._workspace(task_id)
         return ws.list_files() if ws else []
