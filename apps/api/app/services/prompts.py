@@ -42,8 +42,12 @@ def plan_prompts(
         "Rules:\n"
         "- Respond with ONE JSON object and nothing else: "
         '{\"thought\": \"...\", \"tool\": \"<tool>\", \"args\": {...}}.\n'
-        "- Take exactly one action per turn. Verify your own work (e.g. run the "
-        "code you wrote) before calling finish.\n"
+        "- Take exactly one action per turn. After you write a file, your NEXT "
+        "action should usually run it (run_command) — never rewrite the same file "
+        "twice in a row without running it in between.\n"
+        "- When you finish, attach checks that PROVE the work (run the code, assert "
+        "a file exists/contains text); the verifier re-runs them, so unproven "
+        "claims will be rejected.\n"
         "- Call finish ONLY when every success criterion is demonstrably met, with "
         "evidence in your observations.\n"
         "- Paths are relative to the workspace. Keep commands simple and safe."
@@ -61,21 +65,23 @@ def plan_prompts(
 
 
 def verify_prompts(
-    goal: str, rubric: list[str], summary: str, workspace_tree: str
+    goal: str, rubric: list[str], summary: str, workspace_tree: str, checks_summary: str
 ) -> tuple[str, str]:
     system = (
         "You are a demanding verifier. You decide whether an autonomous agent has "
         "actually completed a task, judging only by evidence — not by the agent's "
-        "claims. You never rubber-stamp."
+        "claims. Machine checks were re-run on a fresh copy of the workspace; trust "
+        "those results over the agent's prose. You never rubber-stamp."
     )
     criteria = "\n".join(f"- {c}" for c in rubric) or "- Fully satisfies the task"
     user = (
         f"Goal:\n{goal}\n\nSuccess criteria:\n{criteria}\n\n"
         f"Workspace files:\n{workspace_tree}\n\n"
+        f"Machine check results (re-run independently):\n{checks_summary}\n\n"
         f"The agent says it is done:\n{summary}\n\n"
         "Return ONLY a JSON object: "
         '{\"score\": <0-100>, \"met\": <true|false>, '
         '\"missing\": [<short strings: what is not yet satisfied>]}. '
-        "met=true only if every criterion is clearly satisfied."
+        "met=true only if every criterion is clearly satisfied and no check failed."
     )
     return system, user

@@ -49,6 +49,8 @@ class TaskRead(BaseModel):
     limits: LimitsRead
     summary: str | None
     verification_score: int
+    verified_by: str | None
+    receipt_hash: str | None
     steps_used: int
     tokens_used: int
     workspace_path: str | None
@@ -74,6 +76,8 @@ class TaskRead(BaseModel):
             ),
             summary=m.summary,  # type: ignore[attr-defined]
             verification_score=m.verification_score,  # type: ignore[attr-defined]
+            verified_by=m.verified_by,  # type: ignore[attr-defined]
+            receipt_hash=m.receipt_hash,  # type: ignore[attr-defined]
             steps_used=m.steps_used,  # type: ignore[attr-defined]
             tokens_used=m.tokens_used,  # type: ignore[attr-defined]
             workspace_path=m.workspace_path,  # type: ignore[attr-defined]

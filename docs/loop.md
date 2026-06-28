@@ -41,6 +41,26 @@ verifier decides "done". A model judging its own "I'm finished" inflates
 completion. In the real Fibonacci test run the verifier caught the agent
 printing 13 numbers instead of 12 and sent it back — that gap is the whole point.
 
+**The verifier re-executes; it doesn't trust prose (the Receipt).** `finish` can
+carry machine-checkable `checks` (a command + expected exit/stdout, file-exists,
+file-contains). The verifier re-runs every check on a *fresh copy* of the
+workspace (`services/verification.py`) through the same command policy, and a run
+with checks is accepted only if its checks actually pass — a failed check
+overrides an LLM `met=true`. Every accepted task writes a content-addressed
+**Receipt** (`receipt.json` + `RECEIPT.md`, `services/receipt.py`): goal, rubric,
+per-check verdict, score, `verified_by` (execution|judgment), run accounting, and
+a sha256 of every output file. Goals with no runnable check fall back to
+judgment, labelled `verified_by=judgment` so it's never mistaken for proof. This
+is differentiator #1 — Loop's "done" is a replayable fact, and it closed Loop's
+own real weakness (the old verifier only glanced at the file tree + the summary).
+
+**No-progress is a stop condition too.** `write_file` always returns "ok", so a
+weak model can rewrite one file forever and never run it — a real failure mode
+seen in a live run (10 identical writes to max_steps). The loop now counts
+repeated writes to the same path (without running it) toward the stuck limit and
+nudges the planner to run or finish. Stuck = repeated *failures or non-progress*,
+not just errors.
+
 **Tools, not raw power.** The agent acts only through `write_file`, `read_file`,
 `run_command`, and `finish`. Each is a small, auditable adapter; adding a tool
 (web fetch, edit-in-place) is a new entry in `tools/registry.py` and one line in

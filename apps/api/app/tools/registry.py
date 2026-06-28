@@ -22,7 +22,11 @@ TOOL_SPECS = """\
 - read_file: read a file you created. args: {"path": "relative/path"}
 - run_command: run a shell command in the workspace. args: {"command": "..."}
 - ask_user: pause to ask the user when you need input. args: {"question": "..."}
-- finish: you are done. args: {"summary": "what you produced and where"}\
+- finish: you are done. args: {"summary": "...", "checks": [ ... ]}. Provide "checks" \
+the verifier re-runs to PROVE the work: \
+{"kind":"command","command":"...","expect_exit":0,"expect_stdout":"..."}, \
+{"kind":"file_exists","path":"..."}, or {"kind":"file_contains","path":"...","text":"..."}. \
+Always include checks when the goal involves files or runnable code.\
 """
 
 # ``finish`` and ``ask_user`` are handled by the loop, not the executor.

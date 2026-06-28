@@ -36,6 +36,8 @@ export interface Task {
   limits: Limits;
   summary: string | null;
   verification_score: number;
+  verified_by: 'execution' | 'judgment' | null;
+  receipt_hash: string | null;
   steps_used: number;
   tokens_used: number;
   workspace_path: string | null;

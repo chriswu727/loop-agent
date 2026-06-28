@@ -94,6 +94,24 @@ export default function TaskDetail() {
           {achieved && ` · verified ${task.verification_score}/100`}.
         </p>
       )}
+      {achieved && task.verified_by && (
+        <div className="mt-2 flex items-center gap-2 text-xs">
+          <span
+            className={
+              task.verified_by === 'execution'
+                ? 'rounded-md bg-green-500/15 px-2 py-0.5 font-medium text-green-600 dark:text-green-400'
+                : 'rounded-md bg-amber-500/15 px-2 py-0.5 font-medium text-amber-600 dark:text-amber-400'
+            }
+          >
+            {task.verified_by === 'execution'
+              ? 'Verified by re-execution'
+              : 'Verified by judgment (not re-executed)'}
+          </span>
+          {task.receipt_hash && (
+            <span className="font-mono opacity-40">receipt {task.receipt_hash.slice(0, 12)}</span>
+          )}
+        </div>
+      )}
       {task.status === 'failed' && task.error && (
         <p className="mt-2 text-xs text-red-600 dark:text-red-400">Error: {task.error}</p>
       )}

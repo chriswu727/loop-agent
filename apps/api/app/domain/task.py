@@ -49,6 +49,8 @@ class Task:
     pending_question: str | None = None  # set while paused on ask_user
     summary: str | None = None  # the agent's final account of what it did
     verification_score: int = 0  # the verifier's grade of the finished work (0-100)
+    verified_by: str | None = None  # "execution" (checks re-ran) | "judgment"
+    receipt_hash: str | None = None  # content address of the task's Receipt
     steps_used: int = 0
     tokens_used: int = 0
     workspace_path: str | None = None

@@ -33,6 +33,8 @@ from app.domain.task import StopReason, TaskStatus
 from app.repositories.step import StepRepository
 from app.repositories.task import TaskRepository
 from app.services.prompts import plan_prompts, understand_prompts, verify_prompts
+from app.services.receipt import build_receipt
+from app.services.verification import checks_summary, run_checks
 from app.tools import VALID_TOOLS, ToolExecutor, ToolStatus, Workspace
 
 log = get_logger("agent")
@@ -123,6 +125,8 @@ class AgentReactService:
 
         consecutive_failures = 0
         finish_retries = 0
+        same_path_writes = 0  # writing one file over and over without running it = no progress
+        last_write_path: str | None = None
 
         for number in range(start, task.max_steps + 1):
             await self.session.refresh(task)
@@ -171,10 +175,28 @@ class AgentReactService:
                 tool_result = await executor.execute(tool, args)
                 observation, status = tool_result.observation, tool_result.status
 
+            # No-progress guard: a model that rewrites the same file again and
+            # again without running it is spinning. Nudge it, and count the
+            # repetition toward the stuck limit even though write_file is "ok".
+            if tool in ("write_file", "edit_file"):
+                path = str(args.get("path", ""))
+                same_path_writes = same_path_writes + 1 if path == last_write_path else 1
+                last_write_path = path
+                if same_path_writes >= 2:
+                    observation += (
+                        "\n[No progress: you keep editing this file without running it. "
+                        "Use run_command to test it, or call finish with checks. "
+                        "Do not write it again.]"
+                    )
+            else:
+                same_path_writes = 0
+                last_write_path = None
+
             await self._record_step(task, number, thought, tool or "invalid", args,
                                     observation, status, step_tokens)
 
-            consecutive_failures = 0 if status is ToolStatus.OK else consecutive_failures + 1
+            stalled = status is not ToolStatus.OK or same_path_writes >= 2
+            consecutive_failures = consecutive_failures + 1 if stalled else 0
 
             if number >= task.max_steps:
                 await self._finish(task, StopReason.MAX_STEPS)
@@ -222,19 +244,45 @@ class AgentReactService:
         number: int,
         plan_tokens: int,
     ) -> tuple[bool, int, str, int]:
-        """Verify a finish attempt. Returns (accepted, score, summary, verify_tokens)."""
+        """Verify a finish attempt. Re-runs any machine checks the agent attached
+        on a fresh copy of the workspace, then asks the verifier for a grounded
+        verdict. Returns (accepted, score, summary, verify_tokens)."""
         summary = str(args.get("summary", "")).strip() or "(no summary provided)"
-        system, user = verify_prompts(task.goal, task.rubric, summary, workspace.tree())
+        raw_checks = args.get("checks")
+        checks = (
+            [c for c in raw_checks if isinstance(c, dict)] if isinstance(raw_checks, list) else []
+        )
+
+        check_results = await run_checks(
+            checks, workspace,
+            approval_mode=settings.agent_approval_mode,
+            command_timeout=settings.agent_command_timeout_seconds,
+            output_limit=settings.agent_command_output_limit,
+        )
+        checks_passed = all(r.passed for r in check_results) if check_results else None
+        verified_by = "execution" if check_results else "judgment"
+
+        system, user = verify_prompts(
+            task.goal, task.rubric, summary, workspace.tree(), checks_summary(check_results)
+        )
         result = await self.llm.complete(system, user, max_tokens=500, temperature=0.2)
         parsed = _extract_json(result.content)
         if isinstance(parsed, dict):
             score = _clamp_score(parsed.get("score"))
             missing = parsed.get("missing") or []
-            met = bool(parsed.get("met")) and score >= settings.agent_acceptance_score
+            llm_met = bool(parsed.get("met"))
         else:
-            score, missing, met = 0, ["verifier returned no verdict"], False
+            score, missing, llm_met = 0, ["verifier returned no verdict"], False
 
-        verdict = f"verifier: score {score}, met={met}"
+        # A run with checks is accepted only if its checks actually pass; a run
+        # without checks falls back to judgment (and is labelled as such).
+        met = llm_met and score >= settings.agent_acceptance_score
+        if check_results and not checks_passed:
+            met = False
+
+        verdict = f"verifier: score {score}, met={met}, verified_by={verified_by}"
+        if check_results:
+            verdict += "\nchecks:\n" + checks_summary(check_results)
         if missing:
             verdict += "\nmissing:\n" + "\n".join(f"- {m}" for m in missing)
         await self._record_step(task, number, thought, "finish", args, verdict,
@@ -243,6 +291,11 @@ class AgentReactService:
         if met:
             task.summary = summary
             task.verification_score = score
+            task.verified_by = verified_by
+            receipt_hash, _ = build_receipt(
+                task, check_results, score=score, verified_by=verified_by, workspace=workspace
+            )
+            task.receipt_hash = receipt_hash
             await self._finish(task, StopReason.GOAL_ACHIEVED)
             return True, score, summary, result.tokens
         return False, score, summary, result.tokens

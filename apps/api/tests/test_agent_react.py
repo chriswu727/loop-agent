@@ -131,6 +131,17 @@ async def test_stops_when_budget_exhausted(session: AsyncSession) -> None:
     assert task.tokens_used >= 50
 
 
+async def test_rewriting_same_file_without_running_is_stuck(session: AsyncSession) -> None:
+    # write_file always returns "ok", but rewriting one file forever is no progress.
+    plans = [{"thought": "again", "tool": "write_file", "args": {"path": "a.txt", "content": "x"}}]
+    task = await _make_task(session, max_steps=20, token_budget=1_000_000)
+    await _service(session, ScriptedLLM(plans)).run(task.id)
+
+    await session.refresh(task)
+    assert task.stop_reason == StopReason.STUCK.value
+    assert task.steps_used <= settings.agent_stuck_threshold + 1
+
+
 async def test_stops_when_stuck_on_repeated_failures(session: AsyncSession) -> None:
     # An invalid tool name fails every step; after the stuck threshold the loop quits.
     plans = [{"thought": "??", "tool": "frobnicate", "args": {}}]
@@ -176,6 +187,48 @@ async def test_ask_user_pauses_then_resumes_to_completion(session: AsyncSession)
     await session.refresh(task)
     assert task.stop_reason == StopReason.GOAL_ACHIEVED.value
     assert task.summary == "built it"
+
+
+async def test_passing_checks_yield_execution_verified_receipt(session: AsyncSession) -> None:
+    plans = [
+        {"thought": "write it", "tool": "write_file",
+         "args": {"path": "out.txt", "content": "ready"}},
+        {"thought": "prove it", "tool": "finish", "args": {
+            "summary": "wrote out.txt",
+            "checks": [
+                {"kind": "file_exists", "path": "out.txt"},
+                {"kind": "file_contains", "path": "out.txt", "text": "ready"},
+            ],
+        }},
+    ]
+    task = await _make_task(session, max_steps=10, token_budget=1_000_000)
+    llm = ScriptedLLM(plans, verify={"score": 95, "met": True, "missing": []})
+    await _service(session, llm).run(task.id)
+
+    await session.refresh(task)
+    assert task.stop_reason == StopReason.GOAL_ACHIEVED.value
+    assert task.verified_by == "execution"
+    assert task.receipt_hash and len(task.receipt_hash) == 64
+    # The Receipt is written into the workspace and re-readable.
+    receipt = (Path(task.workspace_path) / "receipt.json").read_text()
+    assert task.receipt_hash in receipt
+
+
+async def test_failing_check_blocks_acceptance(session: AsyncSession) -> None:
+    # The agent claims done with a check that cannot pass; the verifier refuses.
+    plans = [{"thought": "claim", "tool": "finish", "args": {
+        "summary": "all good",
+        "checks": [{"kind": "file_exists", "path": "does-not-exist.txt"}],
+    }}]
+    task = await _make_task(session, max_steps=10, token_budget=1_000_000)
+    llm = ScriptedLLM(plans, verify={"score": 99, "met": True, "missing": []})
+    await _service(session, llm).run(task.id)
+
+    await session.refresh(task)
+    # Even though the LLM said met=true, the failed check kept it from finishing.
+    assert task.stop_reason == StopReason.STUCK.value
+    assert task.verified_by is None
+    assert task.receipt_hash is None
 
 
 async def test_dangerous_command_is_blocked_not_run(session: AsyncSession) -> None:
