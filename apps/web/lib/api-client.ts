@@ -2,7 +2,7 @@
  * Single typed API client. Wraps `fetch` with base URL resolution, timeouts,
  * request-id propagation, and error normalization so callers never repeat this.
  */
-import type { LimitDefaults, Page, Step, Task } from '@repo/api-contract';
+import type { FileContent, FileEntry, LimitDefaults, Page, Step, Task } from '@repo/api-contract';
 import { apiBaseUrl } from './env';
 
 /** Normalized error mirroring the backend's RFC 9457 problem+json body. */
@@ -61,7 +61,7 @@ export async function apiFetch<T>(path: string, options: RequestOptions = {}): P
 // ---------------------------------------------------------------------------
 // Typed client for the agent-loop API. Types come from @repo/api-contract.
 // ---------------------------------------------------------------------------
-export type { LimitDefaults, Page, Step, Task };
+export type { FileContent, FileEntry, LimitDefaults, Page, Step, Task };
 
 export interface PublishBody {
   goal: string;
@@ -79,8 +79,18 @@ export const tasksApi = {
     ),
   get: (id: string) => apiFetch<Task>(`/api/v1/tasks/${id}`),
   steps: (id: string) => apiFetch<Step[]>(`/api/v1/tasks/${id}/steps`),
+  files: (id: string) => apiFetch<FileEntry[]>(`/api/v1/tasks/${id}/files`),
+  fileContent: (id: string, path: string) =>
+    apiFetch<FileContent>(`/api/v1/tasks/${id}/files/${path}`),
+  downloadUrl: (id: string, path: string) =>
+    `${apiBaseUrl()}/api/v1/tasks/${id}/download/${path}`,
   publish: (body: PublishBody) =>
     apiFetch<Task>('/api/v1/tasks', { method: 'POST', body: JSON.stringify(body) }),
   cancel: (id: string) =>
     apiFetch<Task>(`/api/v1/tasks/${id}/cancel`, { method: 'POST' }),
+  respond: (id: string, answer: string) =>
+    apiFetch<Task>(`/api/v1/tasks/${id}/respond`, {
+      method: 'POST',
+      body: JSON.stringify({ answer }),
+    }),
 };

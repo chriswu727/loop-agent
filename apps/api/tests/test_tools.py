@@ -26,6 +26,23 @@ def test_workspace_write_read_roundtrip(tmp_path: Path) -> None:
     ws.write("notes/a.txt", "hello")
     assert ws.read("notes/a.txt") == "hello"
     assert "notes/a.txt" in ws.tree()
+    assert ("notes/a.txt", 5) in ws.list_files()
+
+
+def test_workspace_edit_replaces_unique_snippet(tmp_path: Path) -> None:
+    ws = Workspace(tmp_path / "ws")
+    ws.write("a.py", "x = 1\ny = 2\n")
+    ws.edit("a.py", "y = 2", "y = 3")
+    assert ws.read("a.py") == "x = 1\ny = 3\n"
+
+
+def test_workspace_edit_refuses_missing_or_ambiguous(tmp_path: Path) -> None:
+    ws = Workspace(tmp_path / "ws")
+    ws.write("a.txt", "dup\ndup\n")
+    with pytest.raises(ToolError):
+        ws.edit("a.txt", "absent", "x")  # not found
+    with pytest.raises(ToolError):
+        ws.edit("a.txt", "dup", "x")  # ambiguous (appears twice)
 
 
 @pytest.mark.parametrize(

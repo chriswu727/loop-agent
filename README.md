@@ -22,11 +22,16 @@ Loop is a downloadable-grade autonomous agent. You give it a goal; it runs a
 
 1. **Understand** — turn the goal into a concrete rubric (success criteria).
 2. **Plan** — decide the single next action.
-3. **Act** — call a tool: write a file, read a file, or run a shell command,
-   all inside a per-task sandboxed workspace.
+3. **Act** — call a tool: `write_file`, `edit_file`, `read_file`, `run_command`
+   (all inside a per-task sandboxed workspace), or `ask_user` to pause and ask
+   you a question when it genuinely needs input.
 4. **Observe** — feed the result back in, and repeat.
 5. **Finish** — when the agent says it's done, a separate **verifier** checks
    the work against the rubric. If it isn't actually done, the agent keeps going.
+
+When the agent calls `ask_user` the run **pauses** (status *awaiting input*) and
+resumes exactly where it left off once you answer. Any files it produces are
+**listed and downloadable** from the task view.
 
 It keeps looping until one of these is true, whichever comes first:
 

@@ -80,3 +80,22 @@ async def test_unknown_task_is_404(client: AsyncClient) -> None:
     resp = await client.get("/api/v1/tasks/00000000-0000-0000-0000-000000000000")
     assert resp.status_code == 404
     assert resp.json()["code"] == "not_found"
+
+
+async def test_files_empty_before_any_run(client: AsyncClient) -> None:
+    created = (await client.post("/api/v1/tasks", json={"goal": "make a file"})).json()
+    resp = await client.get(f"/api/v1/tasks/{created['id']}/files")
+    assert resp.status_code == 200
+    assert resp.json() == []  # no workspace yet (trigger stubbed)
+
+
+async def test_respond_conflicts_when_not_awaiting_input(client: AsyncClient) -> None:
+    created = (await client.post("/api/v1/tasks", json={"goal": "do a thing"})).json()
+    resp = await client.post(f"/api/v1/tasks/{created['id']}/respond", json={"answer": "hi"})
+    assert resp.status_code == 409
+    assert resp.json()["code"] == "conflict"
+
+
+async def test_pending_question_is_exposed(client: AsyncClient) -> None:
+    created = (await client.post("/api/v1/tasks", json={"goal": "another thing"})).json()
+    assert created["pending_question"] is None  # field is part of the contract

@@ -1,12 +1,14 @@
 'use client';
 
-import type { Step, Task } from '@repo/api-contract';
+import type { FileEntry, Step, Task } from '@repo/api-contract';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { AskUserBox } from '@/components/ask-user-box';
 import { BudgetMeter } from '@/components/budget-meter';
 import { StepItem } from '@/components/step-item';
 import { StatusPill, stopReasonLabel } from '@/components/status-pill';
+import { WorkspaceFiles } from '@/components/workspace-files';
 import { ApiError, tasksApi } from '@/lib/api-client';
 
 const TERMINAL = new Set(['completed', 'cancelled', 'failed']);
@@ -18,14 +20,20 @@ export default function TaskDetail() {
 
   const [task, setTask] = useState<Task | null>(null);
   const [steps, setSteps] = useState<Step[]>([]);
+  const [files, setFiles] = useState<FileEntry[]>([]);
   const [error, setError] = useState<string | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const poll = useCallback(async () => {
     try {
-      const [t, s] = await Promise.all([tasksApi.get(id), tasksApi.steps(id)]);
+      const [t, s, f] = await Promise.all([
+        tasksApi.get(id),
+        tasksApi.steps(id),
+        tasksApi.files(id),
+      ]);
       setTask(t);
       setSteps(s);
+      setFiles(f);
       setError(null);
       if (!TERMINAL.has(t.status)) {
         timer.current = setTimeout(poll, POLL_MS);
@@ -35,6 +43,12 @@ export default function TaskDetail() {
       timer.current = setTimeout(poll, POLL_MS * 2);
     }
   }, [id]);
+
+  function resumeAfterAnswer(updated: Task) {
+    setTask(updated);
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = setTimeout(poll, POLL_MS);
+  }
 
   useEffect(() => {
     poll();
@@ -84,6 +98,14 @@ export default function TaskDetail() {
         <p className="mt-2 text-xs text-red-600 dark:text-red-400">Error: {task.error}</p>
       )}
 
+      {task.status === 'awaiting_input' && task.pending_question && (
+        <AskUserBox
+          taskId={task.id}
+          question={task.pending_question}
+          onAnswered={resumeAfterAnswer}
+        />
+      )}
+
       {/* Live progress: the hard limits being consumed. */}
       <section className="mt-6 grid gap-4 rounded-2xl border border-black/10 bg-white/40 p-5 dark:border-white/10 dark:bg-white/[0.02] sm:grid-cols-2">
         <BudgetMeter label="Steps" used={task.steps_used} limit={task.limits.max_steps} />
@@ -118,6 +140,8 @@ export default function TaskDetail() {
         </section>
       )}
 
+      <WorkspaceFiles taskId={task.id} files={files} />
+
       {task.workspace_path && (
         <p className="mt-3 break-all font-mono text-[11px] opacity-40">
           workspace: {task.workspace_path}
@@ -137,7 +161,10 @@ export default function TaskDetail() {
       <section className="mt-8">
         <h2 className="mb-3 text-xs font-semibold uppercase tracking-wide opacity-50">
           Steps ({steps.length})
-          {active && <span className="ml-1 opacity-60">· working…</span>}
+          {task.status === 'running' && <span className="ml-1 opacity-60">· working…</span>}
+          {task.status === 'awaiting_input' && (
+            <span className="ml-1 text-purple-600 dark:text-purple-400">· waiting for you</span>
+          )}
         </h2>
         <div className="grid gap-3">
           {[...steps].reverse().map((step) => (

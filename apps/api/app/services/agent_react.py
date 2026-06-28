@@ -37,6 +37,9 @@ from app.tools import VALID_TOOLS, ToolExecutor, ToolStatus, Workspace
 
 log = get_logger("agent")
 
+# How many recent steps the planner sees in full; older steps collapse to a count.
+_HISTORY_WINDOW = 12
+
 
 def _extract_json(text: str) -> Any:
     """Best-effort: pull the first JSON object/array out of a model reply."""
@@ -72,6 +75,9 @@ class AgentReactService:
         self._history: list[str] = []
 
     async def run(self, task_id: uuid.UUID) -> None:
+        """Run, or resume, a task. A task is resumable when it was paused on an
+        ask_user question and the user has since answered (status back to
+        pending with steps already on record)."""
         task = await self.tasks.get(task_id)
         if task is None:
             log.warning("agent.task_missing", task_id=str(task_id))
@@ -80,7 +86,8 @@ class AgentReactService:
             log.info("agent.skip_non_pending", task_id=str(task_id), status=task.status)
             return
 
-        workspace = Workspace(Path(settings.agent_workspaces_root) / str(task.id))
+        workspace = Workspace(Path(task.workspace_path or settings.agent_workspaces_root) /
+                              ("" if task.workspace_path else str(task.id)))
         executor = ToolExecutor(
             workspace,
             approval_mode=settings.agent_approval_mode,
@@ -89,11 +96,15 @@ class AgentReactService:
         )
         task.status = TaskStatus.RUNNING.value
         task.workspace_path = str(workspace.root)
+        # Rebuild the working memory from whatever has already happened so a
+        # resumed run sees its own past actions (and the user's answer).
+        await self._rebuild_history(task.id)
         await self._commit()
-        log.info("agent.start", task_id=str(task.id), goal=task.goal[:80])
+        resuming = task.steps_used > 0
+        log.info("agent.start", task_id=str(task.id), resuming=resuming, goal=task.goal[:80])
 
         try:
-            await self._run_loop(task, workspace, executor)
+            await self._run_loop(task, workspace, executor, start=task.steps_used + 1)
         except Exception as exc:  # any unhandled error fails the task cleanly
             log.exception("agent.failed", task_id=str(task.id))
             task.status = TaskStatus.FAILED.value
@@ -102,17 +113,18 @@ class AgentReactService:
             await self._commit()
 
     async def _run_loop(
-        self, task: TaskModel, workspace: Workspace, executor: ToolExecutor
+        self, task: TaskModel, workspace: Workspace, executor: ToolExecutor, *, start: int
     ) -> None:
-        rubric, tokens = await self._understand(task.goal)
-        task.rubric = rubric
-        task.tokens_used += tokens
-        await self._commit()
+        if not task.rubric:  # only on a fresh run, not a resume
+            rubric, tokens = await self._understand(task.goal)
+            task.rubric = rubric
+            task.tokens_used += tokens
+            await self._commit()
 
         consecutive_failures = 0
         finish_retries = 0
 
-        for number in range(1, task.max_steps + 1):
+        for number in range(start, task.max_steps + 1):
             await self.session.refresh(task)
             if task.status == TaskStatus.CANCELLED.value:
                 task.stop_reason = StopReason.CANCELLED.value
@@ -124,14 +136,12 @@ class AgentReactService:
 
             tokens_left = max(0, task.token_budget - task.tokens_used)
             system, user = plan_prompts(
-                task.goal, task.rubric, workspace.tree(), "\n".join(self._history),
+                task.goal, task.rubric, workspace.tree(), self._history_view(),
                 task.max_steps - number + 1, tokens_left,
             )
             result = await self.llm.complete(system, user, max_tokens=1200, temperature=0.5)
             step_tokens = result.tokens
-            decision = _extract_json(result.content)
-
-            thought, tool, args = self._parse_decision(decision)
+            thought, tool, args = self._parse_decision(_extract_json(result.content))
 
             if tool == "finish":
                 accepted, score, summary, _ = await self._handle_finish(
@@ -147,6 +157,10 @@ class AgentReactService:
                     return
                 continue
 
+            if tool == "ask_user":
+                await self._pause_for_user(task, args, thought, number, step_tokens)
+                return  # the run resumes when the user answers
+
             if tool is None:
                 observation, status = (
                     "Could not parse a valid action. Respond with one JSON object "
@@ -160,10 +174,7 @@ class AgentReactService:
             await self._record_step(task, number, thought, tool or "invalid", args,
                                     observation, status, step_tokens)
 
-            if status is ToolStatus.OK:
-                consecutive_failures = 0
-            else:
-                consecutive_failures += 1
+            consecutive_failures = 0 if status is ToolStatus.OK else consecutive_failures + 1
 
             if number >= task.max_steps:
                 await self._finish(task, StopReason.MAX_STEPS)
@@ -174,6 +185,19 @@ class AgentReactService:
             if consecutive_failures >= settings.agent_stuck_threshold:
                 await self._finish(task, StopReason.STUCK)
                 return
+
+    async def _pause_for_user(
+        self, task: TaskModel, args: dict[str, Any], thought: str, number: int, tokens: int
+    ) -> None:
+        question = str(args.get("question", "")).strip() or "(the agent asked a question)"
+        await self._record_step(
+            task, number, thought, "ask_user", {"question": question},
+            "Waiting for the user's answer.", ToolStatus.OK, tokens,
+        )
+        task.pending_question = question
+        task.status = TaskStatus.AWAITING_INPUT.value
+        await self._commit()
+        log.info("agent.awaiting_input", task_id=str(task.id), number=number)
 
     # --- LLM phases -------------------------------------------------------
 
@@ -275,6 +299,24 @@ class AgentReactService:
             f"Step {number} [{tool}] ({status.value}): {thought}\n"
             f"  args: {arg_preview}\n  -> {obs}"
         )
+
+    async def _rebuild_history(self, task_id: uuid.UUID) -> None:
+        """Reconstruct working memory from persisted steps (used on resume)."""
+        self._history = [
+            self._format_history(
+                s.number, s.thought, s.tool, s.tool_args, s.observation, ToolStatus(s.status)
+            )
+            for s in await self.steps.list_for_task(task_id)
+        ]
+
+    def _history_view(self) -> str:
+        """The history the planner sees: recent steps in full, older ones
+        collapsed to a count so a long run can't blow the context or the budget."""
+        if len(self._history) <= _HISTORY_WINDOW:
+            return "\n".join(self._history) or "(nothing yet)"
+        omitted = len(self._history) - _HISTORY_WINDOW
+        recent = self._history[-_HISTORY_WINDOW:]
+        return f"[... {omitted} earlier steps omitted ...]\n" + "\n".join(recent)
 
     async def _finish(self, task: TaskModel, reason: StopReason) -> None:
         task.status = TaskStatus.COMPLETED.value

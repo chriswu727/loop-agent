@@ -15,7 +15,7 @@ it stays *within the limit*.
 The loop (`services/agent_react.py`):
 
 ```
-understand(goal) -> rubric                      # once, up front
+understand(goal) -> rubric                      # once, up front (skipped on resume)
 repeat:
     plan(goal, rubric, workspace, history) -> {thought, tool, args}
     if tool == finish:
@@ -23,10 +23,16 @@ repeat:
         met? -> done (goal_achieved)
         not met, retries left? -> push the gaps back, keep going
         not met, retries spent? -> stop (stuck)
+    elif tool == ask_user:
+        record the question; pause (awaiting_input); return
+        # resumes here when the user answers (see below)
     else:
         observe = execute_tool(tool, args)       # sandboxed
     stop?  step cap | budget | stuck | cancelled
 ```
+
+Tools: `write_file`, `edit_file` (unique-snippet replace), `read_file`,
+`run_command`, plus the loop-handled `ask_user` and `finish`.
 
 ## Why these decisions
 
@@ -64,10 +70,33 @@ accumulates per planning + verify call and checks before and after each step.
 ways (`services/runner.py`): `inline` runs it in a FastAPI background task (zero
 infra, SQLite-friendly); `worker` enqueues to Redis for a separate process.
 
-**The publish-then-commit ordering gotcha.** `TaskService.publish` commits the
-new row before the run is scheduled, because the background/worker agent opens
-its own session and would otherwise not see the row (`agent.task_missing`). Keep
-that commit.
+**Human-in-the-loop is a resumable loop, not a held-open coroutine.** When the
+agent calls `ask_user`, the run records the question, sets `awaiting_input`, and
+*returns* — it does not block a worker waiting. `POST /respond` writes the answer
+onto the ask_user step, flips the task back to `pending`, and re-triggers the
+run. `run()` is resume-aware: it rebuilds working memory from the persisted
+steps, skips `understand` if the rubric already exists, and continues from
+`steps_used + 1`. This is what lets a pause survive a process restart and, later,
+lets the same task be driven from a chat app.
+
+**The publish/respond-then-commit ordering gotcha.** `publish` and `respond`
+both commit (and refresh — see below) before the run is scheduled, because the
+background/worker agent opens its own session and would otherwise not see the row
+or the new status. Keep those commits.
+
+**Always refresh after a server-side onupdate.** `updated_at` is a server
+`onupdate`, so after a commit it is *expired*; serializing it then triggers a
+lazy load in a sync context and 500s (`MissingGreenlet`). Every mutation that
+returns a task (`publish` via create-refresh, `cancel`, `respond`) refreshes
+before returning. If you add another, do the same.
+
+**Output files are read straight from the workspace.** `GET /files`,
+`/files/{path}` (view) and `/download/{path}` resolve through the same
+`Workspace` sandbox, so path-escape protection is shared with the agent's own
+file tools — the API can't be tricked into serving `/etc/passwd` either.
+
+**History is windowed.** The planner sees the last `_HISTORY_WINDOW` steps in
+full and a count of older ones, so a long run's prompt (and cost) stays bounded.
 
 **Live updates are polling, not SSE.** `app/tasks/[id]/page.tsx` polls every
 1.2s. It works in every execution mode (including zero-infra SQLite with no

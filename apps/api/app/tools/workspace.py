@@ -44,6 +44,28 @@ class Workspace:
         target.write_text(content, encoding="utf-8")
         return f"Wrote {len(content)} chars to {relative}"
 
+    def edit(self, relative: str, old: str, new: str) -> str:
+        """Replace an exact, unique snippet in a file — the agent edits instead
+        of rewriting the whole thing. Refuses if ``old`` is missing or ambiguous,
+        so an edit can never silently hit the wrong place."""
+        target = self.resolve(relative)
+        if not target.is_file():
+            raise ToolError(f"No such file: {relative}")
+        text = target.read_text(encoding="utf-8", errors="replace")
+        count = text.count(old)
+        if count == 0:
+            raise ToolError(f"The text to replace was not found in {relative}")
+        if count > 1:
+            raise ToolError(
+                f"The text to replace appears {count} times in {relative}; "
+                "make it unique (include more surrounding context)"
+            )
+        updated = text.replace(old, new, 1)
+        if len(updated.encode("utf-8")) > MAX_FILE_BYTES:
+            raise ToolError("Edit would make the file too large", blocked=True)
+        target.write_text(updated, encoding="utf-8")
+        return f"Edited {relative} (replaced 1 occurrence)"
+
     def read(self, relative: str, *, limit: int = 6000) -> str:
         target = self.resolve(relative)
         if not target.is_file():
@@ -52,6 +74,16 @@ class Workspace:
         if len(text) > limit:
             return text[:limit] + f"\n... [truncated, {len(text)} chars total]"
         return text
+
+    def list_files(self, *, max_entries: int = 500) -> list[tuple[str, int]]:
+        """Every file (not directory) in the workspace as (relative_path, bytes)."""
+        files: list[tuple[str, int]] = []
+        for path in sorted(self.root.rglob("*")):
+            if path.is_file():
+                files.append((str(path.relative_to(self.root)), path.stat().st_size))
+            if len(files) >= max_entries:
+                break
+        return files
 
     def tree(self, *, max_entries: int = 200) -> str:
         """A compact listing of the workspace, shown to the agent each turn so it

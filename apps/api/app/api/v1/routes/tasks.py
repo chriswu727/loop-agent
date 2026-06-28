@@ -10,11 +10,13 @@ from __future__ import annotations
 import uuid
 
 from fastapi import APIRouter, BackgroundTasks, Query, status
+from fastapi.responses import FileResponse
 
 from app.api.v1.deps import TaskServiceDep, rate_limit
 from app.schemas.common import Page
+from app.schemas.file import FileContent, FileEntry
 from app.schemas.step import StepRead
-from app.schemas.task import LimitDefaults, TaskCreate, TaskRead
+from app.schemas.task import LimitDefaults, RespondIn, TaskCreate, TaskRead
 from app.services.runner import trigger_task
 
 router = APIRouter(prefix="/tasks", tags=["tasks"])
@@ -74,7 +76,48 @@ async def list_steps(task_id: uuid.UUID, service: TaskServiceDep) -> list[StepRe
     return [StepRead.model_validate(s) for s in steps]
 
 
+@router.get(
+    "/{task_id}/files", response_model=list[FileEntry], summary="List the task's output files"
+)
+async def list_files(task_id: uuid.UUID, service: TaskServiceDep) -> list[FileEntry]:
+    files = await service.list_files(task_id)
+    return [FileEntry(path=p, size=s) for p, s in files]
+
+
+@router.get(
+    "/{task_id}/files/{path:path}",
+    response_model=FileContent,
+    summary="View one output file's content",
+)
+async def view_file(task_id: uuid.UUID, path: str, service: TaskServiceDep) -> FileContent:
+    content, size, truncated = await service.read_file(task_id, path)
+    return FileContent(path=path, content=content, size=size, truncated=truncated)
+
+
+@router.get(
+    "/{task_id}/download/{path:path}",
+    summary="Download one output file",
+    response_class=FileResponse,
+)
+async def download_file(task_id: uuid.UUID, path: str, service: TaskServiceDep) -> FileResponse:
+    target = await service.resolve_file(task_id, path)
+    return FileResponse(target, filename=target.name)
+
+
 @router.post("/{task_id}/cancel", response_model=TaskRead, summary="Cancel a running task")
 async def cancel_task(task_id: uuid.UUID, service: TaskServiceDep) -> TaskRead:
     task = await service.cancel(task_id)
+    return TaskRead.from_model(task)
+
+
+@router.post(
+    "/{task_id}/respond",
+    response_model=TaskRead,
+    summary="Answer the agent's question and resume the run",
+)
+async def respond_to_task(
+    task_id: uuid.UUID, payload: RespondIn, service: TaskServiceDep, background: BackgroundTasks
+) -> TaskRead:
+    task = await service.respond(task_id, payload.answer)
+    background.add_task(trigger_task, task.id)  # resume after the commit
     return TaskRead.from_model(task)

@@ -22,6 +22,7 @@ class TaskModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         String(20), nullable=False, default=TaskStatus.PENDING.value, index=True
     )
     rubric: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    pending_question: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # Limits — the hard guardrails for this task.
     max_steps: Mapped[int] = mapped_column(Integer, nullable=False)

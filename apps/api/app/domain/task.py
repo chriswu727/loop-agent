@@ -14,8 +14,9 @@ from datetime import datetime
 
 
 class TaskStatus(enum.StrEnum):
-    PENDING = "pending"  # published, not yet picked up
+    PENDING = "pending"  # published or resumable, not currently being worked
     RUNNING = "running"  # the agent is working
+    AWAITING_INPUT = "awaiting_input"  # paused on an ask_user question
     COMPLETED = "completed"  # stopped on a stop condition (see StopReason)
     CANCELLED = "cancelled"  # the user pulled the plug
     FAILED = "failed"  # the agent errored out
@@ -45,6 +46,7 @@ class Task:
     status: TaskStatus
     limits: Limits
     rubric: list[str] = field(default_factory=list)
+    pending_question: str | None = None  # set while paused on ask_user
     summary: str | None = None  # the agent's final account of what it did
     verification_score: int = 0  # the verifier's grade of the finished work (0-100)
     steps_used: int = 0

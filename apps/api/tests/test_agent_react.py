@@ -142,6 +142,42 @@ async def test_stops_when_stuck_on_repeated_failures(session: AsyncSession) -> N
     assert task.steps_used == settings.agent_stuck_threshold
 
 
+async def test_ask_user_pauses_then_resumes_to_completion(session: AsyncSession) -> None:
+    from app.repositories.step import StepRepository as _Steps
+    from app.services.task import TaskService
+
+    plans = [
+        {"thought": "need input", "tool": "ask_user",
+         "args": {"question": "Which language?"}},
+        {"thought": "now build", "tool": "write_file",
+         "args": {"path": "out.txt", "content": "python"}},
+        {"thought": "done", "tool": "finish", "args": {"summary": "built it"}},
+    ]
+    task = await _make_task(session, max_steps=10, token_budget=1_000_000)
+    llm = ScriptedLLM(plans, verify={"score": 90, "met": True, "missing": []})
+    service = _service(session, llm)
+
+    # First run: the agent asks and pauses.
+    await service.run(task.id)
+    await session.refresh(task)
+    assert task.status == TaskStatus.AWAITING_INPUT.value
+    assert task.pending_question == "Which language?"
+    assert task.steps_used == 1
+
+    # The user answers; the task becomes resumable.
+    tasks_service = TaskService(TaskRepository(session), _Steps(session))
+    await tasks_service.respond(task.id, "Python")
+    await session.refresh(task)
+    assert task.status == TaskStatus.PENDING.value
+    assert task.pending_question is None
+
+    # Second run resumes from history and finishes.
+    await service.run(task.id)
+    await session.refresh(task)
+    assert task.stop_reason == StopReason.GOAL_ACHIEVED.value
+    assert task.summary == "built it"
+
+
 async def test_dangerous_command_is_blocked_not_run(session: AsyncSession) -> None:
     plans = [
         {"thought": "nuke it", "tool": "run_command", "args": {"command": "rm -rf /"}},

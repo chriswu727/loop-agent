@@ -18,12 +18,15 @@ from app.tools.workspace import Workspace
 # but it's documented so the agent knows it exists.
 TOOL_SPECS = """\
 - write_file: create or overwrite a file. args: {"path": "relative/path", "content": "..."}
+- edit_file: replace an exact, unique snippet. args: {"path": "...", "old": "...", "new": "..."}
 - read_file: read a file you created. args: {"path": "relative/path"}
 - run_command: run a shell command in the workspace. args: {"command": "..."}
+- ask_user: pause to ask the user when you need input. args: {"question": "..."}
 - finish: you are done. args: {"summary": "what you produced and where"}\
 """
 
-VALID_TOOLS = {"write_file", "read_file", "run_command", "finish"}
+# ``finish`` and ``ask_user`` are handled by the loop, not the executor.
+VALID_TOOLS = {"write_file", "edit_file", "read_file", "run_command", "ask_user", "finish"}
 
 
 class ToolExecutor:
@@ -45,6 +48,11 @@ class ToolExecutor:
             if tool == "write_file":
                 written = self.workspace.write(str(args["path"]), str(args.get("content", "")))
                 return ToolResult(written)
+            if tool == "edit_file":
+                edited = self.workspace.edit(
+                    str(args["path"]), str(args["old"]), str(args["new"])
+                )
+                return ToolResult(edited)
             if tool == "read_file":
                 return ToolResult(self.workspace.read(str(args["path"])))
             if tool == "run_command":

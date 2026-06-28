@@ -4,7 +4,13 @@
  * surface you can codegen from the live OpenAPI spec at `/openapi.json`.
  */
 
-export type TaskStatus = 'pending' | 'running' | 'completed' | 'cancelled' | 'failed';
+export type TaskStatus =
+  | 'pending'
+  | 'running'
+  | 'awaiting_input'
+  | 'completed'
+  | 'cancelled'
+  | 'failed';
 
 export type StopReason =
   | 'goal_achieved'
@@ -26,6 +32,7 @@ export interface Task {
   goal: string;
   status: TaskStatus;
   rubric: string[];
+  pending_question: string | null;
   limits: Limits;
   summary: string | null;
   verification_score: number;
@@ -56,6 +63,18 @@ export interface LimitDefaults {
   max_steps_cap: number;
   token_budget_default: number;
   token_budget_cap: number;
+}
+
+export interface FileEntry {
+  path: string;
+  size: number;
+}
+
+export interface FileContent {
+  path: string;
+  content: string;
+  size: number;
+  truncated: boolean;
 }
 
 export interface Page<T> {

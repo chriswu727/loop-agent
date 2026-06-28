@@ -25,6 +25,7 @@ def upgrade() -> None:
         sa.Column("goal", sa.Text(), nullable=False),
         sa.Column("status", sa.String(length=20), nullable=False),
         sa.Column("rubric", sa.JSON(), nullable=False),
+        sa.Column("pending_question", sa.Text(), nullable=True),
         sa.Column("max_steps", sa.Integer(), nullable=False),
         sa.Column("token_budget", sa.Integer(), nullable=False),
         sa.Column("summary", sa.Text(), nullable=True),

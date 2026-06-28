@@ -27,6 +27,12 @@ class TaskCreate(BaseModel):
     limits: LimitsIn = Field(default_factory=LimitsIn)
 
 
+class RespondIn(BaseModel):
+    """The user's answer to an ask_user question, which resumes the run."""
+
+    answer: str = Field(min_length=1, max_length=4_000)
+
+
 class LimitsRead(BaseModel):
     max_steps: int
     token_budget: int
@@ -39,6 +45,7 @@ class TaskRead(BaseModel):
     goal: str
     status: str
     rubric: list[str]
+    pending_question: str | None
     limits: LimitsRead
     summary: str | None
     verification_score: int
@@ -60,6 +67,7 @@ class TaskRead(BaseModel):
             goal=m.goal,  # type: ignore[attr-defined]
             status=m.status,  # type: ignore[attr-defined]
             rubric=m.rubric or [],  # type: ignore[attr-defined]
+            pending_question=m.pending_question,  # type: ignore[attr-defined]
             limits=LimitsRead(
                 max_steps=m.max_steps,  # type: ignore[attr-defined]
                 token_budget=m.token_budget,  # type: ignore[attr-defined]
