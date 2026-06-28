@@ -1,6 +1,6 @@
 'use client';
 
-import type { FileEntry, Step, Task } from '@repo/api-contract';
+import type { FileEntry, LedgerStatus, Step, Task } from '@repo/api-contract';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -21,19 +21,22 @@ export default function TaskDetail() {
   const [task, setTask] = useState<Task | null>(null);
   const [steps, setSteps] = useState<Step[]>([]);
   const [files, setFiles] = useState<FileEntry[]>([]);
+  const [ledger, setLedger] = useState<LedgerStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const poll = useCallback(async () => {
     try {
-      const [t, s, f] = await Promise.all([
+      const [t, s, f, l] = await Promise.all([
         tasksApi.get(id),
         tasksApi.steps(id),
         tasksApi.files(id),
+        tasksApi.ledger(id).catch(() => null),
       ]);
       setTask(t);
       setSteps(s);
       setFiles(f);
+      setLedger(l);
       setError(null);
       if (!TERMINAL.has(t.status)) {
         timer.current = setTimeout(poll, POLL_MS);
@@ -177,11 +180,24 @@ export default function TaskDetail() {
 
       {/* The agent's step-by-step trace, newest first. */}
       <section className="mt-8">
-        <h2 className="mb-3 text-xs font-semibold uppercase tracking-wide opacity-50">
-          Steps ({steps.length})
-          {task.status === 'running' && <span className="ml-1 opacity-60">· working…</span>}
+        <h2 className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide opacity-50">
+          <span>Steps ({steps.length})</span>
+          {task.status === 'running' && <span className="opacity-60">· working…</span>}
           {task.status === 'awaiting_input' && (
-            <span className="ml-1 text-purple-600 dark:text-purple-400">· waiting for you</span>
+            <span className="text-purple-600 dark:text-purple-400">· waiting for you</span>
+          )}
+          {ledger && ledger.length > 0 && (
+            <span
+              className={
+                ledger.verified
+                  ? 'rounded bg-green-500/15 px-1.5 py-0.5 normal-case text-green-600 dark:text-green-400'
+                  : 'rounded bg-red-500/15 px-1.5 py-0.5 normal-case text-red-600 dark:text-red-400'
+              }
+            >
+              {ledger.verified
+                ? 'ledger verified'
+                : `ledger tampered at step ${ledger.broken_at}`}
+            </span>
           )}
         </h2>
         <div className="grid gap-3">

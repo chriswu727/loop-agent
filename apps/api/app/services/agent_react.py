@@ -32,6 +32,7 @@ from app.db.models.task import TaskModel
 from app.domain.task import StopReason, TaskStatus
 from app.repositories.step import StepRepository
 from app.repositories.task import TaskRepository
+from app.services.ledger import genesis_hash, step_hash
 from app.services.prompts import plan_prompts, understand_prompts, verify_prompts
 from app.services.receipt import build_receipt
 from app.services.verification import checks_summary, run_checks
@@ -75,6 +76,7 @@ class AgentReactService:
         self.llm = llm
         self.session = tasks.session
         self._history: list[str] = []
+        self._last_hash = ""  # head of the step hash chain
 
     async def run(self, task_id: uuid.UUID) -> None:
         """Run, or resume, a task. A task is resumable when it was paused on an
@@ -293,7 +295,8 @@ class AgentReactService:
             task.verification_score = score
             task.verified_by = verified_by
             receipt_hash, _ = build_receipt(
-                task, check_results, score=score, verified_by=verified_by, workspace=workspace
+                task, check_results, score=score, verified_by=verified_by,
+                workspace=workspace, ledger_head=self._last_hash,
             )
             task.receipt_hash = receipt_hash
             await self._finish(task, StopReason.GOAL_ACHIEVED)
@@ -325,6 +328,11 @@ class AgentReactService:
         status: ToolStatus,
         tokens: int,
     ) -> None:
+        prev_hash = self._last_hash
+        this_hash = step_hash(
+            prev_hash, number=number, tool=tool, tool_args=args,
+            observation=observation, status=status.value, tokens=tokens,
+        )
         await self.steps.create(
             task_id=task.id,
             number=number,
@@ -334,7 +342,10 @@ class AgentReactService:
             observation=observation,
             status=status.value,
             tokens=tokens,
+            prev_hash=prev_hash,
+            hash=this_hash,
         )
+        self._last_hash = this_hash
         task.steps_used = number
         task.tokens_used += tokens
         await self._commit()
@@ -354,13 +365,15 @@ class AgentReactService:
         )
 
     async def _rebuild_history(self, task_id: uuid.UUID) -> None:
-        """Reconstruct working memory from persisted steps (used on resume)."""
+        """Reconstruct working memory (and the chain head) from persisted steps."""
+        steps = await self.steps.list_for_task(task_id)
         self._history = [
             self._format_history(
                 s.number, s.thought, s.tool, s.tool_args, s.observation, ToolStatus(s.status)
             )
-            for s in await self.steps.list_for_task(task_id)
+            for s in steps
         ]
+        self._last_hash = steps[-1].hash if steps else genesis_hash(task_id)
 
     def _history_view(self) -> str:
         """The history the planner sees: recent steps in full, older ones

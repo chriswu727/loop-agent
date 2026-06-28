@@ -24,3 +24,6 @@ class StepModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     observation: Mapped[str] = mapped_column(Text, nullable=False, default="")
     status: Mapped[str] = mapped_column(String(10), nullable=False, default="ok")
     tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    # Tamper-evident hash chain: hash = H(prev_hash + canonical(step content)).
+    prev_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    hash: Mapped[str] = mapped_column(String(64), nullable=False, default="")

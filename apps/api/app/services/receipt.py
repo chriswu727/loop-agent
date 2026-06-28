@@ -41,6 +41,7 @@ def build_receipt(
     score: int,
     verified_by: str,
     workspace: Workspace,
+    ledger_head: str = "",
 ) -> tuple[str, dict[str, Any]]:
     """Assemble the receipt, write it into the workspace, return (hash, receipt)."""
     checks = as_dicts(check_results)
@@ -54,6 +55,9 @@ def build_receipt(
         "checks_passed": all(c["passed"] for c in checks) if checks else None,
         "steps_used": task.steps_used,
         "tokens_used": task.tokens_used,
+        # Head of the tamper-evident step chain — this Receipt vouches for the
+        # entire history that produced it.
+        "ledger_head": ledger_head,
         "files": _file_manifest(workspace),
     }
     # Content address: hash the canonical body (stable key order, no whitespace
@@ -76,6 +80,7 @@ def _render_markdown(receipt: dict[str, Any]) -> str:
            else " — _not re-executed; graded by judgment_"),
         f"- **Score:** {receipt['score']}/100",
         f"- **Steps:** {receipt['steps_used']} · **Tokens:** {receipt['tokens_used']}",
+        f"- **Ledger head:** `{receipt['ledger_head']}`",
         f"- **Receipt hash:** `{receipt['receipt_hash']}`",
         "",
         "## Goal",

@@ -54,6 +54,15 @@ judgment, labelled `verified_by=judgment` so it's never mistaken for proof. This
 is differentiator #1 — Loop's "done" is a replayable fact, and it closed Loop's
 own real weakness (the old verifier only glanced at the file tree + the summary).
 
+**The step ledger is hash-chained (tamper-evident).** Each step stores
+`hash = sha256(prev_hash + canonical(step))`, anchored at a genesis derived from
+the task id (`services/ledger.py`). Edit any recorded step — a command, an
+observation, a tool arg — and its hash and every hash after it stop matching;
+`GET /tasks/{id}/ledger` re-verifies and reports the first broken step. The
+Receipt records the chain head, so a Receipt vouches for the whole history that
+produced it. This is the "every action auditable and tamper-evident" security
+principle made real, and the foundation the signed-skill / approval-gate work builds on.
+
 **No-progress is a stop condition too.** `write_file` always returns "ok", so a
 weak model can rewrite one file forever and never run it — a real failure mode
 seen in a live run (10 identical writes to max_steps). The loop now counts

@@ -57,7 +57,16 @@ export interface Step {
   observation: string;
   status: StepStatus;
   tokens: number;
+  prev_hash: string | null;
+  hash: string;
   created_at: string;
+}
+
+export interface LedgerStatus {
+  verified: boolean;
+  head: string;
+  length: number;
+  broken_at: number | null;
 }
 
 export interface LimitDefaults {

@@ -19,4 +19,6 @@ class Step:
     observation: str = ""  # what came back (file written, command output, …)
     status: str = "ok"  # ok | error | blocked
     tokens: int = 0  # tokens the planning call for this step consumed
+    prev_hash: str | None = None  # hash of the previous step (chain link)
+    hash: str = ""  # H(prev_hash + canonical(this step))
     created_at: datetime | None = None

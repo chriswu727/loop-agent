@@ -189,6 +189,26 @@ async def test_ask_user_pauses_then_resumes_to_completion(session: AsyncSession)
     assert task.summary == "built it"
 
 
+async def test_run_produces_a_verifiable_hash_chain(session: AsyncSession) -> None:
+    from app.services.ledger import verify_chain
+
+    plans = [
+        {"thought": "w", "tool": "write_file", "args": {"path": "a.txt", "content": "x"}},
+        {"thought": "done", "tool": "finish", "args": {"summary": "done"}},
+    ]
+    task = await _make_task(session, max_steps=10, token_budget=1_000_000)
+    await _service(session, ScriptedLLM(plans, verify={"score": 90, "met": True})).run(task.id)
+
+    steps = await StepRepository(session).list_for_task(task.id)
+    assert len(steps) >= 2
+    ok, broken = verify_chain(task.id, steps)
+    assert ok is True and broken is None
+    # Tampering with a persisted step is detectable.
+    steps[0].observation = "tampered"
+    ok2, broken2 = verify_chain(task.id, steps)
+    assert ok2 is False and broken2 == steps[0].number
+
+
 async def test_passing_checks_yield_execution_verified_receipt(session: AsyncSession) -> None:
     plans = [
         {"thought": "write it", "tool": "write_file",

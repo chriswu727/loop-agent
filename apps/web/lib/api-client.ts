@@ -2,7 +2,15 @@
  * Single typed API client. Wraps `fetch` with base URL resolution, timeouts,
  * request-id propagation, and error normalization so callers never repeat this.
  */
-import type { FileContent, FileEntry, LimitDefaults, Page, Step, Task } from '@repo/api-contract';
+import type {
+  FileContent,
+  FileEntry,
+  LedgerStatus,
+  LimitDefaults,
+  Page,
+  Step,
+  Task,
+} from '@repo/api-contract';
 import { apiBaseUrl } from './env';
 
 /** Normalized error mirroring the backend's RFC 9457 problem+json body. */
@@ -61,7 +69,7 @@ export async function apiFetch<T>(path: string, options: RequestOptions = {}): P
 // ---------------------------------------------------------------------------
 // Typed client for the agent-loop API. Types come from @repo/api-contract.
 // ---------------------------------------------------------------------------
-export type { FileContent, FileEntry, LimitDefaults, Page, Step, Task };
+export type { FileContent, FileEntry, LedgerStatus, LimitDefaults, Page, Step, Task };
 
 export interface PublishBody {
   goal: string;
@@ -95,6 +103,7 @@ export const tasksApi = {
     ),
   get: (id: string) => apiFetch<Task>(`/api/v1/tasks/${id}`),
   steps: (id: string) => apiFetch<Step[]>(`/api/v1/tasks/${id}/steps`),
+  ledger: (id: string) => apiFetch<LedgerStatus>(`/api/v1/tasks/${id}/ledger`),
   files: (id: string) => apiFetch<FileEntry[]>(`/api/v1/tasks/${id}/files`),
   fileContent: (id: string, path: string) =>
     apiFetch<FileContent>(`/api/v1/tasks/${id}/files/${path}`),

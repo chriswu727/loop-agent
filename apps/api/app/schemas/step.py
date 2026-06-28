@@ -21,4 +21,15 @@ class StepRead(BaseModel):
     observation: str
     status: str
     tokens: int
+    prev_hash: str | None
+    hash: str
     created_at: datetime
+
+
+class LedgerStatus(BaseModel):
+    """Result of re-verifying a task's tamper-evident step chain."""
+
+    verified: bool
+    head: str
+    length: int
+    broken_at: int | None  # the first step number whose hash didn't match

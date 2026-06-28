@@ -18,6 +18,7 @@ from app.exceptions import ConflictError, NotFoundError
 from app.repositories.step import StepRepository
 from app.repositories.task import TaskRepository
 from app.schemas.task import LimitsIn, TaskCreate
+from app.services.ledger import genesis_hash, verify_chain
 from app.tools.base import ToolError
 from app.tools.workspace import Workspace
 
@@ -70,6 +71,13 @@ class TaskService:
     async def list_steps(self, task_id: uuid.UUID) -> list[StepModel]:
         await self.get(task_id)  # 404 if the task is unknown
         return await self.steps.list_for_task(task_id)
+
+    async def verify_ledger(self, task_id: uuid.UUID) -> dict[str, object]:
+        """Re-verify the tamper-evident step chain for a task."""
+        steps = await self.list_steps(task_id)
+        ok, broken_at = verify_chain(task_id, steps)
+        head = steps[-1].hash if steps else genesis_hash(task_id)
+        return {"verified": ok, "head": head, "length": len(steps), "broken_at": broken_at}
 
     async def _workspace(self, task_id: uuid.UUID) -> Workspace | None:
         task = await self.get(task_id)

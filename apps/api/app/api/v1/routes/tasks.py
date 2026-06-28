@@ -15,7 +15,7 @@ from fastapi.responses import FileResponse
 from app.api.v1.deps import TaskServiceDep, rate_limit
 from app.schemas.common import Page
 from app.schemas.file import FileContent, FileEntry
-from app.schemas.step import StepRead
+from app.schemas.step import LedgerStatus, StepRead
 from app.schemas.task import LimitDefaults, RespondIn, TaskCreate, TaskRead
 from app.services.runner import trigger_task
 
@@ -97,6 +97,15 @@ async def get_task(task_id: uuid.UUID, service: TaskServiceDep) -> TaskRead:
 async def list_steps(task_id: uuid.UUID, service: TaskServiceDep) -> list[StepRead]:
     steps = await service.list_steps(task_id)
     return [StepRead.model_validate(s) for s in steps]
+
+
+@router.get(
+    "/{task_id}/ledger",
+    response_model=LedgerStatus,
+    summary="Re-verify the task's tamper-evident step chain",
+)
+async def verify_ledger(task_id: uuid.UUID, service: TaskServiceDep) -> LedgerStatus:
+    return LedgerStatus(**await service.verify_ledger(task_id))  # type: ignore[arg-type]
 
 
 @router.get(

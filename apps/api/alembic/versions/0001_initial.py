@@ -64,6 +64,8 @@ def upgrade() -> None:
         sa.Column("observation", sa.Text(), nullable=False),
         sa.Column("status", sa.String(length=10), nullable=False),
         sa.Column("tokens", sa.Integer(), nullable=False),
+        sa.Column("prev_hash", sa.String(length=64), nullable=True),
+        sa.Column("hash", sa.String(length=64), nullable=False),
         sa.Column(
             "created_at",
             sa.DateTime(timezone=True),
