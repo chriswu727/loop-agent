@@ -59,6 +59,36 @@ _ALLOW_PREFIXES = frozenset(
 )
 
 
+# Commands that reach the network. Used to enforce default-deny egress: unless a
+# task declares it may reach the network, these are blocked. Pattern-based v1 —
+# real enforcement (network namespace) arrives with container execution.
+_NETWORK: tuple[tuple[re.Pattern[str], str], ...] = tuple(
+    (re.compile(p, re.IGNORECASE), reason)
+    for p, reason in [
+        (r"\bcurl\b", "curl"),
+        (r"\bwget\b", "wget"),
+        (r"\b(nc|ncat|telnet)\b", "raw socket"),
+        (r"\b(ssh|scp|sftp|rsync)\b", "remote shell/copy"),
+        (r"\bftp\b", "ftp"),
+        (r"\bgit\s+(clone|pull|push|fetch|ls-remote)\b", "git network op"),
+        (r"\bpip3?\s+(install|download)\b", "pip download"),
+        (r"\buv\s+(pip\s+)?(install|add|sync)\b", "uv install"),
+        (r"\b(npm|pnpm|yarn)\s+(install|add|ci|i)\b", "node package install"),
+        (r"\bbrew\s+(install|update|upgrade)\b", "brew"),
+        (r"\bapt(-get)?\s+(install|update)\b", "apt"),
+        (r"\bgo\s+get\b|\bcargo\s+(install|add|fetch)\b", "package fetch"),
+    ]
+)
+
+
+def network_command_reason(command: str) -> str | None:
+    """If the command reaches the network, why; else None."""
+    for pattern, reason in _NETWORK:
+        if pattern.search(command):
+            return reason
+    return None
+
+
 def evaluate_command(command: str) -> tuple[Verdict, str]:
     cmd = command.strip()
     if not cmd:

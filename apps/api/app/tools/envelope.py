@@ -29,13 +29,16 @@ class CapabilityEnvelope:
         return cls(allowed_tools=EXECUTOR_TOOLS)
 
     @classmethod
-    def from_tools(cls, tools: list[str] | None) -> CapabilityEnvelope:
-        """Build from a user/skill-supplied tool list. ``None`` means full access;
-        an empty or invalid list is narrowed to whatever valid tools were named."""
-        if tools is None:
-            return cls.full()
-        allowed = frozenset(t for t in tools if t in EXECUTOR_TOOLS)
-        return cls(allowed_tools=allowed)
+    def from_tools(
+        cls, tools: list[str] | None, *, egress_allowed: bool = False
+    ) -> CapabilityEnvelope:
+        """Build from a user/skill-supplied tool list. ``None`` means full tool
+        access; an empty or invalid list is narrowed to whatever valid tools were
+        named. Network egress is default-deny unless explicitly granted."""
+        allowed = EXECUTOR_TOOLS if tools is None else frozenset(
+            t for t in tools if t in EXECUTOR_TOOLS
+        )
+        return cls(allowed_tools=allowed, egress_allowed=egress_allowed)
 
     def permits(self, tool: str) -> bool:
         # Only executor tools are gated; control-flow tools are always allowed.

@@ -75,6 +75,7 @@ export interface PublishBody {
   goal: string;
   autostart?: boolean;
   allowed_tools?: string[] | null;
+  allow_egress?: boolean;
   limits?: {
     max_steps?: number;
     token_budget?: number;

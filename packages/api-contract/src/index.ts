@@ -34,6 +34,7 @@ export interface Task {
   rubric: string[];
   pending_question: string | null;
   allowed_tools: string[] | null;
+  allow_egress: boolean;
   limits: Limits;
   summary: string | null;
   verification_score: number;

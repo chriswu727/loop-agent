@@ -27,6 +27,7 @@ def upgrade() -> None:
         sa.Column("rubric", sa.JSON(), nullable=False),
         sa.Column("pending_question", sa.Text(), nullable=True),
         sa.Column("allowed_tools", sa.JSON(), nullable=True),
+        sa.Column("allow_egress", sa.Boolean(), nullable=False, server_default=sa.text("false")),
         sa.Column("max_steps", sa.Integer(), nullable=False),
         sa.Column("token_budget", sa.Integer(), nullable=False),
         sa.Column("summary", sa.Text(), nullable=True),

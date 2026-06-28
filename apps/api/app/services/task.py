@@ -45,6 +45,7 @@ class TaskService:
             status=TaskStatus.PENDING.value,
             rubric=[],
             allowed_tools=payload.allowed_tools,
+            allow_egress=payload.allow_egress,
             max_steps=max_steps,
             token_budget=token_budget,
             summary=None,

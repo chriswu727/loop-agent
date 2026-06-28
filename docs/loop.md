@@ -66,6 +66,17 @@ signed-skill instrumentation will plug into. Default envelope = full tool set, s
 behaviour is unchanged unless a task opts into a narrower one. The planner is also
 told its allowed set, so a restricted agent doesn't waste steps on blocked tools.
 
+**Network egress is default-deny (differentiator #3).** A task cannot reach the
+network through the shell unless it declares `allow_egress`. A before-tool guard
+(`tools/guards.py`) blocks commands that match network patterns
+(`curl`/`wget`/`pip install`/`git clone`/`ssh`/…, see `policy.network_command_reason`)
+when the envelope doesn't grant egress, and the planner is told network is off so
+it works offline. The UI's "Allow network" toggle opts a task in. Honest caveat:
+this is pattern-based v1 — a determined command could still open a socket;
+real enforcement (network-namespace deny) arrives with container execution. It
+stops the obvious exfiltration path that burned OpenClaw, where outbound channels
+plus curl meant an injected "send X out" had a route off the box.
+
 **The step ledger is hash-chained (tamper-evident).** Each step stores
 `hash = sha256(prev_hash + canonical(step))`, anchored at a genesis derived from
 the task id (`services/ledger.py`). Edit any recorded step — a command, an

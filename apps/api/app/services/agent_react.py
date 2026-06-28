@@ -37,6 +37,7 @@ from app.services.prompts import plan_prompts, understand_prompts, verify_prompt
 from app.services.receipt import build_receipt
 from app.services.verification import checks_summary, run_checks
 from app.tools import VALID_TOOLS, CapabilityEnvelope, ToolExecutor, ToolStatus, Workspace
+from app.tools.guards import make_egress_guard
 
 log = get_logger("agent")
 
@@ -92,12 +93,16 @@ class AgentReactService:
 
         workspace = Workspace(Path(task.workspace_path or settings.agent_workspaces_root) /
                               ("" if task.workspace_path else str(task.id)))
+        envelope = CapabilityEnvelope.from_tools(
+            task.allowed_tools, egress_allowed=task.allow_egress
+        )
         executor = ToolExecutor(
             workspace,
             approval_mode=settings.agent_approval_mode,
             command_timeout=settings.agent_command_timeout_seconds,
             output_limit=settings.agent_command_output_limit,
-            envelope=CapabilityEnvelope.from_tools(task.allowed_tools),
+            envelope=envelope,
+            before_tool=make_egress_guard(envelope),
         )
         task.status = TaskStatus.RUNNING.value
         task.workspace_path = str(workspace.root)
@@ -146,6 +151,7 @@ class AgentReactService:
                 task.goal, task.rubric, workspace.tree(), self._history_view(),
                 task.max_steps - number + 1, tokens_left,
                 executor.envelope.restricted_executor_tools(),
+                executor.envelope.egress_allowed,
             )
             result = await self.llm.complete(system, user, max_tokens=1200, temperature=0.5)
             step_tokens = result.tokens

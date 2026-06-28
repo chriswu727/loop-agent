@@ -31,6 +31,8 @@ class TaskCreate(BaseModel):
     # Capability envelope: restrict the agent to these executor tools (e.g.
     # ["write_file","read_file"] for a no-shell task). Omit/null = all tools.
     allowed_tools: list[str] | None = None
+    # Network egress is default-deny; set true only if the task needs the network.
+    allow_egress: bool = False
 
 
 class RespondIn(BaseModel):
@@ -53,6 +55,7 @@ class TaskRead(BaseModel):
     rubric: list[str]
     pending_question: str | None
     allowed_tools: list[str] | None
+    allow_egress: bool
     limits: LimitsRead
     summary: str | None
     verification_score: int
@@ -78,6 +81,7 @@ class TaskRead(BaseModel):
             rubric=m.rubric or [],  # type: ignore[attr-defined]
             pending_question=m.pending_question,  # type: ignore[attr-defined]
             allowed_tools=m.allowed_tools,  # type: ignore[attr-defined]
+            allow_egress=m.allow_egress,  # type: ignore[attr-defined]
             limits=LimitsRead(
                 max_steps=m.max_steps,  # type: ignore[attr-defined]
                 token_budget=m.token_budget,  # type: ignore[attr-defined]

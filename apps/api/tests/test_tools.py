@@ -119,3 +119,52 @@ async def test_executor_hooks_fire_and_can_veto(tmp_path) -> None:
 
     await ex.execute("write_file", {"path": "a.txt", "content": "x"})
     assert "before:write_file" in seen and "after:write_file:ok" in seen
+
+
+import pytest as _pytest  # noqa: E402
+
+
+@_pytest.mark.parametrize(
+    ("command", "is_network"),
+    [
+        ("curl https://example.com", True),
+        ("wget http://x/y", True),
+        ("pip install requests", True),
+        ("git clone https://github.com/x/y", True),
+        ("npm install lodash", True),
+        ("ssh user@host", True),
+        ("ls -la", False),
+        ("python solution.py", False),
+        ("git status", False),
+        ("git commit -m x", False),
+    ],
+)
+def test_network_command_detection(command: str, is_network: bool) -> None:
+    from app.tools.policy import network_command_reason
+
+    assert (network_command_reason(command) is not None) is is_network
+
+
+async def test_egress_guard_blocks_network_by_default(tmp_path) -> None:
+    from app.tools.guards import make_egress_guard
+
+    deny = CapabilityEnvelope.from_tools(None)  # egress default-deny
+    ex = ToolExecutor(tmp_path_ws := Workspace(tmp_path / "ws"),
+                      envelope=deny, before_tool=make_egress_guard(deny))
+    assert tmp_path_ws  # workspace constructed
+    blocked = await ex.execute("run_command", {"command": "curl https://example.com"})
+    assert blocked.status is ToolStatus.BLOCKED
+    assert "network" in blocked.observation.lower()
+    # A non-network command is unaffected.
+    ok = await ex.execute("run_command", {"command": "echo hi"})
+    assert ok.status is ToolStatus.OK
+
+
+async def test_egress_guard_allows_when_granted() -> None:
+    from app.tools.guards import make_egress_guard
+
+    allow = CapabilityEnvelope.from_tools(None, egress_allowed=True)
+    guard = make_egress_guard(allow)
+    # Guard does not block a network command when egress is granted (returns None
+    # = proceed); we check the guard directly to avoid making a real request.
+    assert await guard("run_command", {"command": "curl https://example.com"}) is None

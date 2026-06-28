@@ -7,7 +7,7 @@ types — so the model runs on a laptop and in the cluster alike.
 
 from __future__ import annotations
 
-from sqlalchemy import JSON, Integer, String, Text
+from sqlalchemy import JSON, Boolean, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
@@ -25,6 +25,8 @@ class TaskModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     pending_question: Mapped[str | None] = mapped_column(Text, nullable=True)
     # Capability envelope: which executor tools this task may use. NULL = all.
     allowed_tools: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
+    # Network egress is default-deny; True lets the task reach the network.
+    allow_egress: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
     # Limits — the hard guardrails for this task.
     max_steps: Mapped[int] = mapped_column(Integer, nullable=False)

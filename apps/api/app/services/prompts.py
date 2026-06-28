@@ -32,6 +32,7 @@ def plan_prompts(
     steps_left: int,
     tokens_left: int,
     allowed_tools: list[str] | None = None,
+    egress_allowed: bool = True,
 ) -> tuple[str, str]:
     system = (
         "You are an autonomous agent that completes a task by taking ONE action at "
@@ -63,6 +64,11 @@ def plan_prompts(
             "For this task you may ONLY use these tools: "
             f"{', '.join(allowed_tools)}, plus finish and ask_user. "
             "Other tools are blocked.\n\n"
+        )
+    if not egress_allowed:
+        restriction += (
+            "Network access is OFF for this task: curl, wget, pip install, "
+            "git clone and similar are blocked. Work offline with what's available.\n\n"
         )
     user = (
         f"Goal:\n{goal}\n\n"
