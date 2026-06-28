@@ -2,11 +2,12 @@
 
 # Loop
 
-**Publish a task. An agent understands it, drafts it, critiques its own work,
-and improves it pass by pass — stopping the moment it hits a limit you set.**
+**Publish a goal. An autonomous agent plans it, writes files and runs commands
+in its own sandboxed workspace, checks its own work, and keeps going until the
+goal is done — stopping the moment it hits a limit you set.**
 
-A small, complete, production-shaped app built on a layered Next.js + FastAPI
-foundation. LLM-only and side-effect-free, so it's safe to run anywhere.
+A small, complete, production-shaped agent built on a layered Next.js + FastAPI
+foundation. Runs on a laptop with one LLM API key and no other infrastructure.
 
 `Next.js 16` · `FastAPI` · `Python 3.12` · `Postgres or SQLite` · `MIT`
 
@@ -16,42 +17,53 @@ foundation. LLM-only and side-effect-free, so it's safe to run anywhere.
 
 ## What it is
 
-Loop is a self-improving agent in a box. You give it a goal; it runs a
-**generator–critic loop**:
+Loop is a downloadable-grade autonomous agent. You give it a goal; it runs a
+**think → act → observe** loop (ReAct):
 
-1. **Understand** — turn the goal into a concrete scoring rubric (success criteria).
-2. **Produce** — draft the deliverable.
-3. **Critique** — a separate "judge" grades the draft 0–100 against the rubric and
-   lists concrete fixes.
-4. **Reflect & repeat** — carry the best draft and the critique into the next pass,
-   so each pass improves on the last.
+1. **Understand** — turn the goal into a concrete rubric (success criteria).
+2. **Plan** — decide the single next action.
+3. **Act** — call a tool: write a file, read a file, or run a shell command,
+   all inside a per-task sandboxed workspace.
+4. **Observe** — feed the result back in, and repeat.
+5. **Finish** — when the agent says it's done, a separate **verifier** checks
+   the work against the rubric. If it isn't actually done, the agent keeps going.
 
 It keeps looping until one of these is true, whichever comes first:
 
 | Stop condition       | Meaning                                            |
 |----------------------|----------------------------------------------------|
-| **Target reached**   | the critic's score meets your target               |
-| **Iteration cap**    | it used its allotted passes                        |
-| **Budget exhausted** | it spent its token budget                          |
-| **Plateau**          | the score stopped improving (diminishing returns)  |
+| **Goal achieved**    | the agent finished and the verifier accepted it    |
+| **Step limit**       | it used its allotted steps                          |
+| **Budget exhausted** | it spent its token budget                           |
+| **Stuck**            | too many failed/blocked actions in a row            |
 | **Cancelled**        | you pulled the plug                                |
 
-Every limit is a **hard guarantee**, clamped to a configured ceiling, so a single
-task can never run away with cost. That's the whole point of "within the limit."
+Every limit is a **hard guarantee**, clamped to a configured ceiling, so a task
+can never run away with cost or actions.
 
-The work the agent does is **producing and refining a text artifact** — a plan, a
-draft, an email, a snippet of code. It has no external side effects (no web, no
-shell, no file writes), which is what makes it safe to leave running.
+## Safety
 
-## Quickstart
+The agent runs shell commands, which is the riskiest surface in the product, so
+it is fenced in:
 
-### Option A — zero infrastructure (laptop, SQLite)
+- **Workspace sandbox** — every file path resolves inside the task's own
+  directory; `..`, absolute paths, and symlink escapes are refused.
+- **Command policy** — destructive/exfiltration patterns (`rm -rf /`, `sudo`,
+  fork bombs, piping the network into a shell, …) are hard-blocked and never
+  run. Allowlisted commands run automatically; in `manual` approval mode,
+  anything else waits for you.
+- **Bounds** — commands run from the workspace, with a timeout and an output
+  cap, and the token/step budget bounds the whole run.
 
-No Docker, no Postgres, no Redis. You need Node 20+, Python 3.12+, and at least
-one LLM API key.
+This is guardrails, not a jail: it stops the obvious foot-guns. True isolation
+(containers) is a later milestone — see [`docs/loop.md`](./docs/loop.md).
+
+## Quickstart (zero infrastructure)
+
+No Docker, no Postgres, no Redis. Node 20+, Python 3.12+, and one LLM API key.
 
 ```bash
-# 1) Backend (FastAPI on SQLite, loop runs in-process)
+# 1) Backend (FastAPI on SQLite, agent runs in-process)
 cd apps/api
 python -m venv .venv && . .venv/bin/activate
 pip install -e ".[dev]"
@@ -60,54 +72,48 @@ export DATABASE_URL="sqlite+aiosqlite:///./loop.db"
 export EXECUTION_MODE=inline CACHE_BACKEND=memory
 uvicorn app.main:app --port 8000
 
-# 2) Frontend (in another terminal, from the repo root)
+# 2) Frontend (another terminal, from the repo root)
 NEXT_PUBLIC_API_URL=http://localhost:8000 pnpm --filter web dev
 ```
 
-Open http://localhost:3000, publish a task, and watch the loop run.
+Open http://localhost:3000 and try: *"Write a Python script that prints the
+first 12 Fibonacci numbers, then run it to confirm the output."* Watch the agent
+write the file, run it, and verify itself.
 
-### Option B — full stack (Docker, mirrors production)
-
-```bash
-cp .env.example .env        # add an LLM key
-make up                     # web + api + worker + postgres + redis
-```
-
-Here the API enqueues each task to Redis and a dedicated **worker** process runs
-the loop, so loops scale independently of request traffic.
+For the full Docker stack (web + api + worker + postgres + redis), `cp
+.env.example .env`, add a key, and `make up`.
 
 ## Configuration
 
-All via environment (see [`.env.example`](./.env.example)):
+See [`.env.example`](./.env.example). Key knobs:
 
 | Variable | Purpose |
 |----------|---------|
-| `DEEPSEEK_API_KEY` / `GEMINI_API_KEY` / `GLM_API_KEY` | LLM providers. At least one required. The loop cascades across configured providers on a retryable failure. |
-| `LLM_DEFAULT_PROVIDER` | Which provider to try first (`deepseek` by default). |
+| `DEEPSEEK_API_KEY` / `GEMINI_API_KEY` / `GLM_API_KEY` | LLM providers (at least one). The loop cascades across them on a retryable failure. |
 | `EXECUTION_MODE` | `inline` (run in the API process) or `worker` (enqueue to Redis). |
 | `DATABASE_URL` | `postgresql+asyncpg://…` or `sqlite+aiosqlite:///./loop.db`. |
-| `CACHE_BACKEND` | `auto` (in-memory on SQLite, Redis otherwise), `redis`, or `memory`. |
+| `AGENT_WORKSPACES_ROOT` | Where per-task workspaces live. |
+| `AGENT_APPROVAL_MODE` | `auto` (block dangerous, run the rest) or `manual` (also hold non-allowlisted commands). |
 
-Loop limit defaults and hard caps live in `app/core/config.py`
-(`loop_max_iterations_default`, `loop_token_budget_cap`, …).
+Step/budget defaults and caps live in `app/core/config.py`.
 
-## How it maps onto the foundation
+## Architecture
 
-This is built on a layered (ports-and-adapters) FastAPI backend; dependencies
-point inward only. The agent loop lives where business logic belongs — the
-service layer — and talks to the model through a provider interface and to the
-database through repositories, so it runs deterministically under test with a
-fake model.
+A layered (ports-and-adapters) FastAPI backend; the agent lives in the service
+layer and talks to the model through a provider interface, to the OS through the
+tools, and to the database through repositories — so the whole loop runs
+deterministically under test with a fake model and fake-free tools.
 
 ```
 apps/api/app/
 ├── core/llm/          # provider cascade (DeepSeek → Gemini → GLM) + token accounting
-├── domain/            # Task, Iteration, Limits, stop reasons (pure)
+├── tools/             # the agent's hands: workspace sandbox, command policy, shell, registry
+├── domain/            # Task, Step, Limits, stop reasons (pure)
 ├── schemas/           # the API contract (Pydantic DTOs)
-├── repositories/      # Task/Iteration data access
+├── repositories/      # Task/Step data access
 ├── services/
-│   ├── agent_loop.py  # THE ENGINE: understand → produce → critique → stop
-│   ├── prompts.py     # the three role prompts
+│   ├── agent_react.py # THE ENGINE: understand → plan → act → observe → verify
+│   ├── prompts.py     # the understand / plan / verify prompts
 │   ├── task.py        # publish / list / cancel + limit clamping
 │   └── runner.py      # inline vs worker execution
 ├── api/v1/routes/tasks.py   # the HTTP surface
@@ -116,11 +122,10 @@ apps/api/app/
 apps/web/
 ├── app/page.tsx              # publish form + task list
 ├── app/tasks/[id]/page.tsx   # the live run view (polls until terminal)
-└── components/               # budget meters, score trend, iteration timeline
+└── components/               # budget meters, step timeline
 ```
 
-See [`docs/loop.md`](./docs/loop.md) for the design rationale and the decisions
-behind it, and [`ARCHITECTURE.md`](./ARCHITECTURE.md) for the underlying skeleton.
+See [`docs/loop.md`](./docs/loop.md) for design rationale and decisions.
 
 ## Tests
 
@@ -128,15 +133,16 @@ behind it, and [`ARCHITECTURE.md`](./ARCHITECTURE.md) for the underlying skeleto
 cd apps/api && . .venv/bin/activate && pytest
 ```
 
-The suite drives every stop condition (target, cap, budget, plateau) with a
-scripted fake model — no network — so "within the limit" is proven, not assumed.
+The suite drives every stop condition (goal, step cap, budget, stuck) with a
+scripted fake model, proves the sandbox refuses path escapes, and proves the
+command policy blocks dangerous commands — all offline.
 
-## Extending it
+## Roadmap
 
-The action space is deliberately just "refine an artifact." To let the agent
-*do* more (web research, code execution, file writes), add a tool interface the
-`produce` step can call and gate it behind the same budget. The loop, the limits,
-and the UI don't change.
+1. **(done) Tool-using agent core** — files + shell, sandboxed, budgeted.
+2. **Telegram** — talk to the agent and assign tasks from your phone.
+3. **Electron desktop** — download, paste an API key, go.
+4. **WhatsApp, web research, cross-task memory, container isolation.**
 
 ## License
 

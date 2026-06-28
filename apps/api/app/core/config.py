@@ -80,13 +80,22 @@ class Settings(BaseSettings):
     # Defaults are what a new task starts with; caps are the hard ceilings a
     # user cannot exceed, so a single task can never run away with cost.
     execution_mode: Literal["inline", "worker"] = "inline"
-    loop_max_iterations_default: int = 6
-    loop_max_iterations_cap: int = 15
+    agent_max_steps_default: int = 12
+    agent_max_steps_cap: int = 40
     loop_token_budget_default: int = 60_000
     loop_token_budget_cap: int = 200_000
-    loop_target_score_default: int = 90
-    loop_plateau_patience: int = 2  # stop after N passes with no real gain
-    loop_min_gain: int = 2  # a score gain below this counts as "no progress"
+
+    # ---- Agent tools & safety ----
+    # Each task works inside its own subdirectory under this root.
+    agent_workspaces_root: str = "./workspaces"
+    agent_command_timeout_seconds: int = 60
+    agent_command_output_limit: int = 4_000  # chars of command output kept
+    # auto  = run allowlisted/unknown commands, hard-block dangerous ones
+    # manual = additionally refuse non-allowlisted commands (await approval)
+    agent_approval_mode: Literal["auto", "manual"] = "auto"
+    agent_acceptance_score: int = 70  # verifier score needed to accept "finish"
+    agent_max_finish_retries: int = 2  # times a rejected finish is pushed back
+    agent_stuck_threshold: int = 4  # consecutive failed/blocked steps -> give up
 
     @computed_field  # type: ignore[prop-decorator]
     @property

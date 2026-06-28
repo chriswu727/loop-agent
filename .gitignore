@@ -39,6 +39,10 @@ tmp/
 /loop_home.png
 /loop_detail.png
 
+# ---------- Agent task workspaces (per-task sandboxes) ----------
+workspaces/
+apps/api/workspaces/
+
 # ---------- OS / editor ----------
 .DS_Store
 Thumbs.db

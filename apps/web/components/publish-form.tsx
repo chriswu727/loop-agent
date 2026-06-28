@@ -6,17 +6,16 @@ import { useState } from 'react';
 import { ApiError, tasksApi } from '@/lib/api-client';
 
 const FALLBACK: LimitDefaults = {
-  max_iterations_default: 6,
-  max_iterations_cap: 15,
+  max_steps_default: 12,
+  max_steps_cap: 40,
   token_budget_default: 60000,
   token_budget_cap: 200000,
-  target_score_default: 90,
 };
 
 const EXAMPLES = [
-  'Write a concise, friendly onboarding email for a SaaS free-trial signup.',
-  'Draft a clear product one-pager for a personal expense tracker.',
-  'Write a Python function that parses an ISO-8601 duration into seconds, with docstring and edge cases.',
+  'Write a Python script that prints the first 15 Fibonacci numbers, then run it to confirm the output.',
+  'Create a small project: a CSV of 5 sample sales rows and a script that prints the total revenue.',
+  'Write and run a script that checks whether 2027 is a leap year and explains the result.',
 ];
 
 export function PublishForm({ defaults }: { defaults: LimitDefaults | null }) {
@@ -24,9 +23,8 @@ export function PublishForm({ defaults }: { defaults: LimitDefaults | null }) {
   const router = useRouter();
 
   const [goal, setGoal] = useState('');
-  const [maxIterations, setMaxIterations] = useState(d.max_iterations_default);
+  const [maxSteps, setMaxSteps] = useState(d.max_steps_default);
   const [tokenBudget, setTokenBudget] = useState(d.token_budget_default);
-  const [targetScore, setTargetScore] = useState(d.target_score_default);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -39,9 +37,8 @@ export function PublishForm({ defaults }: { defaults: LimitDefaults | null }) {
       const task = await tasksApi.publish({
         goal: goal.trim(),
         limits: {
-          max_iterations: maxIterations,
+          max_steps: maxSteps,
           token_budget: tokenBudget,
-          target_score: targetScore,
         },
       });
       router.push(`/tasks/${task.id}`);
@@ -65,7 +62,7 @@ export function PublishForm({ defaults }: { defaults: LimitDefaults | null }) {
         id="goal"
         value={goal}
         onChange={(e) => setGoal(e.target.value)}
-        placeholder="Describe what you want produced. The agent will draft it, critique itself, and improve it pass by pass."
+        placeholder="Describe a goal. The agent will plan it, write files and run commands in its own workspace, check its own work, and keep going until it's done."
         rows={3}
         className="mt-2 w-full resize-y rounded-lg border border-black/10 bg-transparent px-3 py-2 text-sm outline-none focus:border-blue-500/60 dark:border-white/15"
       />
@@ -83,14 +80,14 @@ export function PublishForm({ defaults }: { defaults: LimitDefaults | null }) {
         ))}
       </div>
 
-      <div className="mt-5 grid gap-5 sm:grid-cols-3">
+      <div className="mt-5 grid gap-5 sm:grid-cols-2">
         <Slider
-          label="Max passes"
-          value={maxIterations}
+          label="Max steps"
+          value={maxSteps}
           min={1}
-          max={d.max_iterations_cap}
+          max={d.max_steps_cap}
           step={1}
-          onChange={setMaxIterations}
+          onChange={setMaxSteps}
           display={(v) => `${v}`}
         />
         <Slider
@@ -102,29 +99,20 @@ export function PublishForm({ defaults }: { defaults: LimitDefaults | null }) {
           onChange={setTokenBudget}
           display={(v) => `${Math.round(v / 1000)}k`}
         />
-        <Slider
-          label="Target score"
-          value={targetScore}
-          min={50}
-          max={100}
-          step={1}
-          onChange={setTargetScore}
-          display={(v) => `${v}`}
-        />
       </div>
 
       {error && <p className="mt-4 text-sm text-red-600 dark:text-red-400">{error}</p>}
 
       <div className="mt-5 flex items-center justify-between">
         <p className="text-xs opacity-50">
-          The loop stops at the target, the cap, the budget, or when it stops improving.
+          The agent stops when the goal is verified, or it runs out of steps or budget.
         </p>
         <button
           type="submit"
           disabled={goal.trim().length < 4 || submitting}
           className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-40"
         >
-          {submitting ? 'Starting…' : 'Run the loop'}
+          {submitting ? 'Starting…' : 'Run the agent'}
         </button>
       </div>
     </form>

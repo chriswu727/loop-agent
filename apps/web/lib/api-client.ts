@@ -2,7 +2,7 @@
  * Single typed API client. Wraps `fetch` with base URL resolution, timeouts,
  * request-id propagation, and error normalization so callers never repeat this.
  */
-import type { Iteration, LimitDefaults, Page, Task } from '@repo/api-contract';
+import type { LimitDefaults, Page, Step, Task } from '@repo/api-contract';
 import { apiBaseUrl } from './env';
 
 /** Normalized error mirroring the backend's RFC 9457 problem+json body. */
@@ -61,14 +61,13 @@ export async function apiFetch<T>(path: string, options: RequestOptions = {}): P
 // ---------------------------------------------------------------------------
 // Typed client for the agent-loop API. Types come from @repo/api-contract.
 // ---------------------------------------------------------------------------
-export type { Iteration, LimitDefaults, Page, Task };
+export type { LimitDefaults, Page, Step, Task };
 
 export interface PublishBody {
   goal: string;
   limits?: {
-    max_iterations?: number;
+    max_steps?: number;
     token_budget?: number;
-    target_score?: number;
   };
 }
 
@@ -79,7 +78,7 @@ export const tasksApi = {
       `/api/v1/tasks?limit=${params?.limit ?? 50}&offset=${params?.offset ?? 0}`,
     ),
   get: (id: string) => apiFetch<Task>(`/api/v1/tasks/${id}`),
-  iterations: (id: string) => apiFetch<Iteration[]>(`/api/v1/tasks/${id}/iterations`),
+  steps: (id: string) => apiFetch<Step[]>(`/api/v1/tasks/${id}/steps`),
   publish: (body: PublishBody) =>
     apiFetch<Task>('/api/v1/tasks', { method: 'POST', body: JSON.stringify(body) }),
   cancel: (id: string) =>

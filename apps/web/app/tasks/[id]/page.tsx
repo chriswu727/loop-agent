@@ -1,12 +1,11 @@
 'use client';
 
-import type { Iteration, Task } from '@repo/api-contract';
+import type { Step, Task } from '@repo/api-contract';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { BudgetMeter } from '@/components/budget-meter';
-import { IterationStep } from '@/components/iteration-step';
-import { ScoreTrend } from '@/components/score-trend';
+import { StepItem } from '@/components/step-item';
 import { StatusPill, stopReasonLabel } from '@/components/status-pill';
 import { ApiError, tasksApi } from '@/lib/api-client';
 
@@ -18,16 +17,15 @@ export default function TaskDetail() {
   const id = params.id;
 
   const [task, setTask] = useState<Task | null>(null);
-  const [iterations, setIterations] = useState<Iteration[]>([]);
+  const [steps, setSteps] = useState<Step[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const poll = useCallback(async () => {
     try {
-      const [t, its] = await Promise.all([tasksApi.get(id), tasksApi.iterations(id)]);
+      const [t, s] = await Promise.all([tasksApi.get(id), tasksApi.steps(id)]);
       setTask(t);
-      setIterations(its);
+      setSteps(s);
       setError(null);
       if (!TERMINAL.has(t.status)) {
         timer.current = setTimeout(poll, POLL_MS);
@@ -54,13 +52,6 @@ export default function TaskDetail() {
     }
   }
 
-  async function copyArtifact() {
-    if (!task?.best_artifact) return;
-    await navigator.clipboard.writeText(task.best_artifact);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1500);
-  }
-
   if (!task) {
     return (
       <main className="mx-auto max-w-3xl px-6 py-14">
@@ -70,12 +61,9 @@ export default function TaskDetail() {
     );
   }
 
-  const bestIndex = iterations.reduce(
-    (best, it, i) => (it.score > (iterations[best]?.score ?? -1) ? i : best),
-    0,
-  );
   const active = !TERMINAL.has(task.status);
   const reason = stopReasonLabel(task.stop_reason);
+  const achieved = task.stop_reason === 'goal_achieved';
 
   return (
     <main className="mx-auto max-w-3xl px-6 py-14">
@@ -87,35 +75,19 @@ export default function TaskDetail() {
       </div>
 
       {reason && task.status === 'completed' && (
-        <p className="mt-2 text-xs opacity-60">Stopped: {reason}.</p>
+        <p className="mt-2 text-xs opacity-60">
+          Stopped: {reason}
+          {achieved && ` · verified ${task.verification_score}/100`}.
+        </p>
       )}
       {task.status === 'failed' && task.error && (
         <p className="mt-2 text-xs text-red-600 dark:text-red-400">Error: {task.error}</p>
       )}
 
-      {/* Live progress: score + the hard limits being consumed. */}
-      <section className="mt-6 grid gap-5 rounded-2xl border border-black/10 bg-white/40 p-5 dark:border-white/10 dark:bg-white/[0.02] sm:grid-cols-2">
-        <div>
-          <div className="mb-1 flex items-baseline justify-between">
-            <span className="text-xs font-medium opacity-70">Best score</span>
-            <span className="text-sm font-bold tabular-nums">
-              {task.best_score}
-              <span className="opacity-40">/{task.limits.target_score}</span>
-            </span>
-          </div>
-          <ScoreTrend
-            scores={iterations.map((i) => i.score)}
-            target={task.limits.target_score}
-          />
-        </div>
-        <div className="flex flex-col justify-center gap-4">
-          <BudgetMeter
-            label="Passes"
-            used={task.iterations_used}
-            limit={task.limits.max_iterations}
-          />
-          <BudgetMeter label="Token budget" used={task.tokens_used} limit={task.limits.token_budget} />
-        </div>
+      {/* Live progress: the hard limits being consumed. */}
+      <section className="mt-6 grid gap-4 rounded-2xl border border-black/10 bg-white/40 p-5 dark:border-white/10 dark:bg-white/[0.02] sm:grid-cols-2">
+        <BudgetMeter label="Steps" used={task.steps_used} limit={task.limits.max_steps} />
+        <BudgetMeter label="Token budget" used={task.tokens_used} limit={task.limits.token_budget} />
       </section>
 
       {task.rubric.length > 0 && (
@@ -136,25 +108,21 @@ export default function TaskDetail() {
         </section>
       )}
 
-      {/* The current best artifact — the actual deliverable. */}
-      <section className="mt-6">
-        <div className="mb-2 flex items-center justify-between">
-          <h2 className="text-xs font-semibold uppercase tracking-wide opacity-50">
-            Best result {active && <span className="opacity-60">(improving…)</span>}
-          </h2>
-          {task.best_artifact && (
-            <button
-              onClick={copyArtifact}
-              className="rounded-md border border-black/10 px-2 py-1 text-xs opacity-70 hover:opacity-100 dark:border-white/15"
-            >
-              {copied ? 'Copied' : 'Copy'}
-            </button>
-          )}
-        </div>
-        <pre className="max-h-[28rem] overflow-auto whitespace-pre-wrap rounded-xl border border-black/10 bg-white/60 p-4 font-mono text-xs leading-relaxed dark:border-white/10 dark:bg-black/30">
-          {task.best_artifact ?? (active ? 'Working on the first draft…' : 'No result produced.')}
-        </pre>
-      </section>
+      {/* The agent's final account of what it did. */}
+      {task.summary && (
+        <section className="mt-6">
+          <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide opacity-50">Result</h2>
+          <p className="whitespace-pre-wrap rounded-xl border border-black/10 bg-white/60 p-4 text-sm leading-relaxed dark:border-white/10 dark:bg-black/30">
+            {task.summary}
+          </p>
+        </section>
+      )}
+
+      {task.workspace_path && (
+        <p className="mt-3 break-all font-mono text-[11px] opacity-40">
+          workspace: {task.workspace_path}
+        </p>
+      )}
 
       {active && (
         <button
@@ -165,21 +133,18 @@ export default function TaskDetail() {
         </button>
       )}
 
-      {/* Iteration history, newest first. */}
+      {/* The agent's step-by-step trace, newest first. */}
       <section className="mt-8">
         <h2 className="mb-3 text-xs font-semibold uppercase tracking-wide opacity-50">
-          Iterations ({iterations.length})
+          Steps ({steps.length})
+          {active && <span className="ml-1 opacity-60">· working…</span>}
         </h2>
         <div className="grid gap-3">
-          {[...iterations].reverse().map((it) => (
-            <IterationStep
-              key={it.id}
-              iteration={it}
-              isBest={iterations[bestIndex]?.id === it.id}
-            />
+          {[...steps].reverse().map((step) => (
+            <StepItem key={step.id} step={step} />
           ))}
-          {iterations.length === 0 && (
-            <p className="text-sm opacity-50">Waiting for the first pass…</p>
+          {steps.length === 0 && (
+            <p className="text-sm opacity-50">Planning the first step…</p>
           )}
         </div>
       </section>

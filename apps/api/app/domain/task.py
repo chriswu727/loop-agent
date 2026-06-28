@@ -1,7 +1,8 @@
-"""Pure domain entities for the agent loop. No framework, no ORM, no I/O.
+"""Pure domain entities for the autonomous agent. No framework, no ORM, no I/O.
 
 A ``Task`` is what a user publishes: a goal plus the limits that bound how hard
-the agent is allowed to work on it. A ``TaskStatus`` tracks its lifecycle.
+the agent is allowed to work. The agent then drives itself — planning, calling
+tools, observing results — until the goal is achieved or a limit stops it.
 """
 
 from __future__ import annotations
@@ -14,28 +15,27 @@ from datetime import datetime
 
 class TaskStatus(enum.StrEnum):
     PENDING = "pending"  # published, not yet picked up
-    RUNNING = "running"  # the loop is iterating
-    COMPLETED = "completed"  # stopped on a success/stop condition
+    RUNNING = "running"  # the agent is working
+    COMPLETED = "completed"  # stopped on a stop condition (see StopReason)
     CANCELLED = "cancelled"  # the user pulled the plug
-    FAILED = "failed"  # the loop errored out
+    FAILED = "failed"  # the agent errored out
 
 
 class StopReason(enum.StrEnum):
-    TARGET_REACHED = "target_reached"
-    MAX_ITERATIONS = "max_iterations"
-    BUDGET_EXHAUSTED = "budget_exhausted"
-    PLATEAU = "plateau"
+    GOAL_ACHIEVED = "goal_achieved"  # agent finished and the verifier accepted it
+    MAX_STEPS = "max_steps"  # used its allotted steps
+    BUDGET_EXHAUSTED = "budget_exhausted"  # spent its token budget
+    STUCK = "stuck"  # repeated failures / no progress
     CANCELLED = "cancelled"
     ERROR = "error"
 
 
 @dataclass(slots=True)
 class Limits:
-    """The hard boundary the loop must respect for a single task."""
+    """The hard boundary the agent must respect for a single task."""
 
-    max_iterations: int
+    max_steps: int
     token_budget: int
-    target_score: int
 
 
 @dataclass(slots=True)
@@ -45,10 +45,11 @@ class Task:
     status: TaskStatus
     limits: Limits
     rubric: list[str] = field(default_factory=list)
-    best_score: int = 0
-    best_artifact: str | None = None
-    iterations_used: int = 0
+    summary: str | None = None  # the agent's final account of what it did
+    verification_score: int = 0  # the verifier's grade of the finished work (0-100)
+    steps_used: int = 0
     tokens_used: int = 0
+    workspace_path: str | None = None
     stop_reason: StopReason | None = None
     error: str | None = None
     created_at: datetime | None = None

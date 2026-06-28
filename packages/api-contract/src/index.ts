@@ -7,17 +7,18 @@
 export type TaskStatus = 'pending' | 'running' | 'completed' | 'cancelled' | 'failed';
 
 export type StopReason =
-  | 'target_reached'
-  | 'max_iterations'
+  | 'goal_achieved'
+  | 'max_steps'
   | 'budget_exhausted'
-  | 'plateau'
+  | 'stuck'
   | 'cancelled'
   | 'error';
 
+export type StepStatus = 'ok' | 'error' | 'blocked';
+
 export interface Limits {
-  max_iterations: number;
+  max_steps: number;
   token_budget: number;
-  target_score: number;
 }
 
 export interface Task {
@@ -26,33 +27,35 @@ export interface Task {
   status: TaskStatus;
   rubric: string[];
   limits: Limits;
-  best_score: number;
-  best_artifact: string | null;
-  iterations_used: number;
+  summary: string | null;
+  verification_score: number;
+  steps_used: number;
   tokens_used: number;
+  workspace_path: string | null;
   stop_reason: StopReason | null;
   error: string | null;
   created_at: string;
   updated_at: string;
 }
 
-export interface Iteration {
+export interface Step {
   id: string;
   task_id: string;
   number: number;
-  artifact: string;
-  score: number;
-  critique: string;
+  thought: string;
+  tool: string;
+  tool_args: Record<string, unknown>;
+  observation: string;
+  status: StepStatus;
   tokens: number;
   created_at: string;
 }
 
 export interface LimitDefaults {
-  max_iterations_default: number;
-  max_iterations_cap: number;
+  max_steps_default: number;
+  max_steps_cap: number;
   token_budget_default: number;
   token_budget_cap: number;
-  target_score_default: number;
 }
 
 export interface Page<T> {

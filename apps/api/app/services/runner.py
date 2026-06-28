@@ -19,9 +19,9 @@ from app.core.config import settings
 from app.core.llm import get_llm_client
 from app.core.logging import get_logger
 from app.db.session import get_sessionmaker
-from app.repositories.iteration import IterationRepository
+from app.repositories.step import StepRepository
 from app.repositories.task import TaskRepository
-from app.services.agent_loop import AgentLoopService
+from app.services.agent_react import AgentReactService
 from app.workers.queue import enqueue
 
 log = get_logger("runner")
@@ -34,8 +34,8 @@ async def execute_task(task_id: uuid.UUID) -> None:
     sessionmaker = get_sessionmaker()
     async with sessionmaker() as session:
         tasks = TaskRepository(session)
-        iterations = IterationRepository(session)
-        service = AgentLoopService(tasks, iterations, get_llm_client())
+        steps = StepRepository(session)
+        service = AgentReactService(tasks, steps, get_llm_client())
         await service.run(task_id)
 
 

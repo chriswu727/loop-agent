@@ -14,13 +14,14 @@ export function TaskCard({ task }: { task: Task }) {
       </div>
       <div className="mt-3 flex items-center gap-4 text-xs opacity-60">
         <span className="tabular-nums">
-          Score <span className="font-semibold opacity-100">{task.best_score}</span>/
-          {task.limits.target_score}
-        </span>
-        <span className="tabular-nums">
-          {task.iterations_used}/{task.limits.max_iterations} passes
+          {task.steps_used}/{task.limits.max_steps} steps
         </span>
         <span className="tabular-nums">{task.tokens_used.toLocaleString()} tok</span>
+        {task.stop_reason === 'goal_achieved' && (
+          <span className="tabular-nums text-green-600 dark:text-green-400">
+            verified {task.verification_score}
+          </span>
+        )}
       </div>
     </Link>
   );

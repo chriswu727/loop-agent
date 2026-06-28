@@ -35,8 +35,9 @@ export default async function Home() {
       <header className="mb-8">
         <h1 className="text-2xl font-bold tracking-tight">{env.NEXT_PUBLIC_APP_NAME}</h1>
         <p className="mt-1 text-sm opacity-60">
-          Publish a task. The agent understands it, drafts it, critiques its own work, and improves
-          it pass by pass — stopping the moment it hits a limit you set.
+          Publish a goal. The agent plans it, writes files and runs commands in its own sandboxed
+          workspace, checks its own work, and keeps going until the goal is done — stopping the
+          moment it hits a limit you set.
         </p>
       </header>
 

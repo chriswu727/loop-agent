@@ -13,7 +13,7 @@ from fastapi import APIRouter, BackgroundTasks, Query, status
 
 from app.api.v1.deps import TaskServiceDep, rate_limit
 from app.schemas.common import Page
-from app.schemas.iteration import IterationRead
+from app.schemas.step import StepRead
 from app.schemas.task import LimitDefaults, TaskCreate, TaskRead
 from app.services.runner import trigger_task
 
@@ -65,13 +65,13 @@ async def get_task(task_id: uuid.UUID, service: TaskServiceDep) -> TaskRead:
 
 
 @router.get(
-    "/{task_id}/iterations",
-    response_model=list[IterationRead],
-    summary="List a task's loop iterations",
+    "/{task_id}/steps",
+    response_model=list[StepRead],
+    summary="List a task's agent steps",
 )
-async def list_iterations(task_id: uuid.UUID, service: TaskServiceDep) -> list[IterationRead]:
-    iterations = await service.list_iterations(task_id)
-    return [IterationRead.model_validate(i) for i in iterations]
+async def list_steps(task_id: uuid.UUID, service: TaskServiceDep) -> list[StepRead]:
+    steps = await service.list_steps(task_id)
+    return [StepRead.model_validate(s) for s in steps]
 
 
 @router.post("/{task_id}/cancel", response_model=TaskRead, summary="Cancel a running task")

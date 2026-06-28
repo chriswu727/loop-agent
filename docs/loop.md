@@ -1,105 +1,114 @@
 # Loop — design notes & decisions
 
-For whoever picks this up next. This explains *why* the loop is built the way it
-is, and the constraints that aren't obvious from the code.
+For whoever picks this up next. Why the agent is built the way it is, and the
+constraints that aren't obvious from the code.
 
 ## The core idea
 
-Loop is a **generator–critic loop with a hard budget**. The product value is
-that you can watch an agent improve its own work and trust that it will stop.
-Everything else serves those two things: visible improvement, and guaranteed
-stopping.
+Loop is an **autonomous ReAct agent with a hard budget and a verifier**. You
+give it a goal; it plans one action at a time, uses tools (write files, run
+commands) inside a sandbox, observes results, and repeats until a verifier
+agrees the goal is met — or a limit stops it. The product values are: it
+genuinely *does* things, it *finishes* (not stops early, not loops forever), and
+it stays *within the limit*.
 
-The loop (in `services/agent_loop.py`):
+The loop (`services/agent_react.py`):
 
 ```
-understand(goal) -> rubric            # once, up front
+understand(goal) -> rubric                      # once, up front
 repeat:
-    produce(goal, rubric, best, last_critique) -> artifact
-    critique(goal, rubric, artifact)  -> score, critique
-    persist iteration; update best; add to tokens_used
-    stop?  target | cap | budget | plateau | cancelled
+    plan(goal, rubric, workspace, history) -> {thought, tool, args}
+    if tool == finish:
+        verify(goal, rubric, summary, workspace) -> {score, met}
+        met? -> done (goal_achieved)
+        not met, retries left? -> push the gaps back, keep going
+        not met, retries spent? -> stop (stuck)
+    else:
+        observe = execute_tool(tool, args)       # sandboxed
+    stop?  step cap | budget | stuck | cancelled
 ```
-
-Two separate LLM roles (producer at high temperature, critic at low) is
-deliberate — a model grading its own fresh output in the same call inflates
-scores. Splitting them gives an adversarial-ish signal.
 
 ## Why these decisions
 
-**LLM-only action space.** The agent only produces and refines text. No web,
-shell, or file writes. This was a product choice: it makes the app safe to run
-unattended and trivial to reason about. The extension seam is the `produce` step
-— give it tools and gate them behind the same token budget.
+**Two LLM roles, separated.** The planner proposes actions; an independent
+verifier decides "done". A model judging its own "I'm finished" inflates
+completion. In the real Fibonacci test run the verifier caught the agent
+printing 13 numbers instead of 12 and sent it back — that gap is the whole point.
 
-**Limits are clamped in the service, not just validated at the edge.**
-`TaskService._resolve_limits` applies defaults then clamps every value to a
-configured cap. A user can ask for 9999 iterations; they get the cap. The hard
-guarantee lives in one place, server-side. (Target score is additionally bounded
-0–100 at the schema, because a score outside that range is meaningless input, not
-something to silently clamp.)
+**Tools, not raw power.** The agent acts only through `write_file`, `read_file`,
+`run_command`, and `finish`. Each is a small, auditable adapter; adding a tool
+(web fetch, edit-in-place) is a new entry in `tools/registry.py` and one line in
+the prompt's `TOOL_SPECS`. The loop never changes.
 
-**Plateau detection.** Without it, a task that can't reach its target burns every
-pass for no gain. We track the *frontier*: if the best score doesn't improve by
-`loop_min_gain` for `loop_plateau_patience` consecutive passes, stop. This is why
-a run can end at 95/97 after 3 passes instead of grinding to the cap.
+**The safety model is two-layered and honest about its limits:**
+- *Files* are jailed: `tools/workspace.py` resolves every path inside the task's
+  directory and refuses `..`, absolute paths, and symlink escapes. The file
+  tools genuinely cannot touch the rest of the disk.
+- *Shell* is fenced, not jailed: `tools/policy.py` hard-blocks destructive and
+  exfiltration patterns and runs everything from the workspace with a timeout
+  and output cap, but a determined command can still read outside the workspace.
+  Real isolation needs a container/VM and is a later milestone. This is stated
+  plainly so nobody mistakes guardrails for a sandbox jail. Default
+  `approval_mode=auto` runs allowlisted + unknown commands and blocks dangerous
+  ones; `manual` additionally holds unknown commands for a human.
 
-**Token budget is enforced from real usage.** Each provider response reports its
-token count; the loop accumulates it and checks before and after each pass. The
-budget is honored even though we don't pre-count prompt tokens.
+**Limits clamped in the service.** `TaskService._resolve_limits` applies defaults
+then clamps to caps. The "within the limit" guarantee lives in one place,
+server-side. Limits are `max_steps` and `token_budget`; "stuck" (N failed/blocked
+steps in a row) is the safety net for an agent thrashing without progress.
 
-**Inline vs worker execution.** The same `AgentLoopService.run` is driven two
-ways (`services/runner.py`):
-- `inline` — a FastAPI background task runs the loop in-process. Zero infra; the
-  whole app runs on SQLite on a laptop.
-- `worker` — the API enqueues the task id on Redis and the worker process
-  (`workers/worker.py`, `@handler("run_task")`) runs it. Scales independently.
+**Token budget from real usage.** Each provider response reports tokens; the loop
+accumulates per planning + verify call and checks before and after each step.
+
+**Inline vs worker execution.** The same `AgentReactService.run` is driven two
+ways (`services/runner.py`): `inline` runs it in a FastAPI background task (zero
+infra, SQLite-friendly); `worker` enqueues to Redis for a separate process.
 
 **The publish-then-commit ordering gotcha.** `TaskService.publish` commits the
-new row *before* returning, because the run is scheduled as a background task /
-enqueue that opens its own session. If we relied on the request's end-of-cycle
-commit, the loop's session could query the row before it was committed and find
-nothing (`loop.task_missing`). Don't remove that commit.
+new row before the run is scheduled, because the background/worker agent opens
+its own session and would otherwise not see the row (`agent.task_missing`). Keep
+that commit.
 
-**Live updates are polling, not SSE.** The plan considered SSE over Redis pub/sub.
-We chose polling (`app/tasks/[id]/page.tsx`, 1.2s) instead: it works in every
-execution mode including zero-infra SQLite with no Redis, it's simpler, and for a
-single-user loop the latency is invisible. If you later need many concurrent
-viewers, add an SSE endpoint that subscribes to a `task:{id}` channel the worker
-publishes to — the data model already supports it.
+**Live updates are polling, not SSE.** `app/tasks/[id]/page.tsx` polls every
+1.2s. It works in every execution mode (including zero-infra SQLite with no
+Redis) and for a single-user agent the latency is invisible.
 
-**SQLite support.** `database_url` is a plain string (not `PostgresDsn`) so a
-`sqlite+aiosqlite://` URL is accepted. On that path the engine drops pool args,
-the cache falls back to in-memory, and the schema is created on startup (no
-Alembic). Postgres remains the production default and uses migrations.
+**SQLite support.** `database_url` is a plain string so `sqlite+aiosqlite://`
+works; on that path the engine drops pool args, the cache falls back to
+in-memory, and the schema is created on startup (no Alembic). Postgres remains
+the production default and uses migrations.
 
 ## Data model
 
-- `tasks` — goal, status, rubric (JSON), the three limits, and live loop state
-  (best_score, best_artifact, iterations_used, tokens_used, stop_reason, error).
-- `iterations` — one row per pass: number, artifact, score, critique, tokens.
+- `tasks` — goal, status, rubric (JSON), `max_steps` + `token_budget`, and live
+  state: summary, verification_score, steps_used, tokens_used, workspace_path,
+  stop_reason, error.
+- `steps` — one row per agent step: number, thought, tool, tool_args (JSON),
+  observation, status (ok/error/blocked), tokens.
 
-`rubric` is JSON (not a Postgres array) so the model is portable to SQLite. No
-vendor-specific column types are used anywhere.
+No vendor-specific column types, so the model runs on SQLite and Postgres alike.
 
 ## Testing
 
-`tests/test_agent_loop.py` drives the engine with a `ScriptedLLM` whose critique
-scores are dictated by the test, so each stop condition is proven deterministically
-and offline. `tests/test_tasks.py` covers the HTTP surface; its conftest stubs the
-background trigger so publishing never hits a real model.
+`tests/test_tools.py` proves the sandbox refuses path escapes and the policy
+classifies commands (and that a dangerous command is blocked, not run).
+`tests/test_agent_react.py` drives the loop with a scripted fake model so each
+stop condition — goal_achieved, max_steps, budget, stuck, and verifier-rejection
+— is deterministic and offline. `tests/test_tasks.py` covers the HTTP surface;
+its conftest stubs the background trigger so publishing never hits a real model.
 
-The one thing the test suite can't cover offline is the live provider calls — that
-is verified by the real-LLM smoke path (publish a task against a real key and watch
-it complete within limits).
+The live provider calls and real tool execution are verified by an end-to-end
+run (publish a "write and run a script" goal against a real key and watch the
+agent create the file, run it, self-correct, and finish).
 
 ## Known edges / next steps
 
-- **Cancellation is checked between passes**, so a cancel during a long LLM call
-  takes effect when that pass finishes, not instantly.
+- **Cancellation is checked between steps**, so a cancel during a long command
+  or LLM call takes effect at the next step boundary.
+- **Shell isolation is pattern-based, not a true jail** — the honest gap above.
+  Container/VM execution is the next safety milestone.
 - **One task per worker process.** Concurrency scales by adding worker replicas.
-  There's no global concurrency cap beyond that yet.
-- **Provider models are pinned** in `core/llm/providers.py` (`deepseek-chat`,
-  `gemini-2.0-flash`, `glm-4-flash`). Bump them there.
-- **No auth/multi-user.** The starter's auth seam is untouched; wire it to an IdP
-  if this becomes multi-tenant, and scope tasks by subject.
+- **No auth/multi-user.** The starter's auth seam is untouched; scope tasks by
+  subject when this becomes multi-tenant.
+- **Roadmap:** Telegram/WhatsApp transports (one agent core, many chat inlets),
+  Electron packaging, web-research tool, cross-task memory.

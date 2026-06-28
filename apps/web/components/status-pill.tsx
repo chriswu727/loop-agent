@@ -37,10 +37,10 @@ export function StatusPill({ status }: { status: TaskStatus }) {
 }
 
 const REASON_LABELS: Record<string, string> = {
-  target_reached: 'Hit the target score',
-  max_iterations: 'Reached the iteration cap',
+  goal_achieved: 'Goal achieved (verified)',
+  max_steps: 'Reached the step limit',
   budget_exhausted: 'Spent the token budget',
-  plateau: 'Stopped improving',
+  stuck: 'Got stuck',
   cancelled: 'Cancelled by you',
   error: 'Errored out',
 };

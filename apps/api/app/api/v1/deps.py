@@ -16,7 +16,7 @@ from app.cache.redis import Cache
 from app.core.security import decode_access_token
 from app.db.session import get_session
 from app.exceptions import RateLimitedError, UnauthorizedError
-from app.repositories.iteration import IterationRepository
+from app.repositories.step import StepRepository
 from app.repositories.task import TaskRepository
 from app.services.task import TaskService
 
@@ -31,7 +31,7 @@ CacheDep = Annotated[Cache, Depends(get_cache)]
 
 
 def get_task_service(session: SessionDep) -> TaskService:
-    return TaskService(TaskRepository(session), IterationRepository(session))
+    return TaskService(TaskRepository(session), StepRepository(session))
 
 
 TaskServiceDep = Annotated[TaskService, Depends(get_task_service)]
