@@ -1,0 +1,20 @@
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: worker
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: worker
+  minReplicas: 1
+  maxReplicas: 10
+  metrics:
+    # CPU works out of the box. Queue-depth scaling is better for workers but
+    # needs a custom-metrics source — see docs/guides/scaling.md.
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70

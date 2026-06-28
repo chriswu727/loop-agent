@@ -1,0 +1,6 @@
+# Default owners for everything. Replace with your team handles.
+*       @your-org/maintainers
+
+/infra/ @your-org/platform
+/apps/api/ @your-org/backend
+/apps/web/ @your-org/frontend

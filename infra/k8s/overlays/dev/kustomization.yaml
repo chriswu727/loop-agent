@@ -1,0 +1,28 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: scalable-starter-dev
+resources:
+  - ../../base
+
+# Initial replica counts (the HPA takes over once metrics are available).
+replicas:
+  - name: api
+    count: 1
+  - name: web
+    count: 1
+  - name: worker
+    count: 1
+
+images:
+  - name: app-api
+    newName: ghcr.io/your-org/app-api
+    newTag: dev
+  - name: app-web
+    newName: ghcr.io/your-org/app-web
+    newTag: dev
+
+patches:
+  - path: patch-config.yaml
+  - path: patch-hpa-api.yaml
+  - path: patch-hpa-web.yaml

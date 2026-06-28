@@ -1,0 +1,49 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  web:
+    name: web (lint · typecheck · build)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      # Switch to `--frozen-lockfile` once you commit pnpm-lock.yaml.
+      - run: pnpm install --no-frozen-lockfile
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - run: pnpm build
+        env:
+          NEXT_PUBLIC_API_URL: http://localhost:8000
+
+  api:
+    name: api (ruff · mypy · pytest)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/api
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+      - run: pip install -e ".[dev]"
+      - run: ruff check .
+      - run: ruff format --check .
+      - run: mypy app
+      - run: pytest --maxfail=1

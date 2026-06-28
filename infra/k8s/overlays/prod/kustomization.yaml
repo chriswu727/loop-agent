@@ -1,0 +1,29 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: scalable-starter-prod
+resources:
+  - ../../base
+
+# Production starts higher and scales further. Pin images to an immutable digest
+# in real deploys (newTag is shown here for readability).
+replicas:
+  - name: api
+    count: 3
+  - name: web
+    count: 3
+  - name: worker
+    count: 2
+
+images:
+  - name: app-api
+    newName: ghcr.io/your-org/app-api
+    newTag: "1.0.0"
+  - name: app-web
+    newName: ghcr.io/your-org/app-web
+    newTag: "1.0.0"
+
+patches:
+  - path: patch-config.yaml
+  - path: patch-hpa-api.yaml
+  - path: patch-resources-api.yaml

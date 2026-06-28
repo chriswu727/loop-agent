@@ -1,0 +1,54 @@
+# ---------- Node / JS ----------
+node_modules/
+.pnpm-store/
+.next/
+out/
+dist/
+build/
+*.tsbuildinfo
+.turbo/
+coverage/
+
+# ---------- Python ----------
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+htmlcov/
+.coverage
+.coverage.*
+
+# ---------- Env / secrets ----------
+.env
+.env.*
+!.env.example
+*.local
+
+# ---------- Build artifacts / logs ----------
+*.log
+logs/
+tmp/
+
+# ---------- Local SQLite (zero-infra dev) + scratch artifacts ----------
+*.db
+*.db-journal
+/loop_home.png
+/loop_detail.png
+
+# ---------- OS / editor ----------
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.shared.json
+
+# ---------- Infra ----------
+*.tfstate
+*.tfstate.*
+.terraform/
+kubeconfig

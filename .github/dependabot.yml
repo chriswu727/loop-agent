@@ -1,0 +1,17 @@
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: "/"
+    schedule: { interval: weekly }
+    groups:
+      js-dependencies:
+        patterns: ["*"]
+  - package-ecosystem: pip
+    directory: "/apps/api"
+    schedule: { interval: weekly }
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule: { interval: weekly }
+  - package-ecosystem: docker
+    directory: "/infra/docker"
+    schedule: { interval: weekly }

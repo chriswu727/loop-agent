@@ -1,0 +1,12 @@
+**/node_modules
+**/.next
+**/.turbo
+**/dist
+**/__pycache__
+**/.venv
+**/.pytest_cache
+**/.ruff_cache
+**/.mypy_cache
+**/coverage
+.git
+*.md

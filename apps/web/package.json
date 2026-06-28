@@ -1,0 +1,35 @@
+{
+  "name": "web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "typecheck": "tsc --noEmit",
+    "test": "echo \"(no web unit tests yet)\" && exit 0",
+    "clean": "rm -rf .next"
+  },
+  "dependencies": {
+    "@repo/api-contract": "workspace:*",
+    "next": "^16.2.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "zod": "^3.24.0"
+  },
+  "devDependencies": {
+    "@eslint/eslintrc": "^3.2.0",
+    "@repo/eslint-config": "workspace:*",
+    "@repo/tsconfig": "workspace:*",
+    "@tailwindcss/postcss": "^4.0.0",
+    "@types/node": "^22.10.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "eslint": "^9.17.0",
+    "eslint-config-next": "^16.2.0",
+    "tailwindcss": "^4.0.0",
+    "typescript": "^5.6.0"
+  }
+}

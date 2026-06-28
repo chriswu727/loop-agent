@@ -1,0 +1,17 @@
+# Non-secret configuration. Secrets (passwords, keys, DSNs) live in the Secret.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: app-config
+data:
+  ENVIRONMENT: "production"
+  LOG_LEVEL: "info"
+  LOG_FORMAT: "json"
+  API_PORT: "8000"
+  CORS_ORIGINS: "https://app.example.com"
+  REDIS_URL: "redis://redis:6379/0"
+  PROMETHEUS_ENABLED: "true"
+  # Frontend
+  NEXT_PUBLIC_API_URL: "https://app.example.com"
+  NEXT_PUBLIC_APP_NAME: "Scalable Starter"
+  API_INTERNAL_URL: "http://api:8000"

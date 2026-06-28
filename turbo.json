@@ -1,0 +1,30 @@
+{
+  "$schema": "https://turborepo.com/schema.json",
+  "ui": "tui",
+  "globalDependencies": [".env", ".env.example"],
+  "globalEnv": ["NODE_ENV", "ENVIRONMENT"],
+  "tasks": {
+    "build": {
+      "dependsOn": ["^build"],
+      "outputs": [".next/**", "!.next/cache/**", "dist/**"],
+      "env": ["NEXT_PUBLIC_*", "API_INTERNAL_URL"]
+    },
+    "dev": {
+      "cache": false,
+      "persistent": true
+    },
+    "lint": {
+      "dependsOn": ["^build"]
+    },
+    "typecheck": {
+      "dependsOn": ["^build"]
+    },
+    "test": {
+      "dependsOn": ["^build"],
+      "outputs": ["coverage/**"]
+    },
+    "clean": {
+      "cache": false
+    }
+  }
+}

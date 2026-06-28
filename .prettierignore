@@ -1,0 +1,6 @@
+**/.next
+**/dist
+**/node_modules
+**/coverage
+apps/api
+pnpm-lock.yaml

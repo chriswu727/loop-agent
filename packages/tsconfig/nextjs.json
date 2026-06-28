@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "display": "Next.js",
+  "extends": "./base.json",
+  "compilerOptions": {
+    "lib": ["DOM", "DOM.Iterable", "ESNext"],
+    "jsx": "preserve",
+    "noEmit": true,
+    "allowJs": true,
+    "incremental": true,
+    "module": "ESNext",
+    "moduleResolution": "Bundler"
+  }
+}

@@ -1,0 +1,8 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: app-config
+data:
+  ENVIRONMENT: "staging"
+  CORS_ORIGINS: "https://app.staging.example.com"
+  NEXT_PUBLIC_API_URL: "https://app.staging.example.com"

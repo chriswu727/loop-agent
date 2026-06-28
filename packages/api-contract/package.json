@@ -1,0 +1,19 @@
+{
+  "name": "@repo/api-contract",
+  "version": "0.0.0",
+  "private": true,
+  "types": "./src/index.ts",
+  "main": "./src/index.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "scripts": {
+    "generate": "openapi-typescript http://localhost:8000/openapi.json -o ./src/generated.ts"
+  },
+  "devDependencies": {
+    "openapi-typescript": "^7.4.0"
+  }
+}

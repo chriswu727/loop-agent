@@ -1,0 +1,71 @@
+import type { LimitDefaults, Task } from '@repo/api-contract';
+import { PublishForm } from '@/components/publish-form';
+import { TaskCard } from '@/components/task-card';
+import { apiBaseUrl, env } from '@/lib/env';
+
+// Server component: load the task list + limit defaults at render time. The API
+// may be down on a fresh checkout, so every fetch degrades to an empty state
+// rather than throwing.
+async function getData(): Promise<{ tasks: Task[]; defaults: LimitDefaults | null; up: boolean }> {
+  const base = apiBaseUrl();
+  try {
+    const [tasksRes, limitsRes] = await Promise.all([
+      fetch(`${base}/api/v1/tasks?limit=50`, {
+        cache: 'no-store',
+        signal: AbortSignal.timeout(2500),
+      }),
+      fetch(`${base}/api/v1/tasks/limits`, {
+        cache: 'no-store',
+        signal: AbortSignal.timeout(2500),
+      }),
+    ]);
+    const tasks = tasksRes.ok ? ((await tasksRes.json()).items as Task[]) : [];
+    const defaults = limitsRes.ok ? ((await limitsRes.json()) as LimitDefaults) : null;
+    return { tasks, defaults, up: tasksRes.ok };
+  } catch {
+    return { tasks: [], defaults: null, up: false };
+  }
+}
+
+export default async function Home() {
+  const { tasks, defaults, up } = await getData();
+
+  return (
+    <main className="mx-auto max-w-3xl px-6 py-14">
+      <header className="mb-8">
+        <h1 className="text-2xl font-bold tracking-tight">{env.NEXT_PUBLIC_APP_NAME}</h1>
+        <p className="mt-1 text-sm opacity-60">
+          Publish a task. The agent understands it, drafts it, critiques its own work, and improves
+          it pass by pass — stopping the moment it hits a limit you set.
+        </p>
+      </header>
+
+      <PublishForm defaults={defaults} />
+
+      <section className="mt-10">
+        <h2 className="mb-3 text-sm font-semibold opacity-70">
+          Your tasks {tasks.length > 0 && <span className="opacity-50">({tasks.length})</span>}
+        </h2>
+
+        {!up && (
+          <p className="rounded-lg border border-amber-500/30 bg-amber-500/5 px-4 py-3 text-sm text-amber-700 dark:text-amber-400">
+            The API isn’t reachable yet. Start it with <code className="font-mono">make up</code>{' '}
+            (or <code className="font-mono">make dev</code>), then refresh.
+          </p>
+        )}
+
+        {up && tasks.length === 0 && (
+          <p className="rounded-lg border border-black/10 px-4 py-6 text-center text-sm opacity-50 dark:border-white/10">
+            No tasks yet. Publish one above to watch the loop run.
+          </p>
+        )}
+
+        <div className="grid gap-3">
+          {tasks.map((task) => (
+            <TaskCard key={task.id} task={task} />
+          ))}
+        </div>
+      </section>
+    </main>
+  );
+}

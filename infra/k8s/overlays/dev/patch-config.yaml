@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: app-config
+data:
+  ENVIRONMENT: "development"
+  LOG_FORMAT: "console"
+  LOG_LEVEL: "debug"
+  CORS_ORIGINS: "http://localhost:3000"
+  NEXT_PUBLIC_API_URL: "https://app.dev.example.com"

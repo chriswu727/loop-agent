@@ -1,0 +1,84 @@
+[project]
+name = "app"
+version = "0.1.0"
+description = "Scalable Starter API — FastAPI backend skeleton (no business logic)."
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "MIT" }
+
+dependencies = [
+    "fastapi>=0.136,<1.0",
+    "uvicorn[standard]>=0.34",
+    "pydantic>=2.10,<3.0",
+    "pydantic-settings>=2.6",
+    "sqlalchemy[asyncio]>=2.0.36,<2.1",
+    "asyncpg>=0.30",
+    "alembic>=1.14",
+    "redis>=5.2",
+    "httpx>=0.28",
+    "structlog>=24.4",
+    "pyjwt>=2.10",
+    "prometheus-client>=0.21",
+    # --- Observability (OpenTelemetry) ---
+    "opentelemetry-sdk>=1.29",
+    "opentelemetry-exporter-otlp>=1.29",
+    "opentelemetry-instrumentation-fastapi>=0.50b0",
+    "opentelemetry-instrumentation-sqlalchemy>=0.50b0",
+    "opentelemetry-instrumentation-redis>=0.50b0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+    "httpx>=0.28",
+    "aiosqlite>=0.20",
+    "ruff>=0.8",
+    "mypy>=1.13",
+]
+
+[project.scripts]
+worker = "app.workers.worker:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["app"]
+
+# ----------------------------------------------------------------------------
+# Tooling config (single source of truth)
+# ----------------------------------------------------------------------------
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+src = ["app", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "UP", "B", "C4", "SIM", "RUF", "ASYNC"]
+ignore = [
+    "B008",  # FastAPI uses function calls in argument defaults (Depends/Query)
+    "UP046", # keep Generic[T] form for broad runtime compatibility (vs PEP 695)
+    "UP047",
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["app"]
+
+[tool.mypy]
+python_version = "3.12"
+plugins = ["pydantic.mypy"]
+strict = true
+warn_unused_ignores = true
+disallow_untyped_defs = true
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.coverage.run]
+source = ["app"]
+branch = true
