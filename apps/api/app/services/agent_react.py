@@ -38,6 +38,7 @@ from app.services.receipt import build_receipt
 from app.services.verification import checks_summary, run_checks
 from app.tools import VALID_TOOLS, CapabilityEnvelope, ToolExecutor, ToolStatus, Workspace
 from app.tools.guards import make_egress_guard
+from app.tools.policy import Verdict, evaluate_command
 
 log = get_logger("agent")
 
@@ -131,6 +132,21 @@ class AgentReactService:
             task.tokens_used += tokens
             await self._commit()
 
+        # Resuming from an approved action: run it now as this step, then continue.
+        if task.pending_action is not None:
+            action = dict(task.pending_action)
+            task.pending_action = None
+            result = await executor.execute(str(action["tool"]), dict(action.get("args", {})))
+            await self._record_step(
+                task, start, "(approved by the user)", str(action["tool"]),
+                dict(action.get("args", {})), result.observation, result.status, 0,
+            )
+            start += 1
+            if start > task.max_steps:
+                await self._finish(task, StopReason.MAX_STEPS)
+                return
+
+        approval_required = task.require_approval or settings.agent_approval_mode == "manual"
         consecutive_failures = 0
         finish_retries = 0
         # Repeated writes to one file without running it = no progress; nudge on
@@ -202,6 +218,13 @@ class AgentReactService:
                     "run_command, call finish with checks, or take a different action.",
                     ToolStatus.BLOCKED,
                 )
+            elif tool == "run_command" and approval_required:
+                verdict, reason = evaluate_command(str(args.get("command", "")))
+                if verdict is Verdict.NEEDS_APPROVAL:
+                    await self._pause_for_approval(task, args, thought, number, step_tokens, reason)
+                    return  # resumes when the user approves or denies
+                tool_result = await executor.execute(tool, args)
+                observation, status = tool_result.observation, tool_result.status
             else:
                 tool_result = await executor.execute(tool, args)
                 observation, status = tool_result.observation, tool_result.status
@@ -239,6 +262,25 @@ class AgentReactService:
         task.status = TaskStatus.AWAITING_INPUT.value
         await self._commit()
         log.info("agent.awaiting_input", task_id=str(task.id), number=number)
+
+    async def _pause_for_approval(
+        self, task: TaskModel, args: dict[str, Any], thought: str,
+        number: int, tokens: int, reason: str,
+    ) -> None:
+        """Pause before running a non-allowlisted command until the user approves."""
+        command = str(args.get("command", "")).strip()
+        await self._record_step(
+            task, number, thought, "run_command", args,
+            f"Paused — needs your approval to run this command ({reason}).",
+            ToolStatus.BLOCKED, tokens,
+        )
+        task.pending_action = {"tool": "run_command", "args": args}
+        task.pending_question = (
+            f"Approve running this command? Answer yes or no.\n  {command}\n  (reason: {reason})"
+        )
+        task.status = TaskStatus.AWAITING_INPUT.value
+        await self._commit()
+        log.info("agent.awaiting_approval", task_id=str(task.id), number=number)
 
     # --- LLM phases -------------------------------------------------------
 

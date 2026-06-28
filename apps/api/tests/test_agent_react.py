@@ -51,12 +51,15 @@ class ScriptedLLM:
         return LLMResult(json.dumps(decision), "fake", self.plan_tokens)
 
 
-async def _make_task(session: AsyncSession, *, max_steps: int, token_budget: int):
+async def _make_task(
+    session: AsyncSession, *, max_steps: int, token_budget: int, require_approval: bool = False
+):
     repo = TaskRepository(session)
     task = await repo.create(
         goal="do the thing",
         status=TaskStatus.PENDING.value,
         rubric=[],
+        require_approval=require_approval,
         max_steps=max_steps,
         token_budget=token_budget,
         summary=None,
@@ -271,6 +274,68 @@ async def test_failing_check_blocks_acceptance(session: AsyncSession) -> None:
     assert task.stop_reason == StopReason.STUCK.value
     assert task.verified_by is None
     assert task.receipt_hash is None
+
+
+async def test_approval_off_runs_non_allowlisted_command(session: AsyncSession) -> None:
+    plans = [
+        {"thought": "run", "tool": "run_command", "args": {"command": "whoami"}},
+        {"thought": "done", "tool": "finish", "args": {"summary": "ran it"}},
+    ]
+    task = await _make_task(session, max_steps=8, token_budget=1_000_000)  # require_approval off
+    await _service(session, ScriptedLLM(plans, verify={"score": 90, "met": True})).run(task.id)
+
+    await session.refresh(task)
+    assert task.stop_reason == StopReason.GOAL_ACHIEVED.value  # ran without pausing
+
+
+async def test_approval_pauses_then_runs_on_approve(session: AsyncSession) -> None:
+    from app.repositories.step import StepRepository as _Steps
+    from app.services.task import TaskService
+
+    plans = [
+        {"thought": "run", "tool": "run_command", "args": {"command": "whoami"}},
+        {"thought": "done", "tool": "finish", "args": {"summary": "ran it"}},
+    ]
+    task = await _make_task(session, max_steps=8, token_budget=1_000_000, require_approval=True)
+    svc = _service(session, ScriptedLLM(plans, verify={"score": 90, "met": True}))
+
+    await svc.run(task.id)
+    await session.refresh(task)
+    assert task.status == TaskStatus.AWAITING_INPUT.value
+    assert task.pending_action is not None
+    assert "whoami" in (task.pending_question or "")
+
+    await TaskService(TaskRepository(session), _Steps(session)).respond(task.id, "yes")
+    await session.refresh(task)
+    assert task.pending_action is not None  # approved -> kept for the resumed run
+
+    await svc.run(task.id)
+    await session.refresh(task)
+    assert task.stop_reason == StopReason.GOAL_ACHIEVED.value
+    steps = await _Steps(session).list_for_task(task.id)
+    assert any(s.tool == "run_command" and s.status == "ok" for s in steps)  # it ran
+
+
+async def test_approval_denied_skips_the_command(session: AsyncSession) -> None:
+    from app.repositories.step import StepRepository as _Steps
+    from app.services.task import TaskService
+
+    plans = [
+        {"thought": "run", "tool": "run_command", "args": {"command": "whoami"}},
+        {"thought": "other", "tool": "write_file", "args": {"path": "a.txt", "content": "x"}},
+        {"thought": "done", "tool": "finish", "args": {"summary": "did other work"}},
+    ]
+    task = await _make_task(session, max_steps=8, token_budget=1_000_000, require_approval=True)
+    svc = _service(session, ScriptedLLM(plans, verify={"score": 90, "met": True}))
+
+    await svc.run(task.id)  # pauses
+    await TaskService(TaskRepository(session), _Steps(session)).respond(task.id, "no")
+    await session.refresh(task)
+    assert task.pending_action is None  # denied -> dropped
+
+    await svc.run(task.id)  # resume; command skipped, agent does other work
+    steps = await _Steps(session).list_for_task(task.id)
+    assert not any(s.tool == "run_command" and s.status == "ok" for s in steps)  # never ran
 
 
 async def test_dangerous_command_is_blocked_not_run(session: AsyncSession) -> None:

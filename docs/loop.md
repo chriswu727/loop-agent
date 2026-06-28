@@ -66,6 +66,20 @@ signed-skill instrumentation will plug into. Default envelope = full tool set, s
 behaviour is unchanged unless a task opts into a narrower one. The planner is also
 told its allowed set, so a restricted agent doesn't waste steps on blocked tools.
 
+**Typed approval gate (differentiator #6).** A task published with
+`require_approval` pauses before running any command that isn't on the safe
+allowlist: the run records an approval-request step (status `blocked`), stores the
+pending action on the task, sets `awaiting_input`, and returns — reusing the same
+resumable-pause machinery as `ask_user`. `POST /respond` with yes/no decides:
+approve and the resumed run executes the stored action as its next step
+(recorded "approved by the user"); deny and the action is dropped and the agent
+adapts. Every non-allowlisted command gates independently, so the agent stays
+autonomous on safe steps and asks only when it wants to escalate. Dangerous
+commands are still hard-blocked outright (the gate is for grey-area commands, not
+a way to approve `rm -rf /`). This is "autonomy requires a human gate for
+privilege escalation" — and unlike OpenClaw's unattended triggers, the gate is
+restart-safe because the pause survives a process restart.
+
 **Network egress is default-deny (differentiator #3).** A task cannot reach the
 network through the shell unless it declares `allow_egress`. A before-tool guard
 (`tools/guards.py`) blocks commands that match network patterns

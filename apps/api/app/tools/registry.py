@@ -105,16 +105,12 @@ class ToolExecutor:
             return ToolResult(str(exc), status)
 
     async def _run(self, command: str) -> ToolResult:
+        # Dangerous commands are always hard-blocked here. NEEDS_APPROVAL gating
+        # is handled by the loop (which can pause for a human), not the executor.
         verdict, reason = evaluate_command(command)
         if verdict is Verdict.DENY:
             return ToolResult(f"Blocked by safety policy ({reason}). Try a safer approach.",
                               ToolStatus.BLOCKED)
-        if verdict is Verdict.NEEDS_APPROVAL and self.approval_mode == "manual":
-            return ToolResult(
-                f"Command needs approval ({reason}) and approval mode is manual. "
-                "Use an allowlisted command instead.",
-                ToolStatus.BLOCKED,
-            )
         return await run_command(
             command,
             self.workspace.root,

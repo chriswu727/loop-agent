@@ -22,6 +22,17 @@ from app.services.ledger import genesis_hash, verify_chain
 from app.tools.base import ToolError
 from app.tools.workspace import Workspace
 
+_APPROVAL_WORDS = frozenset(
+    {"yes", "y", "approve", "approved", "ok", "okay", "allow", "sure", "proceed",
+     "是", "好", "可以", "批准", "同意", "允许"}
+)
+
+
+def _is_approval(answer: str) -> bool:
+    """Interpret a free-text answer to an approval prompt. Default: deny."""
+    token = answer.strip().lower().split()[0] if answer.strip() else ""
+    return token in _APPROVAL_WORDS
+
 
 class TaskService:
     def __init__(self, tasks: TaskRepository, steps: StepRepository) -> None:
@@ -46,6 +57,7 @@ class TaskService:
             rubric=[],
             allowed_tools=payload.allowed_tools,
             allow_egress=payload.allow_egress,
+            require_approval=payload.require_approval,
             max_steps=max_steps,
             token_budget=token_budget,
             summary=None,
@@ -165,17 +177,27 @@ class TaskService:
         return task
 
     async def respond(self, task_id: uuid.UUID, answer: str) -> TaskModel:
-        """Record the user's answer to an ask_user question and mark the task
-        resumable. The caller schedules the resume after the commit."""
+        """Record the user's answer (to an ask_user question, or an approval
+        decision) and mark the task resumable. The caller schedules the resume."""
         task = await self.get(task_id)
         if task.status != TaskStatus.AWAITING_INPUT.value:
             raise ConflictError(f"Task is {task.status} and is not awaiting input")
         steps = await self.steps.list_for_task(task_id)
-        ask_steps = [s for s in steps if s.tool == "ask_user"]
-        if ask_steps:
-            ask_steps[-1].observation = (
+
+        if task.pending_action is not None:
+            # Approval gate: yes/no decides whether the pending action runs.
+            approved = _is_approval(answer)
+            if steps:
+                steps[-1].observation += (
+                    f"\nUser {'approved' if approved else 'denied'}: {answer}"
+                )
+            if not approved:
+                task.pending_action = None  # denied -> the action is dropped
+        elif steps:
+            steps[-1].observation = (
                 f"You asked: {task.pending_question}\nUser answered: {answer}"
             )
+
         task.pending_question = None
         task.status = TaskStatus.PENDING.value  # pending == ready to (re)run
         # flush+refresh pulls the server-side onupdate ``updated_at`` before it is

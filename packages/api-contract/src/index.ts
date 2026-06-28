@@ -35,6 +35,7 @@ export interface Task {
   pending_question: string | null;
   allowed_tools: string[] | null;
   allow_egress: boolean;
+  require_approval: boolean;
   limits: Limits;
   summary: string | null;
   verification_score: number;

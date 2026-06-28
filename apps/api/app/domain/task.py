@@ -46,7 +46,8 @@ class Task:
     status: TaskStatus
     limits: Limits
     rubric: list[str] = field(default_factory=list)
-    pending_question: str | None = None  # set while paused on ask_user
+    require_approval: bool = False  # pause non-allowlisted commands for approval
+    pending_question: str | None = None  # set while paused on ask_user / approval
     summary: str | None = None  # the agent's final account of what it did
     verification_score: int = 0  # the verifier's grade of the finished work (0-100)
     verified_by: str | None = None  # "execution" (checks re-ran) | "judgment"

@@ -27,6 +27,10 @@ class TaskModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     allowed_tools: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
     # Network egress is default-deny; True lets the task reach the network.
     allow_egress: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    # When True, non-allowlisted commands pause for the user to approve.
+    require_approval: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    # The action awaiting approval while paused: {"tool": ..., "args": {...}}.
+    pending_action: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
     # Limits — the hard guardrails for this task.
     max_steps: Mapped[int] = mapped_column(Integer, nullable=False)
