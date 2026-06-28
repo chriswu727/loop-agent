@@ -21,7 +21,7 @@ dependencies = [
     "prometheus-client>=0.21",
     # --- Observability (OpenTelemetry) ---
     "opentelemetry-sdk>=1.29",
-    "opentelemetry-exporter-otlp>=1.29",
+    "opentelemetry-exporter-otlp>=1.43.0",
     "opentelemetry-instrumentation-fastapi>=0.50b0",
     "opentelemetry-instrumentation-sqlalchemy>=0.50b0",
     "opentelemetry-instrumentation-redis>=0.50b0",
