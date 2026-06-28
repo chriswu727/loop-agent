@@ -478,9 +478,11 @@ class AgentReactService:
     ) -> str:
         arg_preview = ", ".join(f"{k}={str(v)[:60]!r}" for k, v in args.items())
         obs = observation if len(observation) <= 600 else observation[:600] + " …[truncated]"
+        # Observations are untrusted output, framed as [DATA] so the planner is
+        # told not to obey any instructions a tool result might contain.
         return (
             f"Step {number} [{tool}] ({status.value}): {thought}\n"
-            f"  args: {arg_preview}\n  -> {obs}"
+            f"  args: {arg_preview}\n  -> [DATA] {obs}"
         )
 
     async def _rebuild_history(self, task_id: uuid.UUID) -> None:
