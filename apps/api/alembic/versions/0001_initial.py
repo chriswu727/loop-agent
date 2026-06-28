@@ -32,6 +32,7 @@ def upgrade() -> None:
             "require_approval", sa.Boolean(), nullable=False, server_default=sa.text("false")
         ),
         sa.Column("pending_action", sa.JSON(), nullable=True),
+        sa.Column("skill", sa.String(length=100), nullable=True),
         sa.Column("max_steps", sa.Integer(), nullable=False),
         sa.Column("token_budget", sa.Integer(), nullable=False),
         sa.Column("summary", sa.Text(), nullable=True),

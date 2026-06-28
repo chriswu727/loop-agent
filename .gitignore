@@ -47,6 +47,10 @@ apps/api/workspaces/
 agent_memory/
 apps/api/agent_memory/
 
+# ---------- Agent skills (dev bundles) + signing keys ----------
+apps/api/skills/
+*.pem
+
 # ---------- OS / editor ----------
 .DS_Store
 Thumbs.db

@@ -35,6 +35,8 @@ class TaskCreate(BaseModel):
     allow_egress: bool = False
     # When true, non-allowlisted commands pause for the user to approve before running.
     require_approval: bool = False
+    # Run under this signed skill (by name). Refused if it doesn't verify.
+    skill: str | None = None
 
 
 class RespondIn(BaseModel):
@@ -59,6 +61,7 @@ class TaskRead(BaseModel):
     allowed_tools: list[str] | None
     allow_egress: bool
     require_approval: bool
+    skill: str | None
     limits: LimitsRead
     summary: str | None
     verification_score: int
@@ -86,6 +89,7 @@ class TaskRead(BaseModel):
             allowed_tools=m.allowed_tools,  # type: ignore[attr-defined]
             allow_egress=m.allow_egress,  # type: ignore[attr-defined]
             require_approval=m.require_approval,  # type: ignore[attr-defined]
+            skill=m.skill,  # type: ignore[attr-defined]
             limits=LimitsRead(
                 max_steps=m.max_steps,  # type: ignore[attr-defined]
                 token_budget=m.token_budget,  # type: ignore[attr-defined]

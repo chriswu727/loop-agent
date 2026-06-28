@@ -36,6 +36,7 @@ export interface Task {
   allowed_tools: string[] | null;
   allow_egress: boolean;
   require_approval: boolean;
+  skill: string | null;
   limits: Limits;
   summary: string | null;
   verification_score: number;
@@ -70,6 +71,15 @@ export interface LedgerStatus {
   head: string;
   length: number;
   broken_at: number | null;
+}
+
+export interface SkillInfo {
+  name: string;
+  description: string;
+  verified: boolean;
+  reason: string;
+  allowed_tools: string[] | null;
+  allow_egress: boolean;
 }
 
 export interface LimitDefaults {

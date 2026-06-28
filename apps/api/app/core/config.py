@@ -90,6 +90,10 @@ class Settings(BaseSettings):
     agent_workspaces_root: str = "./workspaces"
     # Cross-task memory store (MEMORY.md + topics/), shared across tasks.
     agent_memory_root: str = "./agent_memory"
+    # Signed skills: a folder of skill bundles, and the ed25519 trust public key
+    # (PEM) a skill's signature must verify against to be loadable.
+    agent_skills_root: str = "./skills"
+    agent_skill_trust_public_key: str | None = None
     agent_command_timeout_seconds: int = 60
     agent_command_output_limit: int = 4_000  # chars of command output kept
     # auto  = run allowlisted/unknown commands, hard-block dangerous ones

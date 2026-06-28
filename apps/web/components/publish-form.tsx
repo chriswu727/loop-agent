@@ -1,6 +1,6 @@
 'use client';
 
-import type { LimitDefaults } from '@repo/api-contract';
+import type { LimitDefaults, SkillInfo } from '@repo/api-contract';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { ApiError, tasksApi } from '@/lib/api-client';
@@ -18,7 +18,13 @@ const EXAMPLES = [
   'Attach a .docx, then: fix typos and add a one-paragraph summary at the top.',
 ];
 
-export function PublishForm({ defaults }: { defaults: LimitDefaults | null }) {
+export function PublishForm({
+  defaults,
+  skills = [],
+}: {
+  defaults: LimitDefaults | null;
+  skills?: SkillInfo[];
+}) {
   const d = defaults ?? FALLBACK;
   const router = useRouter();
 
@@ -29,6 +35,7 @@ export function PublishForm({ defaults }: { defaults: LimitDefaults | null }) {
   const [noShell, setNoShell] = useState(false);
   const [allowNetwork, setAllowNetwork] = useState(false);
   const [requireApproval, setRequireApproval] = useState(false);
+  const [skill, setSkill] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -47,6 +54,7 @@ export function PublishForm({ defaults }: { defaults: LimitDefaults | null }) {
         allowed_tools,
         allow_egress: allowNetwork,
         require_approval: requireApproval,
+        skill: skill || null,
       };
       if (files.length > 0) {
         // Draft first so files land in the workspace, then start the agent.
@@ -136,6 +144,20 @@ export function PublishForm({ defaults }: { defaults: LimitDefaults | null }) {
           />
           Require approval
         </label>
+        {skills.length > 0 && (
+          <select
+            value={skill}
+            onChange={(e) => setSkill(e.target.value)}
+            className="rounded-lg border border-black/10 bg-transparent px-2 py-1 dark:border-white/15"
+          >
+            <option value="">No skill</option>
+            {skills.map((s) => (
+              <option key={s.name} value={s.name}>
+                Skill: {s.name}
+              </option>
+            ))}
+          </select>
+        )}
       </div>
 
       <div className="mt-5 grid gap-5 sm:grid-cols-2">

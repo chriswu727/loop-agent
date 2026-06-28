@@ -174,6 +174,25 @@ works; on that path the engine drops pool args, the cache falls back to
 in-memory, and the schema is created on startup (no Alembic). Postgres remains
 the production default and uses migrations.
 
+## Signed skills (differentiator #2, the killer)
+
+A skill is a folder (`services/skills.py`) with `skill.json` (a manifest: agent
+instructions + a capability envelope — allowed tools, egress) and
+`skill.json.sig` (a detached ed25519 signature over the manifest). On load, Loop
+verifies the signature against a configured trust public key; anything unsigned,
+tampered, or signed by the wrong key is refused. A task can run under a skill
+(`skill` field): its instructions are injected and its envelope is intersected
+with the task's (narrower wins). A task referencing an unverifiable skill fails
+outright — provenance is not optional. `GET /skills` lists each skill's verified
+status; the publish form offers only verified ones.
+
+This is the structural answer to OpenClaw's extension model (thousands of unsigned
+prose skills injected into the prompt, where Cisco found infostealers). Verified
+live: a signed `filer` skill enforced its no-shell envelope and its "add a header
+comment" instruction; tampering the manifest (to escalate to all-tools + egress)
+broke the signature and the task was refused before running. v1 is BYO trust root
+(you sign your own skills); a hosted registry is a later, opt-in concern.
+
 ## Cross-task memory
 
 The agent carries knowledge between tasks via a simple file-backed store

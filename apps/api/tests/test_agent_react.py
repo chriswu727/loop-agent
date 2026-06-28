@@ -52,7 +52,8 @@ class ScriptedLLM:
 
 
 async def _make_task(
-    session: AsyncSession, *, max_steps: int, token_budget: int, require_approval: bool = False
+    session: AsyncSession, *, max_steps: int, token_budget: int,
+    require_approval: bool = False, skill: str | None = None,
 ):
     repo = TaskRepository(session)
     task = await repo.create(
@@ -60,6 +61,7 @@ async def _make_task(
         status=TaskStatus.PENDING.value,
         rubric=[],
         require_approval=require_approval,
+        skill=skill,
         max_steps=max_steps,
         token_budget=token_budget,
         summary=None,
@@ -275,6 +277,56 @@ async def test_failing_check_blocks_acceptance(session: AsyncSession) -> None:
     assert task.stop_reason == StopReason.STUCK.value
     assert task.verified_by is None
     assert task.receipt_hash is None
+
+
+def _install_signed_skill(tmp_path: Path, monkeypatch, *, name: str, manifest: dict) -> None:
+    import json as _json
+
+    from app.core.config import settings as _settings
+    from app.services.skills import generate_keypair, sign_skill
+
+    priv, pub = generate_keypair()
+    root = tmp_path / "skills"
+    d = root / name
+    d.mkdir(parents=True)
+    (d / "skill.json").write_text(_json.dumps(manifest))
+    sign_skill(d, priv)
+    monkeypatch.setattr(_settings, "agent_skills_root", str(root))
+    monkeypatch.setattr(_settings, "agent_skill_trust_public_key", pub)
+
+
+async def test_verified_skill_applies_its_envelope(
+    session: AsyncSession, tmp_path: Path, monkeypatch
+) -> None:
+    # A skill that only permits write_file -> run_command is blocked by the envelope.
+    _install_signed_skill(tmp_path, monkeypatch, name="filer", manifest={
+        "name": "filer", "instructions": "Only write files.",
+        "allowed_tools": ["write_file", "read_file"], "allow_egress": False,
+    })
+    plans = [{"thought": "run", "tool": "run_command", "args": {"command": "echo hi"}}]
+    task = await _make_task(session, max_steps=8, token_budget=1_000_000, skill="filer")
+    await _service(session, ScriptedLLM(plans)).run(task.id)
+
+    steps = await StepRepository(session).list_for_task(task.id)
+    assert steps[0].tool == "run_command" and steps[0].status == "blocked"
+    assert "envelope" in steps[0].observation.lower()
+
+
+async def test_unverified_skill_is_refused(
+    session: AsyncSession, tmp_path: Path, monkeypatch
+) -> None:
+    from app.core.config import settings as _settings
+
+    monkeypatch.setattr(_settings, "agent_skills_root", str(tmp_path / "skills"))
+    monkeypatch.setattr(_settings, "agent_skill_trust_public_key", None)
+    task = await _make_task(session, max_steps=8, token_budget=1_000_000, skill="ghost")
+    llm = ScriptedLLM([{"tool": "finish", "args": {"summary": "x"}}])
+    await _service(session, llm).run(task.id)
+
+    await session.refresh(task)
+    assert task.status == TaskStatus.FAILED.value
+    assert "could not be loaded" in (task.error or "")
+    assert task.steps_used == 0  # nothing ran
 
 
 async def test_remember_persists_across_tasks(session: AsyncSession) -> None:

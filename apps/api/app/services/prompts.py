@@ -34,6 +34,7 @@ def plan_prompts(
     allowed_tools: list[str] | None = None,
     egress_allowed: bool = True,
     memory: str = "",
+    skill_instructions: str = "",
 ) -> tuple[str, str]:
     system = (
         "You are an autonomous agent that completes a task by taking ONE action at "
@@ -72,9 +73,14 @@ def plan_prompts(
             "git clone and similar are blocked. Work offline with what's available.\n\n"
         )
     memory_block = f"What you remember from past tasks:\n{memory}\n\n" if memory.strip() else ""
+    skill_block = (
+        f"Skill instructions (follow these for this task):\n{skill_instructions}\n\n"
+        if skill_instructions.strip() else ""
+    )
     user = (
         f"Goal:\n{goal}\n\n"
         f"Success criteria:\n{criteria}\n\n"
+        f"{skill_block}"
         f"{memory_block}"
         f"{restriction}"
         f"Workspace files:\n{workspace_tree}\n\n"

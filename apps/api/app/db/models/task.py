@@ -29,6 +29,8 @@ class TaskModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     allow_egress: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     # When True, non-allowlisted commands pause for the user to approve.
     require_approval: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    # Optional signed skill this task runs under (by name).
+    skill: Mapped[str | None] = mapped_column(String(100), nullable=True)
     # The action awaiting approval while paused: {"tool": ..., "args": {...}}.
     pending_action: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 

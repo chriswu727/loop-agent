@@ -17,6 +17,7 @@ dependencies = [
     "redis>=5.2",
     "httpx>=0.28",
     "python-multipart>=0.0.18",
+    "cryptography>=42",
     "structlog>=24.4",
     "pyjwt>=2.10",
     "prometheus-client>=0.21",

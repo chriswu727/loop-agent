@@ -36,8 +36,10 @@ from app.services.ledger import genesis_hash, step_hash
 from app.services.memory import MemoryStore
 from app.services.prompts import plan_prompts, understand_prompts, verify_prompts
 from app.services.receipt import build_receipt
+from app.services.skills import SkillStore
 from app.services.verification import checks_summary, run_checks
 from app.tools import VALID_TOOLS, CapabilityEnvelope, ToolExecutor, ToolStatus, Workspace
+from app.tools.envelope import EXECUTOR_TOOLS
 from app.tools.guards import make_egress_guard
 from app.tools.policy import Verdict, evaluate_command
 
@@ -63,6 +65,16 @@ def _extract_json(text: str) -> Any:
     return None
 
 
+def _combine_tools(a: list[str] | None, b: list[str] | None) -> list[str] | None:
+    """Intersect two allowed-tool sets where ``None`` means 'all'. Returns None
+    only when both are unrestricted; otherwise the (sorted) intersection."""
+    if a is None and b is None:
+        return None
+    sa = EXECUTOR_TOOLS if a is None else {t for t in a if t in EXECUTOR_TOOLS}
+    sb = EXECUTOR_TOOLS if b is None else {t for t in b if t in EXECUTOR_TOOLS}
+    return sorted(sa & sb)
+
+
 def _clamp_score(value: object) -> int:
     try:
         return max(0, min(100, int(float(value))))  # type: ignore[arg-type]
@@ -82,6 +94,7 @@ class AgentReactService:
         self._last_hash = ""  # head of the step hash chain
         self.memory = MemoryStore(Path(settings.agent_memory_root))
         self._memory_snapshot = ""  # what the agent remembers, injected into planning
+        self._skill_instructions = ""  # instructions from the task's signed skill
 
     async def run(self, task_id: uuid.UUID) -> None:
         """Run, or resume, a task. A task is resumable when it was paused on an
@@ -97,8 +110,36 @@ class AgentReactService:
 
         workspace = Workspace(Path(task.workspace_path or settings.agent_workspaces_root) /
                               ("" if task.workspace_path else str(task.id)))
+
+        # Load the signed skill (if any) BEFORE anything runs. A skill that can't
+        # be verified is refused outright — provenance is not optional.
+        skill_tools: list[str] | None = None
+        skill_egress = True
+        self._skill_instructions = ""
+        if task.skill:
+            store = SkillStore(
+                Path(settings.agent_skills_root), settings.agent_skill_trust_public_key
+            )
+            skill = store.load(task.skill)
+            if skill is None:
+                task.status = TaskStatus.FAILED.value
+                task.stop_reason = StopReason.ERROR.value
+                task.error = (
+                    f"Skill '{task.skill}' could not be loaded (unsigned, tampered, or "
+                    "not found). Refusing to run."
+                )
+                await self._commit()
+                log.warning("agent.skill_refused", task_id=str(task.id), skill=task.skill)
+                return
+            self._skill_instructions = skill.manifest.instructions
+            skill_tools = skill.manifest.allowed_tools
+            skill_egress = skill.manifest.allow_egress
+
+        # Effective envelope is the intersection of the task's and the skill's:
+        # the narrower of the two always wins.
         envelope = CapabilityEnvelope.from_tools(
-            task.allowed_tools, egress_allowed=task.allow_egress
+            _combine_tools(task.allowed_tools, skill_tools),
+            egress_allowed=task.allow_egress and skill_egress,
         )
         executor = ToolExecutor(
             workspace,
@@ -175,6 +216,7 @@ class AgentReactService:
                 executor.envelope.restricted_executor_tools(),
                 executor.envelope.egress_allowed,
                 self._memory_snapshot,
+                self._skill_instructions,
             )
             result = await self.llm.complete(system, user, max_tokens=1200, temperature=0.5)
             step_tokens = result.tokens

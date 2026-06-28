@@ -1,4 +1,4 @@
-import type { LimitDefaults, Task } from '@repo/api-contract';
+import type { LimitDefaults, SkillInfo, Task } from '@repo/api-contract';
 import { PublishForm } from '@/components/publish-form';
 import { TaskCard } from '@/components/task-card';
 import { apiBaseUrl, env } from '@/lib/env';
@@ -10,27 +10,31 @@ async function getData(): Promise<{
   tasks: Task[];
   defaults: LimitDefaults | null;
   memory: string;
+  skills: SkillInfo[];
   up: boolean;
 }> {
   const base = apiBaseUrl();
   const opts = { cache: 'no-store' as const, signal: AbortSignal.timeout(2500) };
   try {
-    const [tasksRes, limitsRes, memRes] = await Promise.all([
+    const [tasksRes, limitsRes, memRes, skillsRes] = await Promise.all([
       fetch(`${base}/api/v1/tasks?limit=50`, opts),
       fetch(`${base}/api/v1/tasks/limits`, opts),
       fetch(`${base}/api/v1/memory`, opts).catch(() => null),
+      fetch(`${base}/api/v1/skills`, opts).catch(() => null),
     ]);
     const tasks = tasksRes.ok ? ((await tasksRes.json()).items as Task[]) : [];
     const defaults = limitsRes.ok ? ((await limitsRes.json()) as LimitDefaults) : null;
     const memory = memRes?.ok ? ((await memRes.json()).content as string) : '';
-    return { tasks, defaults, memory, up: tasksRes.ok };
+    const skills = skillsRes?.ok ? ((await skillsRes.json()) as SkillInfo[]) : [];
+    return { tasks, defaults, memory, skills, up: tasksRes.ok };
   } catch {
-    return { tasks: [], defaults: null, memory: '', up: false };
+    return { tasks: [], defaults: null, memory: '', skills: [], up: false };
   }
 }
 
 export default async function Home() {
-  const { tasks, defaults, memory, up } = await getData();
+  const { tasks, defaults, memory, skills, up } = await getData();
+  const verifiedSkills = skills.filter((s) => s.verified);
 
   return (
     <main className="mx-auto max-w-3xl px-6 py-14">
@@ -43,7 +47,7 @@ export default async function Home() {
         </p>
       </header>
 
-      <PublishForm defaults={defaults} />
+      <PublishForm defaults={defaults} skills={verifiedSkills} />
 
       {memory.trim() && (
         <details className="mt-6 rounded-xl border border-black/10 px-4 py-3 dark:border-white/10">
