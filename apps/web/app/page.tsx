@@ -6,29 +6,31 @@ import { apiBaseUrl, env } from '@/lib/env';
 // Server component: load the task list + limit defaults at render time. The API
 // may be down on a fresh checkout, so every fetch degrades to an empty state
 // rather than throwing.
-async function getData(): Promise<{ tasks: Task[]; defaults: LimitDefaults | null; up: boolean }> {
+async function getData(): Promise<{
+  tasks: Task[];
+  defaults: LimitDefaults | null;
+  memory: string;
+  up: boolean;
+}> {
   const base = apiBaseUrl();
+  const opts = { cache: 'no-store' as const, signal: AbortSignal.timeout(2500) };
   try {
-    const [tasksRes, limitsRes] = await Promise.all([
-      fetch(`${base}/api/v1/tasks?limit=50`, {
-        cache: 'no-store',
-        signal: AbortSignal.timeout(2500),
-      }),
-      fetch(`${base}/api/v1/tasks/limits`, {
-        cache: 'no-store',
-        signal: AbortSignal.timeout(2500),
-      }),
+    const [tasksRes, limitsRes, memRes] = await Promise.all([
+      fetch(`${base}/api/v1/tasks?limit=50`, opts),
+      fetch(`${base}/api/v1/tasks/limits`, opts),
+      fetch(`${base}/api/v1/memory`, opts).catch(() => null),
     ]);
     const tasks = tasksRes.ok ? ((await tasksRes.json()).items as Task[]) : [];
     const defaults = limitsRes.ok ? ((await limitsRes.json()) as LimitDefaults) : null;
-    return { tasks, defaults, up: tasksRes.ok };
+    const memory = memRes?.ok ? ((await memRes.json()).content as string) : '';
+    return { tasks, defaults, memory, up: tasksRes.ok };
   } catch {
-    return { tasks: [], defaults: null, up: false };
+    return { tasks: [], defaults: null, memory: '', up: false };
   }
 }
 
 export default async function Home() {
-  const { tasks, defaults, up } = await getData();
+  const { tasks, defaults, memory, up } = await getData();
 
   return (
     <main className="mx-auto max-w-3xl px-6 py-14">
@@ -42,6 +44,17 @@ export default async function Home() {
       </header>
 
       <PublishForm defaults={defaults} />
+
+      {memory.trim() && (
+        <details className="mt-6 rounded-xl border border-black/10 px-4 py-3 dark:border-white/10">
+          <summary className="cursor-pointer text-xs font-semibold uppercase tracking-wide opacity-50">
+            What the agent remembers
+          </summary>
+          <pre className="mt-2 max-h-60 overflow-auto whitespace-pre-wrap font-mono text-xs opacity-70">
+            {memory}
+          </pre>
+        </details>
+      )}
 
       <section className="mt-10">
         <h2 className="mb-3 text-sm font-semibold opacity-70">

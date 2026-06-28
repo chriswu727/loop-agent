@@ -174,6 +174,19 @@ works; on that path the engine drops pool args, the cache falls back to
 in-memory, and the schema is created on startup (no Alembic). Postgres remains
 the production default and uses migrations.
 
+## Cross-task memory
+
+The agent carries knowledge between tasks via a simple file-backed store
+(`services/memory.py`): an evergreen `MEMORY.md` plus per-topic files under
+`topics/`. A size-bounded snapshot is injected into the planner at the start of
+every task, and the agent appends to it with the `remember` tool (handled by the
+loop, like `finish`/`ask_user`). `GET /memory` exposes it and the home page shows
+it — it's just markdown a user can read and edit. Verified live: one task
+remembered a preference, a later task with no mention of it recalled and used it.
+v1 is a single shared store (per-user/project scoping is later), and the snapshot
+is currently trusted context — formalizing it as quarantined data (differentiator
+#5) is a follow-up.
+
 ## Data model
 
 - `tasks` — goal, status, rubric (JSON), `max_steps` + `token_budget`, and live

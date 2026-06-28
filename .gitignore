@@ -43,6 +43,10 @@ tmp/
 workspaces/
 apps/api/workspaces/
 
+# ---------- Agent cross-task memory store ----------
+agent_memory/
+apps/api/agent_memory/
+
 # ---------- OS / editor ----------
 .DS_Store
 Thumbs.db

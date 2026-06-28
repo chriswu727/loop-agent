@@ -33,6 +33,7 @@ from app.domain.task import StopReason, TaskStatus
 from app.repositories.step import StepRepository
 from app.repositories.task import TaskRepository
 from app.services.ledger import genesis_hash, step_hash
+from app.services.memory import MemoryStore
 from app.services.prompts import plan_prompts, understand_prompts, verify_prompts
 from app.services.receipt import build_receipt
 from app.services.verification import checks_summary, run_checks
@@ -79,6 +80,8 @@ class AgentReactService:
         self.session = tasks.session
         self._history: list[str] = []
         self._last_hash = ""  # head of the step hash chain
+        self.memory = MemoryStore(Path(settings.agent_memory_root))
+        self._memory_snapshot = ""  # what the agent remembers, injected into planning
 
     async def run(self, task_id: uuid.UUID) -> None:
         """Run, or resume, a task. A task is resumable when it was paused on an
@@ -110,6 +113,7 @@ class AgentReactService:
         # Rebuild the working memory from whatever has already happened so a
         # resumed run sees its own past actions (and the user's answer).
         await self._rebuild_history(task.id)
+        self._memory_snapshot = self.memory.snapshot()  # what it remembers across tasks
         await self._commit()
         resuming = task.steps_used > 0
         log.info("agent.start", task_id=str(task.id), resuming=resuming, goal=task.goal[:80])
@@ -170,6 +174,7 @@ class AgentReactService:
                 task.max_steps - number + 1, tokens_left,
                 executor.envelope.restricted_executor_tools(),
                 executor.envelope.egress_allowed,
+                self._memory_snapshot,
             )
             result = await self.llm.complete(system, user, max_tokens=1200, temperature=0.5)
             step_tokens = result.tokens
@@ -192,6 +197,19 @@ class AgentReactService:
             if tool == "ask_user":
                 await self._pause_for_user(task, args, thought, number, step_tokens)
                 return  # the run resumes when the user answers
+
+            if tool == "remember":
+                note = str(args.get("note", "")).strip()
+                topic = args.get("topic")
+                observation = self.memory.remember(note, str(topic) if topic else None)
+                if note:  # make it visible to the rest of this run too
+                    self._memory_snapshot = f"{self._memory_snapshot}\n- {note}".strip()
+                await self._record_step(task, number, thought, "remember", args,
+                                        observation, ToolStatus.OK, step_tokens)
+                if number >= task.max_steps:
+                    await self._finish(task, StopReason.MAX_STEPS)
+                    return
+                continue
 
             # No-progress guard: a model that rewrites the same file again and
             # again without running it is spinning. Nudge on the 2nd repeat, then

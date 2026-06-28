@@ -88,6 +88,8 @@ class Settings(BaseSettings):
     # ---- Agent tools & safety ----
     # Each task works inside its own subdirectory under this root.
     agent_workspaces_root: str = "./workspaces"
+    # Cross-task memory store (MEMORY.md + topics/), shared across tasks.
+    agent_memory_root: str = "./agent_memory"
     agent_command_timeout_seconds: int = 60
     agent_command_output_limit: int = 4_000  # chars of command output kept
     # auto  = run allowlisted/unknown commands, hard-block dangerous ones

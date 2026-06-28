@@ -124,3 +124,7 @@ export const tasksApi = {
       body: JSON.stringify({ answer }),
     }),
 };
+
+export const memoryApi = {
+  get: () => apiFetch<{ content: string }>('/api/v1/memory'),
+};

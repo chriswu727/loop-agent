@@ -79,6 +79,7 @@ def _service(session: AsyncSession, llm: ScriptedLLM) -> AgentReactService:
 @pytest.fixture(autouse=True)
 def _isolated_workspace(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(settings, "agent_workspaces_root", str(tmp_path / "ws"))
+    monkeypatch.setattr(settings, "agent_memory_root", str(tmp_path / "mem"))
 
 
 async def test_goal_achieved_when_verifier_accepts_finish(session: AsyncSession) -> None:
@@ -274,6 +275,23 @@ async def test_failing_check_blocks_acceptance(session: AsyncSession) -> None:
     assert task.stop_reason == StopReason.STUCK.value
     assert task.verified_by is None
     assert task.receipt_hash is None
+
+
+async def test_remember_persists_across_tasks(session: AsyncSession) -> None:
+    from app.core.config import settings as _settings
+    from app.services.memory import MemoryStore
+
+    plans = [
+        {"thought": "note it", "tool": "remember",
+         "args": {"note": "The deploy command is make ship"}},
+        {"thought": "done", "tool": "finish", "args": {"summary": "noted"}},
+    ]
+    task = await _make_task(session, max_steps=8, token_budget=1_000_000)
+    await _service(session, ScriptedLLM(plans, verify={"score": 90, "met": True})).run(task.id)
+
+    # The note is in the shared store, so the next task would see it injected.
+    store = MemoryStore(Path(_settings.agent_memory_root))
+    assert "make ship" in store.snapshot()
 
 
 async def test_approval_off_runs_non_allowlisted_command(session: AsyncSession) -> None:

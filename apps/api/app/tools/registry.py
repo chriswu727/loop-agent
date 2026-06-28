@@ -30,6 +30,7 @@ TOOL_SPECS = """\
 - read_file: read a file you created. args: {"path": "relative/path"}
 - run_command: run a shell command in the workspace. args: {"command": "..."}
 - ask_user: pause to ask the user when you need input. args: {"question": "..."}
+- remember: save a durable note for future tasks. args: {"note": "...", "topic": "optional"}
 - finish: you are done. args: {"summary": "...", "checks": [ ... ]}. Provide "checks" \
 the verifier re-runs to PROVE the work: \
 {"kind":"command","command":"...","expect_exit":0,"expect_stdout":"..."}, \
@@ -37,8 +38,10 @@ the verifier re-runs to PROVE the work: \
 Always include checks when the goal involves files or runnable code.\
 """
 
-# ``finish`` and ``ask_user`` are handled by the loop, not the executor.
-VALID_TOOLS = {"write_file", "edit_file", "read_file", "run_command", "ask_user", "finish"}
+# ``finish``, ``ask_user`` and ``remember`` are handled by the loop, not the executor.
+VALID_TOOLS = {
+    "write_file", "edit_file", "read_file", "run_command", "ask_user", "remember", "finish",
+}
 
 
 class ToolExecutor:

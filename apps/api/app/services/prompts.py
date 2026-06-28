@@ -33,6 +33,7 @@ def plan_prompts(
     tokens_left: int,
     allowed_tools: list[str] | None = None,
     egress_allowed: bool = True,
+    memory: str = "",
 ) -> tuple[str, str]:
     system = (
         "You are an autonomous agent that completes a task by taking ONE action at "
@@ -70,9 +71,11 @@ def plan_prompts(
             "Network access is OFF for this task: curl, wget, pip install, "
             "git clone and similar are blocked. Work offline with what's available.\n\n"
         )
+    memory_block = f"What you remember from past tasks:\n{memory}\n\n" if memory.strip() else ""
     user = (
         f"Goal:\n{goal}\n\n"
         f"Success criteria:\n{criteria}\n\n"
+        f"{memory_block}"
         f"{restriction}"
         f"Workspace files:\n{workspace_tree}\n\n"
         f"What you have done so far:\n{history or '(nothing yet)'}\n\n"
