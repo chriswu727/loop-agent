@@ -131,6 +131,28 @@ async def test_stops_when_budget_exhausted(session: AsyncSession) -> None:
     assert task.tokens_used >= 50
 
 
+async def test_repeated_writes_are_hard_blocked_then_recover(session: AsyncSession) -> None:
+    # The model rewrites a.txt three times; the 3rd is hard-blocked. It then runs
+    # a command and finishes — a stuck loop turned into forward progress.
+    plans = [
+        {"thought": "w", "tool": "write_file", "args": {"path": "a.txt", "content": "x"}},
+        {"thought": "w", "tool": "write_file", "args": {"path": "a.txt", "content": "x"}},
+        {"thought": "w again", "tool": "write_file", "args": {"path": "a.txt", "content": "x"}},
+        {"thought": "ok run", "tool": "run_command", "args": {"command": "echo done"}},
+        {"thought": "done", "tool": "finish", "args": {"summary": "made a.txt"}},
+    ]
+    task = await _make_task(session, max_steps=10, token_budget=1_000_000)
+    await _service(session, ScriptedLLM(plans, verify={"score": 90, "met": True})).run(task.id)
+
+    steps = await StepRepository(session).list_for_task(task.id)
+    third = next(s for s in steps if s.number == 3)
+    assert third.tool == "write_file" and third.status == "blocked"
+    assert "blocked" in third.observation.lower()
+
+    await session.refresh(task)
+    assert task.stop_reason == StopReason.GOAL_ACHIEVED.value  # recovered, not stuck
+
+
 async def test_rewriting_same_file_without_running_is_stuck(session: AsyncSession) -> None:
     # write_file always returns "ok", but rewriting one file forever is no progress.
     plans = [{"thought": "again", "tool": "write_file", "args": {"path": "a.txt", "content": "x"}}]

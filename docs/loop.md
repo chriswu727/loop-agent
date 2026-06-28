@@ -86,12 +86,13 @@ Receipt records the chain head, so a Receipt vouches for the whole history that
 produced it. This is the "every action auditable and tamper-evident" security
 principle made real, and the foundation the signed-skill / approval-gate work builds on.
 
-**No-progress is a stop condition too.** `write_file` always returns "ok", so a
+**No-progress is handled, then forced.** `write_file` always returns "ok", so a
 weak model can rewrite one file forever and never run it — a real failure mode
-seen in a live run (10 identical writes to max_steps). The loop now counts
-repeated writes to the same path (without running it) toward the stuck limit and
-nudges the planner to run or finish. Stuck = repeated *failures or non-progress*,
-not just errors.
+seen in live runs. The loop nudges on the 2nd consecutive write to the same path,
+then **hard-blocks the 3rd** (refuses to write, telling it to run the file or do
+something else) so a stuck loop becomes forward progress — a previously-flaky
+`square(n)` task that looped to `stuck` now converges. Repeated writes also count
+toward the stuck limit, so a model that ignores everything still terminates.
 
 **Tools, not raw power.** The agent acts only through `write_file`, `read_file`,
 `run_command`, and `finish`. Each is a small, auditable adapter; adding a tool

@@ -133,7 +133,9 @@ class AgentReactService:
 
         consecutive_failures = 0
         finish_retries = 0
-        same_path_writes = 0  # writing one file over and over without running it = no progress
+        # Repeated writes to one file without running it = no progress; nudge on
+        # the 2nd, hard-block the 3rd so the model is forced to make progress.
+        same_path_writes = 0
         last_write_path: str | None = None
 
         for number in range(start, task.max_steps + 1):
@@ -175,32 +177,39 @@ class AgentReactService:
                 await self._pause_for_user(task, args, thought, number, step_tokens)
                 return  # the run resumes when the user answers
 
+            # No-progress guard: a model that rewrites the same file again and
+            # again without running it is spinning. Nudge on the 2nd repeat, then
+            # HARD-BLOCK the 3rd+ so it is forced to run the file or do something
+            # else — turning a stuck loop into forward progress.
+            if tool in ("write_file", "edit_file"):
+                path = str(args.get("path", ""))
+                same_path_writes = same_path_writes + 1 if path == last_write_path else 1
+                last_write_path = path
+            elif tool is not None:
+                same_path_writes = 0
+                last_write_path = None
+
             if tool is None:
                 observation, status = (
                     "Could not parse a valid action. Respond with one JSON object "
                     f"using a valid tool: {sorted(VALID_TOOLS)}.",
                     ToolStatus.ERROR,
                 )
+            elif tool in ("write_file", "edit_file") and same_path_writes >= 3:
+                observation, status = (
+                    f"Blocked: you have written '{last_write_path}' {same_path_writes} times "
+                    "without running it. Writing it again is not allowed — run it with "
+                    "run_command, call finish with checks, or take a different action.",
+                    ToolStatus.BLOCKED,
+                )
             else:
                 tool_result = await executor.execute(tool, args)
                 observation, status = tool_result.observation, tool_result.status
-
-            # No-progress guard: a model that rewrites the same file again and
-            # again without running it is spinning. Nudge it, and count the
-            # repetition toward the stuck limit even though write_file is "ok".
-            if tool in ("write_file", "edit_file"):
-                path = str(args.get("path", ""))
-                same_path_writes = same_path_writes + 1 if path == last_write_path else 1
-                last_write_path = path
-                if same_path_writes >= 2:
+                if tool in ("write_file", "edit_file") and same_path_writes == 2:
                     observation += (
-                        "\n[No progress: you keep editing this file without running it. "
-                        "Use run_command to test it, or call finish with checks. "
-                        "Do not write it again.]"
+                        "\n[Run this file (run_command) or call finish with checks; "
+                        "do not rewrite it again.]"
                     )
-            else:
-                same_path_writes = 0
-                last_write_path = None
 
             await self._record_step(task, number, thought, tool or "invalid", args,
                                     observation, status, step_tokens)
