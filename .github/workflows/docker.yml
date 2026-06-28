@@ -37,7 +37,7 @@ jobs:
             type=ref,event=branch
             type=semver,pattern={{version}}
             type=sha,format=short
-      - uses: docker/build-push-action@v6
+      - uses: docker/build-push-action@v7
         with:
           context: .
           file: ${{ matrix.dockerfile }}
