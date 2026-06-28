@@ -7,12 +7,20 @@ becomes a normal observation so the loop keeps going and the agent can adapt.
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 from app.tools.base import ToolError, ToolResult, ToolStatus
+from app.tools.envelope import CapabilityEnvelope
 from app.tools.policy import Verdict, evaluate_command
 from app.tools.shell import run_command
 from app.tools.workspace import Workspace
+
+# Hook points around every tool call — the seam for approval gates, egress
+# enforcement, and skill instrumentation. A before-hook returning a ToolResult
+# short-circuits the call (e.g. "denied by approval"); returning None proceeds.
+BeforeHook = Callable[[str, dict[str, Any]], Awaitable[ToolResult | None]]
+AfterHook = Callable[[str, dict[str, Any], ToolResult], Awaitable[None]]
 
 # Tools the agent may call. ``finish`` is handled by the loop itself, not here,
 # but it's documented so the agent knows it exists.
@@ -41,13 +49,37 @@ class ToolExecutor:
         approval_mode: str = "auto",
         command_timeout: int = 60,
         output_limit: int = 4000,
+        envelope: CapabilityEnvelope | None = None,
+        before_tool: BeforeHook | None = None,
+        after_tool: AfterHook | None = None,
     ) -> None:
         self.workspace = workspace
         self.approval_mode = approval_mode
         self.command_timeout = command_timeout
         self.output_limit = output_limit
+        # The single point where the task's declared authority is enforced.
+        self.envelope = envelope or CapabilityEnvelope.full()
+        self.before_tool = before_tool
+        self.after_tool = after_tool
 
     async def execute(self, tool: str, args: dict[str, Any]) -> ToolResult:
+        # Capability gate: a tool the envelope doesn't grant never runs.
+        if not self.envelope.permits(tool):
+            return ToolResult(
+                f"Tool '{tool}' is not permitted by this task's capability envelope.",
+                ToolStatus.BLOCKED,
+            )
+        # Before-hook may veto/short-circuit (e.g. an approval gate). None = proceed.
+        if self.before_tool is not None:
+            veto = await self.before_tool(tool, args)
+            if veto is not None:
+                return veto
+        result = await self._dispatch(tool, args)
+        if self.after_tool is not None:
+            await self.after_tool(tool, args, result)
+        return result
+
+    async def _dispatch(self, tool: str, args: dict[str, Any]) -> ToolResult:
         try:
             if tool == "write_file":
                 written = self.workspace.write(str(args["path"]), str(args.get("content", "")))

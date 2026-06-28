@@ -33,6 +33,7 @@ export interface Task {
   status: TaskStatus;
   rubric: string[];
   pending_question: string | null;
+  allowed_tools: string[] | null;
   limits: Limits;
   summary: string | null;
   verification_score: number;

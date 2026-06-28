@@ -74,6 +74,7 @@ export type { FileContent, FileEntry, LedgerStatus, LimitDefaults, Page, Step, T
 export interface PublishBody {
   goal: string;
   autostart?: boolean;
+  allowed_tools?: string[] | null;
   limits?: {
     max_steps?: number;
     token_budget?: number;

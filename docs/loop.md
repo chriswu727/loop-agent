@@ -54,6 +54,18 @@ judgment, labelled `verified_by=judgment` so it's never mistaken for proof. This
 is differentiator #1 — Loop's "done" is a replayable fact, and it closed Loop's
 own real weakness (the old verifier only glanced at the file tree + the summary).
 
+**Capability envelope + executor hooks (the enforcement seam).** Every task runs
+under a `CapabilityEnvelope` (`tools/envelope.py`) declaring which executor tools
+it may use; it's enforced at the single choke point `ToolExecutor.execute`, so a
+tool the envelope doesn't grant returns BLOCKED and never runs. Publish with
+`allowed_tools` (the UI's "No shell" toggle sends file-tools only) to run a task
+that physically cannot execute commands. The executor also exposes
+`before_tool`/`after_tool` hooks — a before-hook may return a result to
+short-circuit a call — which is the seam the approval gate, egress firewall, and
+signed-skill instrumentation will plug into. Default envelope = full tool set, so
+behaviour is unchanged unless a task opts into a narrower one. The planner is also
+told its allowed set, so a restricted agent doesn't waste steps on blocked tools.
+
 **The step ledger is hash-chained (tamper-evident).** Each step stores
 `hash = sha256(prev_hash + canonical(step))`, anchored at a genesis derived from
 the task id (`services/ledger.py`). Edit any recorded step — a command, an

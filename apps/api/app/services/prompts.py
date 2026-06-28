@@ -31,6 +31,7 @@ def plan_prompts(
     history: str,
     steps_left: int,
     tokens_left: int,
+    allowed_tools: list[str] | None = None,
 ) -> tuple[str, str]:
     system = (
         "You are an autonomous agent that completes a task by taking ONE action at "
@@ -56,9 +57,17 @@ def plan_prompts(
         "is available for editing spreadsheets and documents."
     )
     criteria = "\n".join(f"- {c}" for c in rubric) or "- Fully satisfies the task"
+    restriction = ""
+    if allowed_tools is not None:
+        restriction = (
+            "For this task you may ONLY use these tools: "
+            f"{', '.join(allowed_tools)}, plus finish and ask_user. "
+            "Other tools are blocked.\n\n"
+        )
     user = (
         f"Goal:\n{goal}\n\n"
         f"Success criteria:\n{criteria}\n\n"
+        f"{restriction}"
         f"Workspace files:\n{workspace_tree}\n\n"
         f"What you have done so far:\n{history or '(nothing yet)'}\n\n"
         f"Budget left: {steps_left} steps, ~{tokens_left} tokens.\n\n"

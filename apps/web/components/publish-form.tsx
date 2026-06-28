@@ -26,6 +26,7 @@ export function PublishForm({ defaults }: { defaults: LimitDefaults | null }) {
   const [maxSteps, setMaxSteps] = useState(d.max_steps_default);
   const [tokenBudget, setTokenBudget] = useState(d.token_budget_default);
   const [files, setFiles] = useState<File[]>([]);
+  const [noShell, setNoShell] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -36,14 +37,21 @@ export function PublishForm({ defaults }: { defaults: LimitDefaults | null }) {
     setError(null);
     try {
       const limits = { max_steps: maxSteps, token_budget: tokenBudget };
+      // Least-authority: when "no shell" is on, grant only the file tools.
+      const allowed_tools = noShell ? ['write_file', 'edit_file', 'read_file'] : null;
       if (files.length > 0) {
         // Draft first so files land in the workspace, then start the agent.
-        const task = await tasksApi.publish({ goal: goal.trim(), limits, autostart: false });
+        const task = await tasksApi.publish({
+          goal: goal.trim(),
+          limits,
+          allowed_tools,
+          autostart: false,
+        });
         for (const file of files) await tasksApi.upload(task.id, file);
         await tasksApi.start(task.id);
         router.push(`/tasks/${task.id}`);
       } else {
-        const task = await tasksApi.publish({ goal: goal.trim(), limits });
+        const task = await tasksApi.publish({ goal: goal.trim(), limits, allowed_tools });
         router.push(`/tasks/${task.id}`);
       }
     } catch (err) {
@@ -104,6 +112,10 @@ export function PublishForm({ defaults }: { defaults: LimitDefaults | null }) {
             clear
           </button>
         )}
+        <label className="ml-auto flex cursor-pointer items-center gap-1.5 opacity-80">
+          <input type="checkbox" checked={noShell} onChange={(e) => setNoShell(e.target.checked)} />
+          No shell (files only)
+        </label>
       </div>
 
       <div className="mt-5 grid gap-5 sm:grid-cols-2">

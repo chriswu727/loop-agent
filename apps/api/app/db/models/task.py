@@ -23,6 +23,8 @@ class TaskModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
     rubric: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
     pending_question: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Capability envelope: which executor tools this task may use. NULL = all.
+    allowed_tools: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
 
     # Limits — the hard guardrails for this task.
     max_steps: Mapped[int] = mapped_column(Integer, nullable=False)

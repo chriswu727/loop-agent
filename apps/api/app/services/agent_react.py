@@ -36,7 +36,7 @@ from app.services.ledger import genesis_hash, step_hash
 from app.services.prompts import plan_prompts, understand_prompts, verify_prompts
 from app.services.receipt import build_receipt
 from app.services.verification import checks_summary, run_checks
-from app.tools import VALID_TOOLS, ToolExecutor, ToolStatus, Workspace
+from app.tools import VALID_TOOLS, CapabilityEnvelope, ToolExecutor, ToolStatus, Workspace
 
 log = get_logger("agent")
 
@@ -97,6 +97,7 @@ class AgentReactService:
             approval_mode=settings.agent_approval_mode,
             command_timeout=settings.agent_command_timeout_seconds,
             output_limit=settings.agent_command_output_limit,
+            envelope=CapabilityEnvelope.from_tools(task.allowed_tools),
         )
         task.status = TaskStatus.RUNNING.value
         task.workspace_path = str(workspace.root)
@@ -144,6 +145,7 @@ class AgentReactService:
             system, user = plan_prompts(
                 task.goal, task.rubric, workspace.tree(), self._history_view(),
                 task.max_steps - number + 1, tokens_left,
+                executor.envelope.restricted_executor_tools(),
             )
             result = await self.llm.complete(system, user, max_tokens=1200, temperature=0.5)
             step_tokens = result.tokens

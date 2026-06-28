@@ -28,6 +28,9 @@ class TaskCreate(BaseModel):
     # When false, the task is created as a draft (PENDING, not started) so files
     # can be uploaded into its workspace before the agent runs. Start with /start.
     autostart: bool = True
+    # Capability envelope: restrict the agent to these executor tools (e.g.
+    # ["write_file","read_file"] for a no-shell task). Omit/null = all tools.
+    allowed_tools: list[str] | None = None
 
 
 class RespondIn(BaseModel):
@@ -49,6 +52,7 @@ class TaskRead(BaseModel):
     status: str
     rubric: list[str]
     pending_question: str | None
+    allowed_tools: list[str] | None
     limits: LimitsRead
     summary: str | None
     verification_score: int
@@ -73,6 +77,7 @@ class TaskRead(BaseModel):
             status=m.status,  # type: ignore[attr-defined]
             rubric=m.rubric or [],  # type: ignore[attr-defined]
             pending_question=m.pending_question,  # type: ignore[attr-defined]
+            allowed_tools=m.allowed_tools,  # type: ignore[attr-defined]
             limits=LimitsRead(
                 max_steps=m.max_steps,  # type: ignore[attr-defined]
                 token_budget=m.token_budget,  # type: ignore[attr-defined]

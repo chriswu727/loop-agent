@@ -44,6 +44,7 @@ class TaskService:
             goal=payload.goal.strip(),
             status=TaskStatus.PENDING.value,
             rubric=[],
+            allowed_tools=payload.allowed_tools,
             max_steps=max_steps,
             token_budget=token_budget,
             summary=None,
