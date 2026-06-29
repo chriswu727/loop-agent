@@ -19,6 +19,7 @@ from app.core.llm.providers import (
     call_deepseek,
     call_gemini,
     call_glm,
+    call_ollama,
 )
 
 # An adapter: (http_client, api_key, system, user, *, max_tokens, temperature) -> (content, tokens)
@@ -36,6 +37,8 @@ PROVIDERS: dict[str, ProviderSpec] = {
     "deepseek": ProviderSpec(call_deepseek, "deepseek_api_key"),
     "gemini": ProviderSpec(call_gemini, "gemini_api_key"),
     "glm": ProviderSpec(call_glm, "glm_api_key"),
+    # Local model: "key" is the base URL, so it's configured when that's set.
+    "ollama": ProviderSpec(call_ollama, "ollama_base_url"),
 }
 
 

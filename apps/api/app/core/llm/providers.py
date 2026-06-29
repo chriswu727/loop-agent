@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import httpx
 
+from app.core.config import settings
 from app.core.llm.base import LLMError, is_retryable_message
 
 DEEPSEEK_URL = "https://api.deepseek.com/chat/completions"
@@ -163,6 +164,39 @@ async def call_anthropic(
     )
     usage = data.get("usage", {})
     tokens = int(usage.get("input_tokens", 0)) + int(usage.get("output_tokens", 0))
+    return content, tokens
+
+
+async def call_ollama(
+    client: httpx.AsyncClient,
+    api_key: str,  # carries the base URL (Ollama needs no key)
+    system: str,
+    user: str,
+    *,
+    max_tokens: int,
+    temperature: float,
+) -> tuple[str, int]:
+    base = (api_key or "http://localhost:11434").rstrip("/")
+    try:
+        resp = await client.post(
+            f"{base}/v1/chat/completions",  # Ollama's OpenAI-compatible endpoint
+            json={
+                "model": settings.ollama_model,
+                "messages": [
+                    {"role": "system", "content": system},
+                    {"role": "user", "content": user},
+                ],
+                "max_tokens": max_tokens,
+                "temperature": temperature,
+            },
+        )
+    except httpx.HTTPError as exc:
+        raise LLMError(f"ollama request failed: {exc}", retryable=True) from exc
+
+    _raise_for_status(resp, "ollama")
+    data = resp.json()
+    content = data["choices"][0]["message"]["content"]
+    tokens = int(data.get("usage", {}).get("total_tokens", 0))
     return content, tokens
 
 

@@ -74,7 +74,13 @@ class Settings(BaseSettings):
     deepseek_api_key: str | None = None
     gemini_api_key: str | None = None
     glm_api_key: str | None = None
-    llm_default_provider: Literal["anthropic", "deepseek", "gemini", "glm"] = "deepseek"
+    # Local, fully-offline model via Ollama. Set the base URL to enable it (it has
+    # no API key); pick the model with OLLAMA_MODEL.
+    ollama_base_url: str | None = None
+    ollama_model: str = "llama3.2"
+    llm_default_provider: Literal[
+        "anthropic", "deepseek", "gemini", "glm", "ollama"
+    ] = "deepseek"
     llm_timeout_seconds: int = 120
 
     # ---- Agent loop limits (the "within the limit" guardrails) ----

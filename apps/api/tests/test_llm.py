@@ -9,8 +9,8 @@ import pytest
 from app.core.config import settings
 from app.core.llm.base import LLMError
 from app.core.llm.client import FallbackLLMClient
-from app.core.llm.providers import call_anthropic, call_deepseek
-from app.core.llm.registry import PROVIDERS
+from app.core.llm.providers import call_anthropic, call_deepseek, call_ollama
+from app.core.llm.registry import PROVIDERS, configured_providers
 
 
 def _client(handler) -> httpx.AsyncClient:
@@ -18,7 +18,37 @@ def _client(handler) -> httpx.AsyncClient:
 
 
 def test_registry_lists_all_providers() -> None:
-    assert set(PROVIDERS) == {"anthropic", "deepseek", "gemini", "glm"}
+    assert set(PROVIDERS) == {"anthropic", "deepseek", "gemini", "glm", "ollama"}
+
+
+async def test_ollama_adapter_hits_local_openai_endpoint(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(settings, "ollama_model", "llama3.2")
+    seen = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["url"] = str(request.url)
+        seen["auth"] = request.headers.get("authorization")
+        return httpx.Response(
+            200,
+            json={"choices": [{"message": {"content": "local hi"}}],
+                  "usage": {"total_tokens": 5}},
+        )
+
+    content, tokens = await call_ollama(
+        _client(handler), "http://localhost:11434", "s", "u", max_tokens=10, temperature=0.5
+    )
+    assert content == "local hi" and tokens == 5
+    assert seen["url"] == "http://localhost:11434/v1/chat/completions"
+    assert seen["auth"] is None  # no API key for a local model
+
+
+def test_ollama_configured_only_when_base_url_set(monkeypatch: pytest.MonkeyPatch) -> None:
+    for attr in ("anthropic_api_key", "deepseek_api_key", "gemini_api_key", "glm_api_key"):
+        monkeypatch.setattr(settings, attr, None)
+    monkeypatch.setattr(settings, "ollama_base_url", None)
+    assert "ollama" not in configured_providers("ollama")
+    monkeypatch.setattr(settings, "ollama_base_url", "http://localhost:11434")
+    assert configured_providers("ollama") == ["ollama"]
 
 
 async def test_anthropic_adapter_parses_and_signs() -> None:
