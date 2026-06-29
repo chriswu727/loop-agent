@@ -1,4 +1,5 @@
 import type { LimitDefaults, SkillInfo, Task } from '@repo/api-contract';
+import Link from 'next/link';
 import { PublishForm } from '@/components/publish-form';
 import { TaskCard } from '@/components/task-card';
 import { apiBaseUrl, env } from '@/lib/env';
@@ -39,7 +40,12 @@ export default async function Home() {
   return (
     <main className="mx-auto max-w-3xl px-6 py-14">
       <header className="mb-8">
-        <h1 className="text-2xl font-bold tracking-tight">{env.NEXT_PUBLIC_APP_NAME}</h1>
+        <div className="flex items-center justify-between">
+          <h1 className="text-2xl font-bold tracking-tight">{env.NEXT_PUBLIC_APP_NAME}</h1>
+          <Link href="/triggers" className="text-sm opacity-60 transition hover:opacity-100">
+            Triggers →
+          </Link>
+        </div>
         <p className="mt-1 text-sm opacity-60">
           Publish a goal. The agent plans it, writes files and runs commands in its own sandboxed
           workspace, checks its own work, and keeps going until the goal is done — stopping the

@@ -10,6 +10,7 @@ import type {
   Page,
   Step,
   Task,
+  Trigger,
 } from '@repo/api-contract';
 import { apiBaseUrl } from './env';
 
@@ -128,4 +129,25 @@ export const tasksApi = {
 
 export const memoryApi = {
   get: () => apiFetch<{ content: string }>('/api/v1/memory'),
+};
+
+export interface TriggerCreateBody {
+  name: string;
+  goal: string;
+  limits?: { max_steps?: number; token_budget?: number };
+  allowed_tools?: string[] | null;
+  allow_egress?: boolean;
+  require_approval?: boolean;
+  skill?: string | null;
+}
+
+export type { Trigger };
+
+export const triggersApi = {
+  list: () => apiFetch<Trigger[]>('/api/v1/triggers'),
+  create: (body: TriggerCreateBody) =>
+    apiFetch<Trigger>('/api/v1/triggers', { method: 'POST', body: JSON.stringify(body) }),
+  fire: (id: string) => apiFetch<Task>(`/api/v1/triggers/${id}/fire`, { method: 'POST' }),
+  remove: (id: string) =>
+    apiFetch<void>(`/api/v1/triggers/${id}`, { method: 'DELETE' }),
 };

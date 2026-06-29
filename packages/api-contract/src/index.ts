@@ -82,6 +82,22 @@ export interface SkillInfo {
   allow_egress: boolean;
 }
 
+export interface Trigger {
+  id: string;
+  name: string;
+  goal: string;
+  enabled: boolean;
+  fire_count: number;
+  max_steps: number;
+  token_budget: number;
+  allowed_tools: string[] | null;
+  allow_egress: boolean;
+  require_approval: boolean;
+  skill: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface LimitDefaults {
   max_steps_default: number;
   max_steps_cap: number;
