@@ -115,6 +115,21 @@ class Settings(BaseSettings):
     scheduler_enabled: bool = True
     scheduler_tick_seconds: int = 60
 
+    # ---- Email (a task opts in with use_email; needs SMTP/IMAP creds) ----
+    # For Gmail: smtp.gmail.com:587 + imap.gmail.com, user = address, password =
+    # an app password. Email is "configured" when host + user + password are set.
+    smtp_host: str | None = None
+    smtp_port: int = 587
+    smtp_user: str | None = None
+    smtp_password: str | None = None
+    smtp_starttls: bool = True
+    imap_host: str | None = None
+    email_from: str | None = None
+
+    @property
+    def email_configured(self) -> bool:
+        return bool(self.smtp_host and self.smtp_user and self.smtp_password)
+
     # ---- MCP: headless browser (a task opts in with use_browser) ----
     agent_browser_enabled: bool = True
     agent_browser_command: str = "npx -y @playwright/mcp@latest --headless --isolated"

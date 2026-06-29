@@ -482,3 +482,28 @@ async def test_spawn_blocked_at_max_depth(session: AsyncSession) -> None:
     spawn_step = next(s for s in steps if s.tool == "spawn")
     assert spawn_step.status == "blocked"
     assert "depth limit" in spawn_step.observation
+
+
+async def test_send_email_pauses_for_approval(
+    session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # With email enabled + configured, the planner may call send_email — which
+    # always pauses for a human yes/no before the message goes out.
+    monkeypatch.setattr(settings, "smtp_host", "smtp.example.com")
+    monkeypatch.setattr(settings, "smtp_user", "me@example.com")
+    monkeypatch.setattr(settings, "smtp_password", "pw")
+    plans = [{"thought": "email them", "tool": "send_email",
+              "args": {"to": "a@b.com", "subject": "Hi", "body": "yo"}}]
+    task = await TaskRepository(session).create(
+        goal="email someone", status=TaskStatus.PENDING.value, rubric=[],
+        use_email=True, max_steps=6, token_budget=1_000_000, summary=None,
+        verification_score=0, steps_used=0, tokens_used=0, workspace_path=None,
+    )
+    await session.commit()
+    await _service(session, ScriptedLLM(plans)).run(task.id)
+
+    await session.refresh(task)
+    assert task.status == TaskStatus.AWAITING_INPUT.value
+    assert task.pending_action["tool"] == "send_email"
+    assert task.pending_action["args"]["to"] == "a@b.com"
+    assert "approve" in (task.pending_question or "").lower()

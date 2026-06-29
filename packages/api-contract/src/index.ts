@@ -37,6 +37,7 @@ export interface Task {
   allow_egress: boolean;
   require_approval: boolean;
   use_browser: boolean;
+  use_email: boolean;
   skill: string | null;
   limits: Limits;
   summary: string | null;

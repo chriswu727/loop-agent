@@ -36,6 +36,7 @@ def plan_prompts(
     memory: str = "",
     skill_instructions: str = "",
     browser_tools: str = "",
+    email_tools: str = "",
     allow_spawn: bool = False,
 ) -> tuple[str, str]:
     system = (
@@ -46,6 +47,7 @@ def plan_prompts(
         "Available tools:\n"
         f"{TOOL_SPECS}\n"
         + (f"{SPAWN_SPEC}\n" if allow_spawn else "")
+        + (f"{email_tools}\n" if email_tools.strip() else "")
         + (
             "\nA headless browser is available — use these tools to navigate and "
             "read live web pages (browser_snapshot returns the page's accessible "

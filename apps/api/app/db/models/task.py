@@ -33,6 +33,8 @@ class TaskModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     require_approval: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     # When True, a headless browser (MCP) is available to the agent; implies egress.
     use_browser: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    # When True, email tools (send/read) are available; implies egress.
+    use_email: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     # Optional signed skill this task runs under (by name).
     skill: Mapped[str | None] = mapped_column(String(100), nullable=True)
     # Sub-agent delegation: a spawned task points at its parent and tracks depth.

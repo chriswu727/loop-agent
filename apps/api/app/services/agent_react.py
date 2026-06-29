@@ -41,10 +41,12 @@ from app.services.receipt import build_receipt
 from app.services.skills import SkillStore
 from app.services.verification import checks_summary, run_checks
 from app.tools import VALID_TOOLS, CapabilityEnvelope, ToolExecutor, ToolStatus, Workspace
+from app.tools.email import EmailTools
 from app.tools.envelope import EXECUTOR_TOOLS
 from app.tools.guards import make_egress_guard
 from app.tools.mcp import McpBrowser
 from app.tools.policy import Verdict, evaluate_command
+from app.tools.registry import EMAIL_SPEC
 from app.tools.sandbox import docker_available, image_present
 
 log = get_logger("agent")
@@ -107,7 +109,8 @@ class AgentReactService:
         self._memory_snapshot = ""  # what the agent remembers, injected into planning
         self._skill_instructions = ""  # instructions from the task's signed skill
         self._browser_specs = ""  # MCP browser tool list, injected into planning
-        self._mcp_tools: set[str] = set()  # extra (MCP) tool names the planner may call
+        self._email_specs = ""  # email tool list, injected into planning
+        self._mcp_tools: set[str] = set()  # extra tool names the planner may call
         self._sandbox_image: str | None = None  # container image for run_command, or None
 
     async def run(self, task_id: uuid.UUID) -> None:
@@ -154,7 +157,9 @@ class AgentReactService:
         # implies the egress grant.
         envelope = CapabilityEnvelope.from_tools(
             _combine_tools(task.allowed_tools, skill_tools),
-            egress_allowed=(task.allow_egress and skill_egress) or task.use_browser,
+            egress_allowed=(
+                (task.allow_egress and skill_egress) or task.use_browser or task.use_email
+            ),
         )
         sandbox_image, sandbox_label = self._resolve_sandbox()
         self._sandbox_image = sandbox_image
@@ -177,7 +182,13 @@ class AgentReactService:
         if browser is not None:
             executor.mcp = browser
             self._browser_specs = browser.specs()
-            self._mcp_tools = set(browser.tool_names)
+            self._mcp_tools |= set(browser.tool_names)
+
+        # Give the agent email tools if the task opted in and creds are configured.
+        if task.use_email and settings.email_configured:
+            executor.email = EmailTools()
+            self._mcp_tools |= EmailTools.tool_names
+            self._email_specs = EMAIL_SPEC
 
         task.status = TaskStatus.RUNNING.value
         task.workspace_path = str(workspace.root)
@@ -275,6 +286,7 @@ class AgentReactService:
                 self._memory_snapshot,
                 self._skill_instructions,
                 self._browser_specs,
+                self._email_specs,
                 allow_spawn=task.depth < settings.agent_max_spawn_depth,
             )
             result = await self.llm.complete(system, user, max_tokens=1200, temperature=0.5)
@@ -321,6 +333,17 @@ class AgentReactService:
                     await self._finish(task, StopReason.BUDGET_EXHAUSTED)
                     return
                 continue
+
+            if tool == "send_email":
+                # Sending is irreversible and external, so it always pauses for a
+                # human yes/no before it runs (regardless of approval mode).
+                to = str(args.get("to", "")).strip()
+                subject = str(args.get("subject", "")).strip()
+                await self._pause_for_action(
+                    task, "send_email", args, thought, number, step_tokens,
+                    f"send an email to {to} (subject: {subject!r})",
+                )
+                return  # resumes when the user approves or denies
 
             # No-progress guard: a model that rewrites the same file again and
             # again without running it is spinning. Nudge on the 2nd repeat, then
@@ -398,18 +421,26 @@ class AgentReactService:
     ) -> None:
         """Pause before running a non-allowlisted command until the user approves."""
         command = str(args.get("command", "")).strip()
+        await self._pause_for_action(
+            task, "run_command", args, thought, number, tokens,
+            f"run: {command} (reason: {reason})",
+        )
+
+    async def _pause_for_action(
+        self, task: TaskModel, tool: str, args: dict[str, Any], thought: str,
+        number: int, tokens: int, summary: str,
+    ) -> None:
+        """Pause a side-effecting action until the user approves; resumes by
+        running the stored pending_action when they answer yes."""
         await self._record_step(
-            task, number, thought, "run_command", args,
-            f"Paused — needs your approval to run this command ({reason}).",
-            ToolStatus.BLOCKED, tokens,
+            task, number, thought, tool, args,
+            f"Paused — needs your approval to {summary}.", ToolStatus.BLOCKED, tokens,
         )
-        task.pending_action = {"tool": "run_command", "args": args}
-        task.pending_question = (
-            f"Approve running this command? Answer yes or no.\n  {command}\n  (reason: {reason})"
-        )
+        task.pending_action = {"tool": tool, "args": args}
+        task.pending_question = f"Approve this action? Answer yes or no.\n  {summary}"
         task.status = TaskStatus.AWAITING_INPUT.value
         await self._commit()
-        log.info("agent.awaiting_approval", task_id=str(task.id), number=number)
+        log.info("agent.awaiting_approval", task_id=str(task.id), number=number, tool=tool)
 
     async def _handle_spawn(
         self, task: TaskModel, args: dict[str, Any], thought: str, number: int, plan_tokens: int

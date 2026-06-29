@@ -3,6 +3,20 @@
 For whoever picks this up next. Why the agent is built the way it is, and the
 constraints that aren't obvious from the code.
 
+## Email (send / read)
+
+With `use_email` (and SMTP/IMAP creds configured), the agent gets two tools:
+`read_inbox` (IMAP, read-only — its output is framed as `[DATA]` like any
+observation) and `send_email` (SMTP). Because sending is irreversible and
+external, the loop *always* routes `send_email` through the human approval gate —
+it pauses with an "about to send to X" summary and only sends after a recorded
+yes (reusing the same restart-safe pending_action path as command approval).
+Email tools dispatch through the same `ToolExecutor` as any built-in tool, so the
+capability envelope applies; `use_email` implies egress. Verified: a real SMTP
+round-trip delivered a message through `send_email`; IMAP read and the approval
+pause are unit-tested. Tool providers (browser MCP, email) are now a small list
+the executor consults, so adding the next one is one more entry.
+
 ## Multi-agent delegation (spawn)
 
 A task can call `spawn` to delegate a self-contained sub-goal to a fresh

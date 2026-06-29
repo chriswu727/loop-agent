@@ -34,6 +34,9 @@ def upgrade() -> None:
         sa.Column(
             "use_browser", sa.Boolean(), nullable=False, server_default=sa.text("false")
         ),
+        sa.Column(
+            "use_email", sa.Boolean(), nullable=False, server_default=sa.text("false")
+        ),
         sa.Column("pending_action", sa.JSON(), nullable=True),
         sa.Column("skill", sa.String(length=100), nullable=True),
         sa.Column("parent_id", sa.Uuid(), nullable=True),

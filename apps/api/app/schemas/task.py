@@ -39,6 +39,8 @@ class TaskCreate(BaseModel):
     require_approval: bool = False
     # When true, give the agent a headless browser (MCP). Implies network egress.
     use_browser: bool = False
+    # When true, give the agent email tools (send/read). Implies network egress.
+    use_email: bool = False
     # Run under this signed skill (by name). Refused if it doesn't verify.
     skill: str | None = None
 
@@ -66,6 +68,7 @@ class TaskRead(BaseModel):
     allow_egress: bool
     require_approval: bool
     use_browser: bool
+    use_email: bool
     skill: str | None
     parent_id: uuid.UUID | None
     depth: int
@@ -98,6 +101,7 @@ class TaskRead(BaseModel):
             allow_egress=m.allow_egress,  # type: ignore[attr-defined]
             require_approval=m.require_approval,  # type: ignore[attr-defined]
             use_browser=m.use_browser,  # type: ignore[attr-defined]
+            use_email=m.use_email,  # type: ignore[attr-defined]
             skill=m.skill,  # type: ignore[attr-defined]
             parent_id=m.parent_id,  # type: ignore[attr-defined]
             depth=m.depth,  # type: ignore[attr-defined]
