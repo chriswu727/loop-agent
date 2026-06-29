@@ -115,6 +115,16 @@ class Settings(BaseSettings):
     scheduler_enabled: bool = True
     scheduler_tick_seconds: int = 60
 
+    # ---- Chat inlet (Telegram). Set the bot token to enable. ----
+    telegram_bot_token: str | None = None
+    # Comma-separated chat ids allowed to command the bot. Empty = allow all
+    # (only safe for a private bot); set it for anything that can act.
+    telegram_allowed_chat_ids: str | None = None
+
+    def telegram_allowlist(self) -> set[str]:
+        raw = self.telegram_allowed_chat_ids or ""
+        return {c.strip() for c in raw.split(",") if c.strip()}
+
     # ---- Email (a task opts in with use_email; needs SMTP/IMAP creds) ----
     # For Gmail: smtp.gmail.com:587 + imap.gmail.com, user = address, password =
     # an app password. Email is "configured" when host + user + password are set.

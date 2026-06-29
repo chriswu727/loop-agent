@@ -3,6 +3,23 @@
 For whoever picks this up next. Why the agent is built the way it is, and the
 constraints that aren't obvious from the code.
 
+## Chat inlet (Telegram)
+
+The chat inlet does not touch the agent — it bridges a chat to the existing
+publish → run → (pause) → respond → resume path. A background poller
+(`services/telegram.py`, started by the lifespan when `TELEGRAM_BOT_TOKEN` is set
+and execution is inline) long-polls `getUpdates`. A new message publishes a task
+(stamping `task.chat_id`) and replies with the result; if the agent pauses to ask
+a question or for approval, the bot relays that, and the next message from that
+chat is treated as the answer (looked up via the most-recent awaiting task for
+that `chat_id`) and resumes the same task. A chat allowlist
+(`TELEGRAM_ALLOWED_CHAT_IDS`) gates who may command the bot — important, since it
+can run code and send email. Other channels (WhatsApp, etc.) are the same shape:
+a poller that calls `handle_chat_message`. Tested: the client wire calls, the
+reply formatting per task state, and the awaiting-task lookup; the full round
+trip reuses already-tested publish/respond/execute and needs a bot token to run
+live.
+
 ## Email (send / read)
 
 With `use_email` (and SMTP/IMAP creds configured), the agent gets two tools:

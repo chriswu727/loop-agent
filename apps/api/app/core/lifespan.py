@@ -53,6 +53,16 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         scheduler_stop = asyncio.Event()
         scheduler_task = asyncio.create_task(run_scheduler(scheduler_stop))
 
+    # Telegram chat inlet — polls for messages and runs them as tasks (inline mode
+    # so the loop runs in-process).
+    telegram_stop: asyncio.Event | None = None
+    telegram_task: asyncio.Task[None] | None = None
+    if settings.telegram_bot_token and settings.execution_mode == "inline":
+        from app.services.telegram import run_telegram_bot
+
+        telegram_stop = asyncio.Event()
+        telegram_task = asyncio.create_task(run_telegram_bot(telegram_stop))
+
     log.info("startup.complete")
     try:
         yield
@@ -61,6 +71,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         if scheduler_stop is not None and scheduler_task is not None:
             scheduler_stop.set()
             await scheduler_task
+        if telegram_stop is not None and telegram_task is not None:
+            telegram_stop.set()
+            telegram_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await telegram_task
         await cache.close()
         await dispose_engine()
         log.info("shutdown.complete")

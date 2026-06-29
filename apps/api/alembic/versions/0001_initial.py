@@ -41,6 +41,7 @@ def upgrade() -> None:
         sa.Column("skill", sa.String(length=100), nullable=True),
         sa.Column("parent_id", sa.Uuid(), nullable=True),
         sa.Column("depth", sa.Integer(), nullable=False, server_default=sa.text("0")),
+        sa.Column("chat_id", sa.String(length=64), nullable=True),
         sa.Column("max_steps", sa.Integer(), nullable=False),
         sa.Column("token_budget", sa.Integer(), nullable=False),
         sa.Column("summary", sa.Text(), nullable=True),
@@ -69,6 +70,7 @@ def upgrade() -> None:
     )
     op.create_index(op.f("ix_tasks_status"), "tasks", ["status"], unique=False)
     op.create_index(op.f("ix_tasks_parent_id"), "tasks", ["parent_id"], unique=False)
+    op.create_index(op.f("ix_tasks_chat_id"), "tasks", ["chat_id"], unique=False)
 
     op.create_table(
         "steps",
@@ -139,6 +141,7 @@ def downgrade() -> None:
     op.drop_table("triggers")
     op.drop_index(op.f("ix_steps_task_id"), table_name="steps")
     op.drop_table("steps")
+    op.drop_index(op.f("ix_tasks_chat_id"), table_name="tasks")
     op.drop_index(op.f("ix_tasks_parent_id"), table_name="tasks")
     op.drop_index(op.f("ix_tasks_status"), table_name="tasks")
     op.drop_table("tasks")

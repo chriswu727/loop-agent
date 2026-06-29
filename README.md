@@ -77,6 +77,12 @@ axes a chat-log agent can't easily copy:
   headless browser through an MCP server it spawns (`@playwright/mcp`): navigate,
   read the page, click, type, extract. Same path the email/calendar connectors
   will take. Gated as network egress.
+- **Email** — opt a task into `use_email` and the agent can `read_inbox` (IMAP,
+  read-only, quarantined) and `send_email` (SMTP) — sending always pauses for
+  your approval first.
+- **Chat from Telegram** — set a bot token and send tasks from chat; the agent
+  runs them, replies with the result, and asks you back when it needs input
+  (access-controlled by a chat allowlist).
 - **Triggers** — save a task template and fire it from any external event
   (`POST /triggers/{id}/fire`) or on a schedule (interval heartbeat).
 - **Human-in-the-loop** — `ask_user` pauses the run for your input and resumes
@@ -115,6 +121,9 @@ See [`.env.example`](./.env.example). Key knobs:
 |----------|---------|
 | `ANTHROPIC_API_KEY` / `DEEPSEEK_API_KEY` / `GEMINI_API_KEY` / `GLM_API_KEY` | LLM providers (at least one). The loop cascades on a retryable failure. |
 | `LLM_DEFAULT_PROVIDER` | which provider to try first. |
+| `OLLAMA_BASE_URL` | run on a fully-local model via Ollama (no API key). |
+| `TELEGRAM_BOT_TOKEN` / `TELEGRAM_ALLOWED_CHAT_IDS` | enable the chat inlet + restrict who can use it. |
+| `SMTP_*` / `IMAP_HOST` | email send/read (use a Gmail app password). |
 | `EXECUTION_MODE` | `inline` (run in the API process) or `worker` (enqueue to Redis). |
 | `DATABASE_URL` | `postgresql+asyncpg://…` or `sqlite+aiosqlite:///./loop.db`. |
 | `AGENT_APPROVAL_MODE` | `auto` or `manual` (pause non-allowlisted commands). |
@@ -133,7 +142,7 @@ under test with a fake model.
 
 ```
 apps/api/app/
-├── core/llm/          # provider registry (Anthropic/DeepSeek/Gemini/GLM) + cascade
+├── core/llm/          # provider registry (Anthropic/DeepSeek/Gemini/GLM/Ollama) + cascade
 ├── tools/             # workspace sandbox, command policy, egress guard, capability envelope, executor
 ├── services/
 │   ├── agent_react.py # THE ENGINE: understand → plan → act → observe → verify
@@ -151,7 +160,7 @@ differentiator roadmap: [`docs/STRATEGY.md`](./docs/STRATEGY.md).
 ## Tests
 
 ```bash
-cd apps/api && . .venv/bin/activate && pytest    # ~100 tests, all offline
+cd apps/api && . .venv/bin/activate && pytest    # ~109 tests, all offline
 ```
 
 Drives every stop condition with a scripted fake model; proves the sandbox
@@ -165,11 +174,11 @@ Delivered: tool-using agent core, re-execution Receipts, tamper-evident ledger,
 capability envelope, default-deny egress, approval gate, injection quarantine,
 signed skills, document editing, cross-task memory, triggers + scheduler, SSE,
 provider registry, an **MCP client with a headless browser**, **container
-isolation** (shell commands jailed in an ephemeral Docker container), and
-**multi-agent delegation** (`spawn` → a tree of verified sub-agents).
+isolation** (shell commands jailed in an ephemeral Docker container), **multi-agent delegation** (`spawn` → a tree of verified sub-agents), a
+**local Ollama provider**, **email** (send/read), and a **Telegram chat inlet**.
 
-Next: more MCP connectors over the same client (email / calendar) and chat-app
-inlets — all built on the same agent core and safety model.
+Next: calendar (over the same MCP/connector pattern) and more chat channels
+(WhatsApp, etc.) — same agent core and safety model.
 
 ## License
 
