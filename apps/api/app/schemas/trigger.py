@@ -18,6 +18,8 @@ class TriggerCreate(BaseModel):
     allow_egress: bool = False
     require_approval: bool = False
     skill: str | None = None
+    # Fire automatically every N minutes; omit for manual/webhook-only.
+    interval_minutes: int | None = Field(default=None, ge=1)
 
 
 class TriggerRead(BaseModel):
@@ -34,5 +36,7 @@ class TriggerRead(BaseModel):
     allow_egress: bool
     require_approval: bool
     skill: str | None
+    interval_minutes: int | None
+    last_fired_at: datetime | None
     created_at: datetime
     updated_at: datetime

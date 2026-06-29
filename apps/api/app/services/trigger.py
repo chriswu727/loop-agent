@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import uuid
+from datetime import UTC, datetime
 
+from app.core.logging import get_logger
 from app.db.models.task import TaskModel
 from app.db.models.trigger import TriggerModel
 from app.exceptions import ConflictError, NotFoundError
@@ -11,6 +13,22 @@ from app.repositories.trigger import TriggerRepository
 from app.schemas.task import LimitsIn, TaskCreate
 from app.schemas.trigger import TriggerCreate
 from app.services.task import TaskService
+
+log = get_logger("scheduler")
+
+
+def _now() -> datetime:
+    # naive UTC, compared consistently across SQLite (naive) and Postgres
+    return datetime.now(UTC).replace(tzinfo=None)
+
+
+def _is_due(trigger: TriggerModel, now: datetime) -> bool:
+    if not trigger.enabled or trigger.interval_minutes is None:
+        return False
+    if trigger.last_fired_at is None:
+        return True
+    last = trigger.last_fired_at.replace(tzinfo=None)
+    return (now - last).total_seconds() >= trigger.interval_minutes * 60
 
 
 class TriggerService:
@@ -31,6 +49,8 @@ class TriggerService:
             allow_egress=payload.allow_egress,
             require_approval=payload.require_approval,
             skill=payload.skill,
+            interval_minutes=payload.interval_minutes,
+            last_fired_at=None,
         )
 
     async def list(self) -> list[TriggerModel]:
@@ -63,7 +83,21 @@ class TriggerService:
             )
         )
         trigger.fire_count += 1
+        trigger.last_fired_at = _now()
         await self.triggers.session.flush()
         await self.triggers.session.refresh(trigger)
         await self.triggers.session.commit()
         return task
+
+    async def tick(self) -> int:
+        """Fire every trigger whose interval is due and start its task. Returns the
+        number fired. Called periodically by the scheduler loop."""
+        from app.services.runner import trigger_task
+
+        now = _now()
+        due = [t for t in await self.list() if _is_due(t, now)]
+        for trigger in due:
+            task = await self.fire(trigger.id)
+            await trigger_task(task.id)
+            log.info("scheduler.fired", trigger=trigger.name, task_id=str(task.id))
+        return len(due)

@@ -139,6 +139,7 @@ export interface TriggerCreateBody {
   allow_egress?: boolean;
   require_approval?: boolean;
   skill?: string | null;
+  interval_minutes?: number | null;
 }
 
 export type { Trigger };

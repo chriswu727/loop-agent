@@ -103,6 +103,10 @@ class Settings(BaseSettings):
     agent_max_finish_retries: int = 2  # times a rejected finish is pushed back
     agent_stuck_threshold: int = 4  # consecutive failed/blocked steps -> give up
 
+    # ---- Trigger heartbeat (scheduled firing) ----
+    scheduler_enabled: bool = True
+    scheduler_tick_seconds: int = 60
+
     @computed_field  # type: ignore[prop-decorator]
     @property
     def is_production(self) -> bool:

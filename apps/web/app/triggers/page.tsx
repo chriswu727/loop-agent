@@ -14,6 +14,7 @@ export default function TriggersPage() {
   const [noShell, setNoShell] = useState(false);
   const [allowNetwork, setAllowNetwork] = useState(false);
   const [requireApproval, setRequireApproval] = useState(false);
+  const [intervalMin, setIntervalMin] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -35,15 +36,18 @@ export default function TriggersPage() {
     setBusy(true);
     setError(null);
     try {
+      const interval = parseInt(intervalMin, 10);
       await triggersApi.create({
         name: name.trim(),
         goal: goal.trim(),
         allowed_tools: noShell ? ['write_file', 'edit_file', 'read_file'] : null,
         allow_egress: allowNetwork,
         require_approval: requireApproval,
+        interval_minutes: Number.isFinite(interval) && interval >= 1 ? interval : null,
       });
       setName('');
       setGoal('');
+      setIntervalMin('');
       await load();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Could not create the trigger.');
@@ -116,6 +120,18 @@ export default function TriggersPage() {
             />
             Require approval
           </label>
+          <label className="flex items-center gap-1.5 opacity-80">
+            every
+            <input
+              type="number"
+              min={1}
+              value={intervalMin}
+              onChange={(e) => setIntervalMin(e.target.value)}
+              placeholder="—"
+              className="w-14 rounded-md border border-black/10 bg-transparent px-2 py-1 dark:border-white/15"
+            />
+            min
+          </label>
           <button
             type="submit"
             disabled={busy || name.trim().length < 1 || goal.trim().length < 4}
@@ -140,7 +156,9 @@ export default function TriggersPage() {
               <p className="text-sm font-medium">{t.name}</p>
               <p className="line-clamp-2 text-xs opacity-60">{t.goal}</p>
               <p className="mt-1 text-[11px] opacity-40">
-                fired {t.fire_count}×{t.require_approval && ' · approval'}
+                fired {t.fire_count}×
+                {t.interval_minutes && ` · every ${t.interval_minutes}m`}
+                {t.require_approval && ' · approval'}
                 {t.allow_egress && ' · network'}
                 {t.allowed_tools && ' · files-only'}
               </p>

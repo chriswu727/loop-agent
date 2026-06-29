@@ -8,6 +8,7 @@ attached to ``app.state`` and reachable from request handlers.
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 from collections.abc import AsyncIterator
 from typing import TYPE_CHECKING
@@ -42,11 +43,24 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     cache = create_cache()
     app.state.cache = cache
 
+    # Start the trigger heartbeat (fires due interval triggers). Inline-mode only
+    # so we don't run two schedulers when a separate worker is deployed.
+    scheduler_stop: asyncio.Event | None = None
+    scheduler_task: asyncio.Task[None] | None = None
+    if settings.scheduler_enabled and settings.execution_mode == "inline":
+        from app.services.scheduler import run_scheduler
+
+        scheduler_stop = asyncio.Event()
+        scheduler_task = asyncio.create_task(run_scheduler(scheduler_stop))
+
     log.info("startup.complete")
     try:
         yield
     finally:
         log.info("shutdown.begin")
+        if scheduler_stop is not None and scheduler_task is not None:
+            scheduler_stop.set()
+            await scheduler_task
         await cache.close()
         await dispose_engine()
         log.info("shutdown.complete")

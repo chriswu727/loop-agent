@@ -7,7 +7,9 @@ not only when a person sits down to publish a task.
 
 from __future__ import annotations
 
-from sqlalchemy import JSON, Boolean, Integer, String, Text
+from datetime import datetime
+
+from sqlalchemy import JSON, Boolean, DateTime, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
@@ -20,6 +22,9 @@ class TriggerModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     goal: Mapped[str] = mapped_column(Text, nullable=False)
     enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     fire_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    # Heartbeat: fire automatically every N minutes (NULL = manual/webhook only).
+    interval_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    last_fired_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # The task configuration each fire produces — mirrors a published task.
     max_steps: Mapped[int] = mapped_column(Integer, nullable=False)

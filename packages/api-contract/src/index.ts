@@ -94,6 +94,8 @@ export interface Trigger {
   allow_egress: boolean;
   require_approval: boolean;
   skill: string | null;
+  interval_minutes: number | null;
+  last_fired_at: string | null;
   created_at: string;
   updated_at: string;
 }
