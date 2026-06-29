@@ -18,6 +18,7 @@ dependencies = [
     "httpx>=0.28",
     "python-multipart>=0.0.18",
     "cryptography>=42",
+    "mcp>=1.28",
     "structlog>=24.4",
     "pyjwt>=2.10",
     "prometheus-client>=0.21",

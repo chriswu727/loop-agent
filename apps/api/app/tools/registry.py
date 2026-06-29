@@ -55,6 +55,7 @@ class ToolExecutor:
         envelope: CapabilityEnvelope | None = None,
         before_tool: BeforeHook | None = None,
         after_tool: AfterHook | None = None,
+        mcp: Any = None,
     ) -> None:
         self.workspace = workspace
         self.approval_mode = approval_mode
@@ -64,6 +65,9 @@ class ToolExecutor:
         self.envelope = envelope or CapabilityEnvelope.full()
         self.before_tool = before_tool
         self.after_tool = after_tool
+        # Optional MCP tool provider (e.g. a headless browser). Its tools dispatch
+        # here too, so the envelope/hooks apply to them like any other tool.
+        self.mcp = mcp
 
     async def execute(self, tool: str, args: dict[str, Any]) -> ToolResult:
         # Capability gate: a tool the envelope doesn't grant never runs.
@@ -96,6 +100,11 @@ class ToolExecutor:
                 return ToolResult(self.workspace.read(str(args["path"])))
             if tool == "run_command":
                 return await self._run(str(args["command"]))
+            if self.mcp is not None and tool in self.mcp.tool_names:
+                try:
+                    return ToolResult(await self.mcp.call(tool, args))
+                except Exception as exc:  # an MCP tool error is a normal observation
+                    return ToolResult(f"{tool} failed: {exc}", ToolStatus.ERROR)
             return ToolResult(
                 f"Unknown tool {tool!r}. Valid tools: {sorted(VALID_TOOLS)}", ToolStatus.ERROR
             )

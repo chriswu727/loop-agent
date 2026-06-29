@@ -41,6 +41,7 @@ from app.services.verification import checks_summary, run_checks
 from app.tools import VALID_TOOLS, CapabilityEnvelope, ToolExecutor, ToolStatus, Workspace
 from app.tools.envelope import EXECUTOR_TOOLS
 from app.tools.guards import make_egress_guard
+from app.tools.mcp import McpBrowser
 from app.tools.policy import Verdict, evaluate_command
 
 log = get_logger("agent")
@@ -95,6 +96,8 @@ class AgentReactService:
         self.memory = MemoryStore(Path(settings.agent_memory_root))
         self._memory_snapshot = ""  # what the agent remembers, injected into planning
         self._skill_instructions = ""  # instructions from the task's signed skill
+        self._browser_specs = ""  # MCP browser tool list, injected into planning
+        self._mcp_tools: set[str] = set()  # extra (MCP) tool names the planner may call
 
     async def run(self, task_id: uuid.UUID) -> None:
         """Run, or resume, a task. A task is resumable when it was paused on an
@@ -136,10 +139,11 @@ class AgentReactService:
             skill_egress = skill.manifest.allow_egress
 
         # Effective envelope is the intersection of the task's and the skill's:
-        # the narrower of the two always wins.
+        # the narrower of the two always wins. Browsing is egress, so use_browser
+        # implies the egress grant.
         envelope = CapabilityEnvelope.from_tools(
             _combine_tools(task.allowed_tools, skill_tools),
-            egress_allowed=task.allow_egress and skill_egress,
+            egress_allowed=(task.allow_egress and skill_egress) or task.use_browser,
         )
         executor = ToolExecutor(
             workspace,
@@ -149,6 +153,15 @@ class AgentReactService:
             envelope=envelope,
             before_tool=make_egress_guard(envelope),
         )
+
+        # Spin up a headless browser (MCP) if the task opted in. A startup failure
+        # is non-fatal: the task simply runs without browser tools.
+        browser = await self._start_browser(task)
+        if browser is not None:
+            executor.mcp = browser
+            self._browser_specs = browser.specs()
+            self._mcp_tools = set(browser.tool_names)
+
         task.status = TaskStatus.RUNNING.value
         task.workspace_path = str(workspace.root)
         # Rebuild the working memory from whatever has already happened so a
@@ -167,6 +180,21 @@ class AgentReactService:
             task.stop_reason = StopReason.ERROR.value
             task.error = str(exc)[:1000]
             await self._commit()
+        finally:
+            if browser is not None:
+                await browser.stop()
+
+    async def _start_browser(self, task: TaskModel) -> McpBrowser | None:
+        if not (task.use_browser and settings.agent_browser_enabled):
+            return None
+        browser = McpBrowser(settings.agent_browser_command)
+        try:
+            await browser.start()
+            return browser
+        except Exception:  # browser unavailable -> run without it, don't fail the task
+            log.warning("agent.browser_unavailable", task_id=str(task.id))
+            await browser.stop()
+            return None
 
     async def _run_loop(
         self, task: TaskModel, workspace: Workspace, executor: ToolExecutor, *, start: int
@@ -217,6 +245,7 @@ class AgentReactService:
                 executor.envelope.egress_allowed,
                 self._memory_snapshot,
                 self._skill_instructions,
+                self._browser_specs,
             )
             result = await self.llm.complete(system, user, max_tokens=1200, temperature=0.5)
             step_tokens = result.tokens
@@ -432,7 +461,7 @@ class AgentReactService:
         args = decision.get("args")
         if not isinstance(args, dict):
             args = {}
-        if tool not in VALID_TOOLS:
+        if tool not in VALID_TOOLS and tool not in self._mcp_tools:
             return thought, None, {}
         return thought, str(tool), args
 

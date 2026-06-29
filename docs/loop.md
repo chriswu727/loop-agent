@@ -3,6 +3,21 @@
 For whoever picks this up next. Why the agent is built the way it is, and the
 constraints that aren't obvious from the code.
 
+## MCP client + headless browser
+
+Loop is an MCP client. When a task opts into `use_browser`, the engine spawns an
+MCP server (`@playwright/mcp`, stdio) for the duration of the run, discovers its
+tools, and exposes them to the agent as ordinary tools — navigate, snapshot,
+click, type, extract. They dispatch through the same `ToolExecutor`, so the
+capability envelope and hooks apply like any built-in tool, and the agent's own
+JSON decision stays the only thing that can trigger one. Browsing is network
+egress, so `use_browser` implies the egress grant; a browser-startup failure is
+non-fatal (the task runs without browser tools) and the session is torn down when
+the run ends. This is the same client future connectors (email, calendar) ride —
+adding one is registering another MCP server, not rebuilding the integration.
+Verified live: a task navigated to a page, read it via `browser_snapshot`, wrote
+the heading to a file, and the verifier accepted it by re-execution (score 100).
+
 ## The core idea
 
 Loop is an **autonomous ReAct agent with a hard budget and a verifier**. You

@@ -35,6 +35,7 @@ export function PublishForm({
   const [noShell, setNoShell] = useState(false);
   const [allowNetwork, setAllowNetwork] = useState(false);
   const [requireApproval, setRequireApproval] = useState(false);
+  const [useBrowser, setUseBrowser] = useState(false);
   const [skill, setSkill] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -54,6 +55,7 @@ export function PublishForm({
         allowed_tools,
         allow_egress: allowNetwork,
         require_approval: requireApproval,
+        use_browser: useBrowser,
         skill: skill || null,
       };
       if (files.length > 0) {
@@ -143,6 +145,14 @@ export function PublishForm({
             onChange={(e) => setRequireApproval(e.target.checked)}
           />
           Require approval
+        </label>
+        <label className="flex cursor-pointer items-center gap-1.5 opacity-80">
+          <input
+            type="checkbox"
+            checked={useBrowser}
+            onChange={(e) => setUseBrowser(e.target.checked)}
+          />
+          Use browser
         </label>
         {skills.length > 0 && (
           <select

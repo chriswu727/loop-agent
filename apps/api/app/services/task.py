@@ -58,6 +58,7 @@ class TaskService:
             allowed_tools=payload.allowed_tools,
             allow_egress=payload.allow_egress,
             require_approval=payload.require_approval,
+            use_browser=payload.use_browser,
             skill=payload.skill,
             max_steps=max_steps,
             token_budget=token_budget,

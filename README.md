@@ -68,6 +68,10 @@ axes a chat-log agent can't easily copy:
   **downloadable** from the task view.
 - **Cross-task memory** — a `remember` tool + a `MEMORY.md` store the agent reads
   at the start of every task, so it carries knowledge between tasks.
+- **Browse the web** — opt a task into `use_browser` and the agent drives a real
+  headless browser through an MCP server it spawns (`@playwright/mcp`): navigate,
+  read the page, click, type, extract. Same path the email/calendar connectors
+  will take. Gated as network egress.
 - **Triggers** — save a task template and fire it from any external event
   (`POST /triggers/{id}/fire`) or on a schedule (interval heartbeat).
 - **Human-in-the-loop** — `ask_user` pauses the run for your input and resumes
@@ -142,7 +146,7 @@ differentiator roadmap: [`docs/STRATEGY.md`](./docs/STRATEGY.md).
 ## Tests
 
 ```bash
-cd apps/api && . .venv/bin/activate && pytest    # ~89 tests, all offline
+cd apps/api && . .venv/bin/activate && pytest    # ~93 tests, all offline
 ```
 
 Drives every stop condition with a scripted fake model; proves the sandbox
@@ -155,10 +159,10 @@ default-denied, and the provider cascade falls over correctly.
 Delivered: tool-using agent core, re-execution Receipts, tamper-evident ledger,
 capability envelope, default-deny egress, approval gate, injection quarantine,
 signed skills, document editing, cross-task memory, triggers + scheduler, SSE,
-provider registry.
+provider registry, and an **MCP client with a headless browser**.
 
-Next (needs infrastructure/keys): container isolation, MCP integrations
-(browser / email / calendar), and chat-app inlets — built on the same agent core
+Next: more MCP connectors over the same client (email / calendar), container
+isolation (needs Docker), and chat-app inlets — all built on the same agent core
 and safety model.
 
 ## License

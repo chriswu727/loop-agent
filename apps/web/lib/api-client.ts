@@ -78,6 +78,7 @@ export interface PublishBody {
   allowed_tools?: string[] | null;
   allow_egress?: boolean;
   require_approval?: boolean;
+  use_browser?: boolean;
   skill?: string | null;
   limits?: {
     max_steps?: number;

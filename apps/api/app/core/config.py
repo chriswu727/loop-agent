@@ -108,6 +108,10 @@ class Settings(BaseSettings):
     scheduler_enabled: bool = True
     scheduler_tick_seconds: int = 60
 
+    # ---- MCP: headless browser (a task opts in with use_browser) ----
+    agent_browser_enabled: bool = True
+    agent_browser_command: str = "npx -y @playwright/mcp@latest --headless --isolated"
+
     @computed_field  # type: ignore[prop-decorator]
     @property
     def is_production(self) -> bool:
