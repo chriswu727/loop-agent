@@ -56,9 +56,9 @@ export default function TriggersPage() {
     }
   }
 
-  async function fire(id: string) {
+  async function fire(t: Trigger) {
     try {
-      const task = await triggersApi.fire(id);
+      const task = await triggersApi.fire(t.id, t.secret);
       router.push(`/tasks/${task.id}`);
     } catch {
       /* a disabled or missing trigger; reload reconciles */
@@ -162,10 +162,13 @@ export default function TriggersPage() {
                 {t.allow_egress && ' · network'}
                 {t.allowed_tools && ' · files-only'}
               </p>
+              <p className="mt-1 truncate font-mono text-[10px] opacity-30" title="Webhook URL">
+                POST /api/v1/triggers/{t.id}/fire?secret={t.secret}
+              </p>
             </div>
             <div className="flex shrink-0 gap-2 text-xs">
               <button
-                onClick={() => fire(t.id)}
+                onClick={() => fire(t)}
                 className="rounded-md bg-blue-600 px-3 py-1.5 font-medium text-white hover:bg-blue-500"
               >
                 Fire

@@ -105,6 +105,7 @@ def upgrade() -> None:
         sa.Column("goal", sa.Text(), nullable=False),
         sa.Column("enabled", sa.Boolean(), nullable=False, server_default=sa.text("true")),
         sa.Column("fire_count", sa.Integer(), nullable=False),
+        sa.Column("secret", sa.String(length=64), nullable=False),
         sa.Column("interval_minutes", sa.Integer(), nullable=True),
         sa.Column("last_fired_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("max_steps", sa.Integer(), nullable=False),

@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
+import hmac
+import secrets
 import uuid
 from datetime import UTC, datetime
 
 from app.core.logging import get_logger
 from app.db.models.task import TaskModel
 from app.db.models.trigger import TriggerModel
-from app.exceptions import ConflictError, NotFoundError
+from app.exceptions import ConflictError, ForbiddenError, NotFoundError
 from app.repositories.trigger import TriggerRepository
 from app.schemas.task import LimitsIn, TaskCreate
 from app.schemas.trigger import TriggerCreate
@@ -45,6 +47,7 @@ class TriggerService:
             fire_count=0,
             max_steps=max_steps,
             token_budget=token_budget,
+            secret=secrets.token_urlsafe(24),
             allowed_tools=payload.allowed_tools,
             allow_egress=payload.allow_egress,
             require_approval=payload.require_approval,
@@ -66,6 +69,16 @@ class TriggerService:
         deleted = await self.triggers.delete(trigger_id)
         if deleted == 0:
             raise NotFoundError(f"Trigger {trigger_id} does not exist")
+
+    async def fire_via_webhook(
+        self, trigger_id: uuid.UUID, provided_secret: str | None
+    ) -> TaskModel:
+        """Fire from an external HTTP caller — the trigger's secret must match.
+        (The scheduler's own ticks call ``fire`` directly and skip this check.)"""
+        trigger = await self.get(trigger_id)
+        if not provided_secret or not hmac.compare_digest(provided_secret, trigger.secret):
+            raise ForbiddenError("Invalid or missing trigger secret.")
+        return await self.fire(trigger_id)
 
     async def fire(self, trigger_id: uuid.UUID) -> TaskModel:
         """Publish a task from the trigger's template and bump its fire count."""

@@ -22,6 +22,8 @@ class TriggerModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     goal: Mapped[str] = mapped_column(Text, nullable=False)
     enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     fire_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    # Webhook secret: firing over HTTP must present this token. Generated on create.
+    secret: Mapped[str] = mapped_column(String(64), nullable=False)
     # Heartbeat: fire automatically every N minutes (NULL = manual/webhook only).
     interval_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
     last_fired_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

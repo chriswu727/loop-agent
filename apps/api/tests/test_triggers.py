@@ -21,13 +21,17 @@ async def test_create_list_fire_delete(client: AsyncClient) -> None:
     assert trigger["name"] == "nightly summary"
     assert trigger["max_steps"] == 40  # clamped to the cap
     assert trigger["require_approval"] is True
+    assert trigger["secret"]  # a webhook secret was generated
     tid = trigger["id"]
+    sec = trigger["secret"]
 
     listed = (await client.get("/api/v1/triggers")).json()
     assert any(t["id"] == tid for t in listed)
 
-    # Fire it -> a task is published (the agent run is stubbed in conftest).
-    fired = await client.post(f"/api/v1/triggers/{tid}/fire")
+    # Fire it with the secret -> a task is published (the agent run is stubbed).
+    fired = await client.post(
+        f"/api/v1/triggers/{tid}/fire", headers={"X-Trigger-Secret": sec}
+    )
     assert fired.status_code == 200
     task = fired.json()
     assert task["status"] == "pending"
@@ -45,7 +49,28 @@ async def test_create_list_fire_delete(client: AsyncClient) -> None:
     assert (await client.get("/api/v1/triggers")).json() == []
 
 
+async def test_fire_requires_the_secret(client: AsyncClient) -> None:
+    created = await client.post(
+        "/api/v1/triggers", json={"name": "hook", "goal": "do the webhook thing"}
+    )
+    trigger = created.json()
+    tid, sec = trigger["id"], trigger["secret"]
+
+    # No secret -> 403; wrong secret -> 403.
+    assert (await client.post(f"/api/v1/triggers/{tid}/fire")).status_code == 403
+    bad = await client.post(f"/api/v1/triggers/{tid}/fire", headers={"X-Trigger-Secret": "nope"})
+    assert bad.status_code == 403
+
+    # Correct secret via query param (for webhook senders that only send a URL).
+    ok = await client.post(f"/api/v1/triggers/{tid}/fire?secret={sec}")
+    assert ok.status_code == 200
+    assert ok.json()["status"] == "pending"
+
+
 async def test_fire_unknown_trigger_404(client: AsyncClient) -> None:
-    resp = await client.post("/api/v1/triggers/00000000-0000-0000-0000-000000000000/fire")
+    resp = await client.post(
+        "/api/v1/triggers/00000000-0000-0000-0000-000000000000/fire",
+        headers={"X-Trigger-Secret": "whatever"},
+    )
     assert resp.status_code == 404
     assert resp.json()["code"] == "not_found"

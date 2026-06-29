@@ -149,7 +149,11 @@ export const triggersApi = {
   list: () => apiFetch<Trigger[]>('/api/v1/triggers'),
   create: (body: TriggerCreateBody) =>
     apiFetch<Trigger>('/api/v1/triggers', { method: 'POST', body: JSON.stringify(body) }),
-  fire: (id: string) => apiFetch<Task>(`/api/v1/triggers/${id}/fire`, { method: 'POST' }),
+  fire: (id: string, secret: string) =>
+    apiFetch<Task>(`/api/v1/triggers/${id}/fire`, {
+      method: 'POST',
+      headers: { 'X-Trigger-Secret': secret },
+    }),
   remove: (id: string) =>
     apiFetch<void>(`/api/v1/triggers/${id}`, { method: 'DELETE' }),
 };

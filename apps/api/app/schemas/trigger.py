@@ -30,6 +30,7 @@ class TriggerRead(BaseModel):
     goal: str
     enabled: bool
     fire_count: int
+    secret: str
     max_steps: int
     token_budget: int
     allowed_tools: list[str] | None

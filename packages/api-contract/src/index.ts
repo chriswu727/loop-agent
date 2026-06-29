@@ -89,6 +89,7 @@ export interface Trigger {
   goal: string;
   enabled: boolean;
   fire_count: number;
+  secret: string;
   max_steps: number;
   token_budget: number;
   allowed_tools: string[] | null;
