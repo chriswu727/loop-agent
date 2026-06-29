@@ -7,41 +7,31 @@ fail the task cleanly rather than hang.
 
 from __future__ import annotations
 
+from dataclasses import asdict
+
 import httpx
 
 from app.core.config import settings
 from app.core.llm.base import FallbackEvent, LLMError, LLMResult
-from app.core.llm.providers import (
-    call_deepseek,
-    call_gemini,
-    call_glm,
-    wrap_parse_error,
-)
+from app.core.llm.providers import wrap_parse_error
+from app.core.llm.registry import PROVIDERS, api_key_for, configured_providers, new_http_client
 from app.core.logging import get_logger
 
 log = get_logger("llm")
-
-# provider id -> (adapter, settings attribute holding its api key)
-_PROVIDERS = {
-    "deepseek": (call_deepseek, "deepseek_api_key"),
-    "gemini": (call_gemini, "gemini_api_key"),
-    "glm": (call_glm, "glm_api_key"),
-}
 
 
 class FallbackLLMClient:
     """Cascading client. Construct once; reuse the pooled HTTP connection."""
 
-    def __init__(self, primary: str | None = None) -> None:
+    def __init__(
+        self, primary: str | None = None, *, client: httpx.AsyncClient | None = None
+    ) -> None:
         self.primary = primary or settings.llm_default_provider
-        self._client = httpx.AsyncClient(
-            timeout=httpx.Timeout(settings.llm_timeout_seconds, connect=10.0),
-        )
+        self._client = client or new_http_client()
 
     def _chain(self) -> list[str]:
         """Configured providers, primary first, only those that have an API key."""
-        ordered = [self.primary, *[p for p in _PROVIDERS if p != self.primary]]
-        return [p for p in ordered if getattr(settings, _PROVIDERS[p][1], None)]
+        return configured_providers(self.primary)
 
     async def complete(
         self,
@@ -54,7 +44,8 @@ class FallbackLLMClient:
         chain = self._chain()
         if not chain:
             raise LLMError(
-                "No LLM provider configured — set DEEPSEEK_API_KEY, GEMINI_API_KEY or GLM_API_KEY",
+                "No LLM provider configured — set ANTHROPIC_API_KEY, DEEPSEEK_API_KEY, "
+                "GEMINI_API_KEY or GLM_API_KEY",
                 retryable=False,
             )
 
@@ -62,8 +53,8 @@ class FallbackLLMClient:
         last_error: LLMError | None = None
 
         for index, provider in enumerate(chain):
-            adapter, key_attr = _PROVIDERS[provider]
-            api_key = getattr(settings, key_attr)
+            adapter = PROVIDERS[provider].adapter
+            api_key = api_key_for(provider)
             if index > 0 and last_error is not None:
                 event = FallbackEvent(
                     from_provider=chain[index - 1],
@@ -71,7 +62,7 @@ class FallbackLLMClient:
                     reason=str(last_error)[:200],
                 )
                 fallbacks.append(event)
-                log.warning("llm.fallback", **event.__dict__)
+                log.warning("llm.fallback", **asdict(event))
 
             try:
                 content, tokens = await adapter(

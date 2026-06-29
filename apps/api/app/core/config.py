@@ -70,10 +70,11 @@ class Settings(BaseSettings):
     prometheus_enabled: bool = True
 
     # ---- LLM providers (cascade: primary first, others as fallback) ----
+    anthropic_api_key: str | None = None
     deepseek_api_key: str | None = None
     gemini_api_key: str | None = None
     glm_api_key: str | None = None
-    llm_default_provider: Literal["deepseek", "gemini", "glm"] = "deepseek"
+    llm_default_provider: Literal["anthropic", "deepseek", "gemini", "glm"] = "deepseek"
     llm_timeout_seconds: int = 120
 
     # ---- Agent loop limits (the "within the limit" guardrails) ----

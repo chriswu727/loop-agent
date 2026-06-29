@@ -14,10 +14,12 @@ from app.core.llm.base import LLMError, is_retryable_message
 DEEPSEEK_URL = "https://api.deepseek.com/chat/completions"
 GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 GLM_URL = "https://open.bigmodel.cn/api/paas/v4/chat/completions"
+ANTHROPIC_URL = "https://api.anthropic.com/v1/messages"
 
 DEEPSEEK_MODEL = "deepseek-chat"
 GEMINI_MODEL = "gemini-2.0-flash"
 GLM_MODEL = "glm-4-flash"
+ANTHROPIC_MODEL = "claude-sonnet-4-6"
 
 
 def _raise_for_status(resp: httpx.Response, provider: str) -> None:
@@ -127,6 +129,40 @@ async def call_glm(
     data = resp.json()
     content = data["choices"][0]["message"]["content"]
     tokens = int(data.get("usage", {}).get("total_tokens", 0))
+    return content, tokens
+
+
+async def call_anthropic(
+    client: httpx.AsyncClient,
+    api_key: str,
+    system: str,
+    user: str,
+    *,
+    max_tokens: int,
+    temperature: float,
+) -> tuple[str, int]:
+    try:
+        resp = await client.post(
+            ANTHROPIC_URL,
+            headers={"x-api-key": api_key, "anthropic-version": "2023-06-01"},
+            json={
+                "model": ANTHROPIC_MODEL,
+                "max_tokens": max_tokens,
+                "system": system,
+                "messages": [{"role": "user", "content": user}],
+                "temperature": temperature,
+            },
+        )
+    except httpx.HTTPError as exc:
+        raise LLMError(f"anthropic request failed: {exc}", retryable=True) from exc
+
+    _raise_for_status(resp, "anthropic")
+    data = resp.json()
+    content = "".join(
+        block.get("text", "") for block in data.get("content", []) if block.get("type") == "text"
+    )
+    usage = data.get("usage", {})
+    tokens = int(usage.get("input_tokens", 0)) + int(usage.get("output_tokens", 0))
     return content, tokens
 
 
