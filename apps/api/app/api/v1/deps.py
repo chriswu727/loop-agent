@@ -18,7 +18,9 @@ from app.db.session import get_session
 from app.exceptions import RateLimitedError, UnauthorizedError
 from app.repositories.step import StepRepository
 from app.repositories.task import TaskRepository
+from app.repositories.trigger import TriggerRepository
 from app.services.task import TaskService
+from app.services.trigger import TriggerService
 
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
 
@@ -35,6 +37,16 @@ def get_task_service(session: SessionDep) -> TaskService:
 
 
 TaskServiceDep = Annotated[TaskService, Depends(get_task_service)]
+
+
+def get_trigger_service(session: SessionDep) -> TriggerService:
+    return TriggerService(
+        TriggerRepository(session),
+        TaskService(TaskRepository(session), StepRepository(session)),
+    )
+
+
+TriggerServiceDep = Annotated[TriggerService, Depends(get_trigger_service)]
 
 
 # --- Auth seam (no user store yet — wire to your IdP) -----------------------

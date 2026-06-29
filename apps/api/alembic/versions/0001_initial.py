@@ -95,8 +95,35 @@ def upgrade() -> None:
     )
     op.create_index(op.f("ix_steps_task_id"), "steps", ["task_id"], unique=False)
 
+    op.create_table(
+        "triggers",
+        sa.Column("id", sa.Uuid(), nullable=False),
+        sa.Column("name", sa.String(length=120), nullable=False),
+        sa.Column("goal", sa.Text(), nullable=False),
+        sa.Column("enabled", sa.Boolean(), nullable=False, server_default=sa.text("true")),
+        sa.Column("fire_count", sa.Integer(), nullable=False),
+        sa.Column("max_steps", sa.Integer(), nullable=False),
+        sa.Column("token_budget", sa.Integer(), nullable=False),
+        sa.Column("allowed_tools", sa.JSON(), nullable=True),
+        sa.Column("allow_egress", sa.Boolean(), nullable=False, server_default=sa.text("false")),
+        sa.Column(
+            "require_approval", sa.Boolean(), nullable=False, server_default=sa.text("false")
+        ),
+        sa.Column("skill", sa.String(length=100), nullable=True),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"),
+            nullable=False,
+        ),
+        sa.Column(
+            "updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"),
+            nullable=False,
+        ),
+        sa.PrimaryKeyConstraint("id", name=op.f("pk_triggers")),
+    )
+
 
 def downgrade() -> None:
+    op.drop_table("triggers")
     op.drop_index(op.f("ix_steps_task_id"), table_name="steps")
     op.drop_table("steps")
     op.drop_index(op.f("ix_tasks_status"), table_name="tasks")

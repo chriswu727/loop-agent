@@ -1,0 +1,30 @@
+"""A saved task template that can be fired to publish a task.
+
+Firing a trigger (by an external event hitting its webhook) publishes and starts
+a task from the stored template — so the agent can act when something happens,
+not only when a person sits down to publish a task.
+"""
+
+from __future__ import annotations
+
+from sqlalchemy import JSON, Boolean, Integer, String, Text
+from sqlalchemy.orm import Mapped, mapped_column
+
+from app.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
+
+
+class TriggerModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "triggers"
+
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    goal: Mapped[str] = mapped_column(Text, nullable=False)
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    fire_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+    # The task configuration each fire produces — mirrors a published task.
+    max_steps: Mapped[int] = mapped_column(Integer, nullable=False)
+    token_budget: Mapped[int] = mapped_column(Integer, nullable=False)
+    allowed_tools: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
+    allow_egress: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    require_approval: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    skill: Mapped[str | None] = mapped_column(String(100), nullable=True)

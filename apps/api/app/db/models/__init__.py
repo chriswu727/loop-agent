@@ -2,5 +2,6 @@
 
 from app.db.models.step import StepModel
 from app.db.models.task import TaskModel
+from app.db.models.trigger import TriggerModel
 
-__all__ = ["StepModel", "TaskModel"]
+__all__ = ["StepModel", "TaskModel", "TriggerModel"]

@@ -71,3 +71,4 @@ def _no_real_background_run(monkeypatch: pytest.MonkeyPatch) -> None:
         return None
 
     monkeypatch.setattr("app.api.v1.routes.tasks.trigger_task", _noop, raising=True)
+    monkeypatch.setattr("app.api.v1.routes.triggers.trigger_task", _noop, raising=True)
