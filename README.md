@@ -2,12 +2,12 @@
 
 # Loop
 
-**Publish a goal. An autonomous agent plans it, writes files and runs commands
-in its own sandboxed workspace, checks its own work, and keeps going until the
-goal is done — stopping the moment it hits a limit you set.**
+**Publish a goal. An autonomous agent plans it, acts in a sandbox, verifies its
+own work, and stops the moment it hits a limit you set — and you can prove,
+audit, and trust everything it did.**
 
-A small, complete, production-shaped agent built on a layered Next.js + FastAPI
-foundation. Runs on a laptop with one LLM API key and no other infrastructure.
+A complete, production-shaped agent on a layered Next.js + FastAPI foundation.
+Runs on a laptop with one LLM API key and no other infrastructure.
 
 `Next.js 16` · `FastAPI` · `Python 3.12` · `Postgres or SQLite` · `MIT`
 
@@ -17,56 +17,63 @@ foundation. Runs on a laptop with one LLM API key and no other infrastructure.
 
 ## What it is
 
-Loop is a downloadable-grade autonomous agent. You give it a goal; it runs a
-**think → act → observe** loop (ReAct):
+Loop is an autonomous agent that **does real work and proves it**. You give it a
+goal; it runs a **think → act → observe** loop (ReAct):
 
 1. **Understand** — turn the goal into a concrete rubric (success criteria).
 2. **Plan** — decide the single next action.
 3. **Act** — call a tool: `write_file`, `edit_file`, `read_file`, `run_command`
-   (all inside a per-task sandboxed workspace), or `ask_user` to pause and ask
-   you a question when it genuinely needs input.
+   (inside a per-task sandboxed workspace), `ask_user`, `remember`, or `finish`.
 4. **Observe** — feed the result back in, and repeat.
-5. **Finish** — when the agent says it's done, a separate **verifier** checks
-   the work against the rubric. If it isn't actually done, the agent keeps going.
+5. **Finish** — an independent **verifier re-runs machine checks** to confirm the
+   work, then writes a tamper-evident **Receipt**. If it isn't actually done, the
+   agent keeps going.
 
-When the agent calls `ask_user` the run **pauses** (status *awaiting input*) and
-resumes exactly where it left off once you answer. Any files it produces are
-**listed and downloadable** from the task view.
+It stops on the first of: **goal achieved** (verified), **step limit**, **token
+budget**, **stuck** (too many failed/blocked actions), or **cancelled**. Every
+limit is clamped to a configured ceiling, so a task can never run away.
 
-**Bring your own files.** Attach a spreadsheet (`.xlsx`), Word doc (`.docx`), or
-data file when you publish a task and the agent edits it in place — openpyxl,
-python-docx and pandas are preinstalled. "Add a Total column and save it" really
-edits your spreadsheet, and the verifier re-opens it to prove the edit holds.
+## Why Loop instead of an OpenClaw-style agent
 
-It keeps looping until one of these is true, whichever comes first:
+Loop is designed to be the agent you can leave running unattended. It wins on two
+axes a chat-log agent can't easily copy:
 
-| Stop condition       | Meaning                                            |
-|----------------------|----------------------------------------------------|
-| **Goal achieved**    | the agent finished and the verifier accepted it    |
-| **Step limit**       | it used its allotted steps                          |
-| **Budget exhausted** | it spent its token budget                           |
-| **Stuck**            | too many failed/blocked actions in a row            |
-| **Cancelled**        | you pulled the plug                                |
+- **Verifiable completion.** Every accepted task ships a content-addressed,
+  tamper-evident **Receipt** (`receipt.json` + `RECEIPT.md`): the goal, the
+  rubric, every machine check the verifier **re-ran on a fresh copy of the
+  workspace**, a sha256 of every output file, and the head of a hash-chained step
+  ledger. "Done" is a replayable fact, not a claim — safe to drop into a CI gate.
+- **Least authority by construction.** Each task runs under a declared
+  **capability envelope** enforced at one choke point: which tools it may use,
+  default-deny network egress, and an optional human approval gate for risky
+  commands. **Skills are signed** (ed25519) and refused if tampered. Untrusted
+  data (tool output, files, memory) is framed so the agent never obeys
+  instructions hidden inside it.
 
-Every limit is a **hard guarantee**, clamped to a configured ceiling, so a task
-can never run away with cost or actions.
+| Differentiator | What it means |
+|----------------|---------------|
+| **Re-execution Receipt** | the verifier re-runs the agent's checks; a failed check overrides the model's "I'm done" |
+| **Tamper-evident ledger** | each step is hash-chained from a genesis; edit any step and `GET /tasks/{id}/ledger` reports it |
+| **Signed skills** | a skill bundle's ed25519 signature must verify or it won't load (`require_approval`-grade supply-chain safety) |
+| **Default-deny egress** | a task can't `curl`/`pip install`/`git clone` unless it declares `allow_egress` |
+| **Approval gate** | `require_approval` pauses non-allowlisted commands until you say yes; restart-safe |
+| **Injection quarantine** | tool output, files and memory are `[DATA]`, never commands |
 
-## Safety
+## Capabilities
 
-The agent runs shell commands, which is the riskiest surface in the product, so
-it is fenced in:
-
-- **Workspace sandbox** — every file path resolves inside the task's own
-  directory; `..`, absolute paths, and symlink escapes are refused.
-- **Command policy** — destructive/exfiltration patterns (`rm -rf /`, `sudo`,
-  fork bombs, piping the network into a shell, …) are hard-blocked and never
-  run. Allowlisted commands run automatically; in `manual` approval mode,
-  anything else waits for you.
-- **Bounds** — commands run from the workspace, with a timeout and an output
-  cap, and the token/step budget bounds the whole run.
-
-This is guardrails, not a jail: it stops the obvious foot-guns. True isolation
-(containers) is a later milestone — see [`docs/loop.md`](./docs/loop.md).
+- **Write & run code**, iterating until checks pass (with self-correction).
+- **Edit your documents** — attach an `.xlsx` / `.docx` / `.csv` when you publish
+  and the agent edits it in place (openpyxl / python-docx / pandas preinstalled);
+  the verifier re-opens the file to prove the edit holds. Outputs are listed and
+  **downloadable** from the task view.
+- **Cross-task memory** — a `remember` tool + a `MEMORY.md` store the agent reads
+  at the start of every task, so it carries knowledge between tasks.
+- **Triggers** — save a task template and fire it from any external event
+  (`POST /triggers/{id}/fire`) or on a schedule (interval heartbeat).
+- **Human-in-the-loop** — `ask_user` pauses the run for your input and resumes
+  exactly where it left off, surviving a process restart.
+- **Live view** — the task page streams updates over SSE (with a polling
+  fallback): the step timeline, budget meters, output files, and ledger status.
 
 ## Quickstart (zero infrastructure)
 
@@ -76,8 +83,8 @@ No Docker, no Postgres, no Redis. Node 20+, Python 3.12+, and one LLM API key.
 # 1) Backend (FastAPI on SQLite, agent runs in-process)
 cd apps/api
 python -m venv .venv && . .venv/bin/activate
-pip install -e ".[dev]"
-export DEEPSEEK_API_KEY=sk-...        # or GEMINI_API_KEY / GLM_API_KEY
+pip install -e ".[dev]" && pip install -e ".[office]"   # office libs for doc editing
+export DEEPSEEK_API_KEY=sk-...        # or ANTHROPIC_API_KEY / GEMINI_API_KEY / GLM_API_KEY
 export DATABASE_URL="sqlite+aiosqlite:///./loop.db"
 export EXECUTION_MODE=inline CACHE_BACKEND=memory
 uvicorn app.main:app --port 8000
@@ -86,12 +93,10 @@ uvicorn app.main:app --port 8000
 NEXT_PUBLIC_API_URL=http://localhost:8000 pnpm --filter web dev
 ```
 
-Open http://localhost:3000 and try: *"Write a Python script that prints the
-first 12 Fibonacci numbers, then run it to confirm the output."* Watch the agent
-write the file, run it, and verify itself.
-
-For the full Docker stack (web + api + worker + postgres + redis), `cp
-.env.example .env`, add a key, and `make up`.
+Open http://localhost:3000 and try *"Write a Python script that prints the first
+12 Fibonacci numbers, then run it to confirm."* — watch it write, run, verify,
+and produce a Receipt. For the full Docker stack, `cp .env.example .env`, add a
+key, and `make up`.
 
 ## Configuration
 
@@ -99,60 +104,62 @@ See [`.env.example`](./.env.example). Key knobs:
 
 | Variable | Purpose |
 |----------|---------|
-| `DEEPSEEK_API_KEY` / `GEMINI_API_KEY` / `GLM_API_KEY` | LLM providers (at least one). The loop cascades across them on a retryable failure. |
+| `ANTHROPIC_API_KEY` / `DEEPSEEK_API_KEY` / `GEMINI_API_KEY` / `GLM_API_KEY` | LLM providers (at least one). The loop cascades on a retryable failure. |
+| `LLM_DEFAULT_PROVIDER` | which provider to try first. |
 | `EXECUTION_MODE` | `inline` (run in the API process) or `worker` (enqueue to Redis). |
 | `DATABASE_URL` | `postgresql+asyncpg://…` or `sqlite+aiosqlite:///./loop.db`. |
-| `AGENT_WORKSPACES_ROOT` | Where per-task workspaces live. |
-| `AGENT_APPROVAL_MODE` | `auto` (block dangerous, run the rest) or `manual` (also hold non-allowlisted commands). |
+| `AGENT_APPROVAL_MODE` | `auto` or `manual` (pause non-allowlisted commands). |
+| `AGENT_SKILLS_ROOT` / `AGENT_SKILL_TRUST_PUBLIC_KEY` | signed-skills folder + the ed25519 key signatures must verify against. |
+| `AGENT_MEMORY_ROOT` | cross-task memory store. |
 
-Step/budget defaults and caps live in `app/core/config.py`.
+Per-task safety is set at publish time: `allowed_tools`, `allow_egress`,
+`require_approval`, `skill`. Defaults/caps live in `app/core/config.py`.
 
 ## Architecture
 
 A layered (ports-and-adapters) FastAPI backend; the agent lives in the service
-layer and talks to the model through a provider interface, to the OS through the
-tools, and to the database through repositories — so the whole loop runs
-deterministically under test with a fake model and fake-free tools.
+layer and talks to the model through a provider registry, to the OS through the
+tools, and to the DB through repositories — so the loop runs deterministically
+under test with a fake model.
 
 ```
 apps/api/app/
-├── core/llm/          # provider cascade (DeepSeek → Gemini → GLM) + token accounting
-├── tools/             # the agent's hands: workspace sandbox, command policy, shell, registry
-├── domain/            # Task, Step, Limits, stop reasons (pure)
-├── schemas/           # the API contract (Pydantic DTOs)
-├── repositories/      # Task/Step data access
+├── core/llm/          # provider registry (Anthropic/DeepSeek/Gemini/GLM) + cascade
+├── tools/             # workspace sandbox, command policy, egress guard, capability envelope, executor
 ├── services/
 │   ├── agent_react.py # THE ENGINE: understand → plan → act → observe → verify
-│   ├── prompts.py     # the understand / plan / verify prompts
-│   ├── task.py        # publish / list / cancel + limit clamping
-│   └── runner.py      # inline vs worker execution
-├── api/v1/routes/tasks.py   # the HTTP surface
-└── workers/worker.py        # @handler("run_task") for worker mode
-
-apps/web/
-├── app/page.tsx              # publish form + task list
-├── app/tasks/[id]/page.tsx   # the live run view (polls until terminal)
-└── components/               # budget meters, step timeline
+│   ├── verification.py# re-execution of finish checks on a workspace copy
+│   ├── receipt.py     # content-addressed Receipt; ledger.py = hash-chained steps
+│   ├── skills.py      # signed, capability-scoped skills
+│   ├── memory.py      # cross-task memory; trigger.py + scheduler.py = triggers/heartbeat
+│   └── task.py        # publish / limits / files / approval-resume
+└── api/v1/routes/     # tasks (incl. SSE /events), skills, memory, triggers
 ```
 
-See [`docs/loop.md`](./docs/loop.md) for design rationale and decisions.
+Design rationale: [`docs/loop.md`](./docs/loop.md). Strategy vs OpenClaw and the
+differentiator roadmap: [`docs/STRATEGY.md`](./docs/STRATEGY.md).
 
 ## Tests
 
 ```bash
-cd apps/api && . .venv/bin/activate && pytest
+cd apps/api && . .venv/bin/activate && pytest    # ~89 tests, all offline
 ```
 
-The suite drives every stop condition (goal, step cap, budget, stuck) with a
-scripted fake model, proves the sandbox refuses path escapes, and proves the
-command policy blocks dangerous commands — all offline.
+Drives every stop condition with a scripted fake model; proves the sandbox
+refuses path escapes, the command policy blocks dangerous commands, checks gate
+acceptance, the ledger detects tampering, skills reject bad signatures, egress is
+default-denied, and the provider cascade falls over correctly.
 
 ## Roadmap
 
-1. **(done) Tool-using agent core** — files + shell, sandboxed, budgeted.
-2. **Telegram** — talk to the agent and assign tasks from your phone.
-3. **Electron desktop** — download, paste an API key, go.
-4. **WhatsApp, web research, cross-task memory, container isolation.**
+Delivered: tool-using agent core, re-execution Receipts, tamper-evident ledger,
+capability envelope, default-deny egress, approval gate, injection quarantine,
+signed skills, document editing, cross-task memory, triggers + scheduler, SSE,
+provider registry.
+
+Next (needs infrastructure/keys): container isolation, MCP integrations
+(browser / email / calendar), and chat-app inlets — built on the same agent core
+and safety model.
 
 ## License
 
