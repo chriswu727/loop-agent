@@ -6,7 +6,7 @@ control flow. Each builder returns a ``(system, user)`` pair.
 
 from __future__ import annotations
 
-from app.tools.registry import TOOL_SPECS
+from app.tools.registry import SPAWN_SPEC, TOOL_SPECS
 
 
 def understand_prompts(goal: str) -> tuple[str, str]:
@@ -36,6 +36,7 @@ def plan_prompts(
     memory: str = "",
     skill_instructions: str = "",
     browser_tools: str = "",
+    allow_spawn: bool = False,
 ) -> tuple[str, str]:
     system = (
         "You are an autonomous agent that completes a task by taking ONE action at "
@@ -44,6 +45,7 @@ def plan_prompts(
         "is genuinely done.\n\n"
         "Available tools:\n"
         f"{TOOL_SPECS}\n"
+        + (f"{SPAWN_SPEC}\n" if allow_spawn else "")
         + (
             "\nA headless browser is available — use these tools to navigate and "
             "read live web pages (browser_snapshot returns the page's accessible "

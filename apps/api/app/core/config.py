@@ -103,6 +103,7 @@ class Settings(BaseSettings):
     agent_acceptance_score: int = 70  # verifier score needed to accept "finish"
     agent_max_finish_retries: int = 2  # times a rejected finish is pushed back
     agent_stuck_threshold: int = 4  # consecutive failed/blocked steps -> give up
+    agent_max_spawn_depth: int = 2  # how deep sub-agents may delegate further
 
     # ---- Trigger heartbeat (scheduled firing) ----
     scheduler_enabled: bool = True

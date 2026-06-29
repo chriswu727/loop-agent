@@ -19,8 +19,10 @@ executor, so the whole loop runs deterministically under test with a fake model.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import re
+import shutil
 import uuid
 from pathlib import Path
 from typing import Any
@@ -75,6 +77,13 @@ def _combine_tools(a: list[str] | None, b: list[str] | None) -> list[str] | None
     sa = EXECUTOR_TOOLS if a is None else {t for t in a if t in EXECUTOR_TOOLS}
     sb = EXECUTOR_TOOLS if b is None else {t for t in b if t in EXECUTOR_TOOLS}
     return sorted(sa & sb)
+
+
+def _as_int(value: object, default: int) -> int:
+    try:
+        return int(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return default
 
 
 def _clamp_score(value: object) -> int:
@@ -266,6 +275,7 @@ class AgentReactService:
                 self._memory_snapshot,
                 self._skill_instructions,
                 self._browser_specs,
+                allow_spawn=task.depth < settings.agent_max_spawn_depth,
             )
             result = await self.llm.complete(system, user, max_tokens=1200, temperature=0.5)
             step_tokens = result.tokens
@@ -299,6 +309,16 @@ class AgentReactService:
                                         observation, ToolStatus.OK, step_tokens)
                 if number >= task.max_steps:
                     await self._finish(task, StopReason.MAX_STEPS)
+                    return
+                continue
+
+            if tool == "spawn":
+                await self._handle_spawn(task, args, thought, number, step_tokens)
+                if number >= task.max_steps:
+                    await self._finish(task, StopReason.MAX_STEPS)
+                    return
+                if task.tokens_used >= task.token_budget:
+                    await self._finish(task, StopReason.BUDGET_EXHAUSTED)
                     return
                 continue
 
@@ -390,6 +410,99 @@ class AgentReactService:
         task.status = TaskStatus.AWAITING_INPUT.value
         await self._commit()
         log.info("agent.awaiting_approval", task_id=str(task.id), number=number)
+
+    async def _handle_spawn(
+        self, task: TaskModel, args: dict[str, Any], thought: str, number: int, plan_tokens: int
+    ) -> None:
+        """Delegate a sub-goal to a fresh sub-agent: it runs its own verified,
+        sandboxed loop under a sub-budget, and its result + output files come back
+        as this step's observation. The child's tokens count against this task."""
+        if task.depth >= settings.agent_max_spawn_depth:
+            await self._record_step(
+                task, number, thought, "spawn", args,
+                f"Blocked: sub-agent depth limit ({settings.agent_max_spawn_depth}) reached. "
+                "Do this part yourself.", ToolStatus.BLOCKED, plan_tokens,
+            )
+            return
+        goal = str(args.get("goal", "")).strip()
+        if len(goal) < 4:
+            await self._record_step(
+                task, number, thought, "spawn", args,
+                "spawn needs a 'goal' describing the sub-task.", ToolStatus.ERROR, plan_tokens,
+            )
+            return
+
+        remaining = max(0, task.token_budget - task.tokens_used - plan_tokens)
+        child_budget = max(1_000, min(_as_int(args.get("token_budget"), remaining), remaining))
+        child_steps = max(
+            1, min(_as_int(args.get("max_steps"), settings.agent_max_steps_default),
+                   settings.agent_max_steps_cap)
+        )
+        allowed = args.get("allowed_tools")
+        child = await self.tasks.create(
+            goal=goal,
+            status=TaskStatus.PENDING.value,
+            rubric=[],
+            allowed_tools=allowed if isinstance(allowed, list) else None,
+            allow_egress=bool(args.get("allow_egress", False)),
+            require_approval=task.require_approval,
+            use_browser=bool(args.get("use_browser", False)),
+            skill=None,
+            parent_id=task.id,
+            depth=task.depth + 1,
+            max_steps=child_steps,
+            token_budget=child_budget,
+            summary=None,
+            verification_score=0,
+            steps_used=0,
+            tokens_used=0,
+            workspace_path=None,
+        )
+        await self._commit()
+
+        child_service = AgentReactService(self.tasks, self.steps, self.llm)
+        await child_service.run(child.id)
+        await self.session.refresh(child)
+
+        task.tokens_used += child.tokens_used  # fold the child's cost into our ceiling
+        where = await self._copy_subtask_outputs(task, child)
+        ok = (
+            child.status == TaskStatus.COMPLETED.value
+            and child.stop_reason == StopReason.GOAL_ACHIEVED.value
+        )
+        files_line = f"\nIts output files are in {where}/." if where else ""
+        observation = (
+            f"Sub-agent for '{goal[:60]}' finished: status={child.status}, "
+            f"stop={child.stop_reason}, verified_by={child.verified_by}, "
+            f"score={child.verification_score}.\nSummary: {child.summary or '(none)'}.{files_line}"
+        )
+        await self._record_step(
+            task, number, thought, "spawn", args, observation,
+            ToolStatus.OK if ok else ToolStatus.ERROR, plan_tokens,
+        )
+
+    async def _copy_subtask_outputs(self, task: TaskModel, child: TaskModel) -> str | None:
+        """Copy the child's workspace into this task's workspace under
+        subtasks/<id> so the parent can compose the sub-agent's deliverables."""
+        if not (task.workspace_path and child.workspace_path):
+            return None
+        src = Path(child.workspace_path)
+        dest_rel = f"subtasks/{str(child.id)[:8]}"
+        dest = Path(task.workspace_path) / dest_rel
+
+        def _copy() -> bool:
+            if not src.exists():
+                return False
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copytree(src, dest, dirs_exist_ok=True)
+            return True
+
+        try:
+            copied = await asyncio.to_thread(_copy)
+            return dest_rel if copied else None
+        except Exception:
+            log.warning("agent.subtask_copy_failed", task_id=str(task.id), child=str(child.id))
+            return None
 
     # --- LLM phases -------------------------------------------------------
 

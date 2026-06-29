@@ -3,6 +3,23 @@
 For whoever picks this up next. Why the agent is built the way it is, and the
 constraints that aren't obvious from the code.
 
+## Multi-agent delegation (spawn)
+
+A task can call `spawn` to delegate a self-contained sub-goal to a fresh
+sub-agent. The child runs the *same* engine recursively — its own bounded loop,
+its own workspace, its own sandbox/container, its own verifier and Receipt — and
+its result (status, score, summary) plus its output files come back as the
+parent's observation; the child's output workspace is copied into
+`parent_ws/subtasks/<id>/` so the parent can compose deliverables. Guards: the
+child's token budget is capped by the parent's *remaining* budget and its tokens
+are folded back into the parent's `tokens_used`, so the global ceiling still
+holds; delegation is depth-limited (`AGENT_MAX_SPAWN_DEPTH`, default 2) and
+`spawn` is only offered in the planner prompt while depth remains. Each sub-agent
+is independently verified, so a decomposed task is a *tree* of Receipts, not one
+unverifiable blob. Verified live: a parent delegated "write add.py" and "write
+mul.py" to two sub-agents (depth 1), both finished with their own score-100
+Receipts, and their files landed under the parent's `subtasks/`.
+
 ## Container isolation (differentiator #4)
 
 `run_command` runs in an ephemeral Docker container (`loop-sandbox`, built from

@@ -53,7 +53,7 @@ class ScriptedLLM:
 
 async def _make_task(
     session: AsyncSession, *, max_steps: int, token_budget: int,
-    require_approval: bool = False, skill: str | None = None,
+    require_approval: bool = False, skill: str | None = None, depth: int = 0,
 ):
     repo = TaskRepository(session)
     task = await repo.create(
@@ -62,6 +62,7 @@ async def _make_task(
         rubric=[],
         require_approval=require_approval,
         skill=skill,
+        depth=depth,
         max_steps=max_steps,
         token_budget=token_budget,
         summary=None,
@@ -422,3 +423,62 @@ async def test_dangerous_command_is_blocked_not_run(session: AsyncSession) -> No
     assert first.tool == "run_command"
     assert first.status == "blocked"
     assert "policy" in first.observation.lower()
+
+
+async def test_spawn_delegates_to_a_verified_subagent(session: AsyncSession) -> None:
+    # Parent delegates, the child writes a file and finishes, then the parent finishes.
+    plans = [
+        {"thought": "delegate", "tool": "spawn",
+         "args": {"goal": "write child.txt with hello", "token_budget": 5000, "max_steps": 4}},
+        {"thought": "child writes", "tool": "write_file",
+         "args": {"path": "child.txt", "content": "hello"}},
+        {"thought": "child done", "tool": "finish", "args": {"summary": "wrote child.txt"}},
+        {"thought": "parent done", "tool": "finish", "args": {"summary": "delegated and composed"}},
+    ]
+    parent = await _make_task(session, max_steps=10, token_budget=1_000_000)
+    llm = ScriptedLLM(plans)
+    await _service(session, llm).run(parent.id)
+
+    await session.refresh(parent)
+    assert parent.status == TaskStatus.COMPLETED.value
+
+    # A child task was created, linked to the parent, one level deeper, and done.
+    repo = TaskRepository(session)
+    children = [t for t in await repo.list(limit=50, offset=0) if t.parent_id == parent.id]
+    assert len(children) == 1
+    child = children[0]
+    assert child.depth == 1 and parent.depth == 0
+    assert child.status == TaskStatus.COMPLETED.value
+    assert child.stop_reason == StopReason.GOAL_ACHIEVED.value
+
+    # The child's output was composed back into the parent's workspace, and its
+    # token cost was folded into the parent's budget.
+    copied = Path(parent.workspace_path) / "subtasks" / str(child.id)[:8] / "child.txt"
+    assert copied.read_text() == "hello"
+    assert parent.tokens_used >= child.tokens_used > 0
+
+    steps = await StepRepository(session).list_for_task(parent.id)
+    spawn_step = next(s for s in steps if s.tool == "spawn")
+    assert spawn_step.status == "ok"
+    assert "Sub-agent" in spawn_step.observation
+
+
+async def test_spawn_blocked_at_max_depth(session: AsyncSession) -> None:
+    # A task already at the max depth cannot spawn further; it must do the work.
+    plans = [
+        {"thought": "try to delegate", "tool": "spawn", "args": {"goal": "do a sub thing"}},
+        {"thought": "ok I'll finish", "tool": "finish", "args": {"summary": "done myself"}},
+    ]
+    task = await _make_task(
+        session, max_steps=10, token_budget=1_000_000, depth=settings.agent_max_spawn_depth
+    )
+    await _service(session, ScriptedLLM(plans)).run(task.id)
+
+    await session.refresh(task)
+    repo = TaskRepository(session)
+    children = [t for t in await repo.list(limit=50, offset=0) if t.parent_id == task.id]
+    assert children == []  # nothing was spawned
+    steps = await StepRepository(session).list_for_task(task.id)
+    spawn_step = next(s for s in steps if s.tool == "spawn")
+    assert spawn_step.status == "blocked"
+    assert "depth limit" in spawn_step.observation

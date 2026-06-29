@@ -39,9 +39,19 @@ the verifier re-runs to PROVE the work: \
 Always include checks when the goal involves files or runnable code.\
 """
 
-# ``finish``, ``ask_user`` and ``remember`` are handled by the loop, not the executor.
+# Offered to the planner only when the task may still delegate (depth-limited).
+SPAWN_SPEC = (
+    '- spawn: delegate a self-contained sub-goal to a fresh sub-agent that runs its '
+    'own verified loop in its own sandbox and returns a summary + its output files. '
+    'args: {"goal": "...", "max_steps": 8, "token_budget": 20000, '
+    '"allow_egress": false, "use_browser": false}. Use for big tasks that split '
+    'into independent pieces; its token use counts against your budget.'
+)
+
+# ``finish``, ``ask_user``, ``remember`` and ``spawn`` are handled by the loop.
 VALID_TOOLS = {
-    "write_file", "edit_file", "read_file", "run_command", "ask_user", "remember", "finish",
+    "write_file", "edit_file", "read_file", "run_command",
+    "ask_user", "remember", "spawn", "finish",
 }
 
 

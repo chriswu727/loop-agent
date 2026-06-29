@@ -7,7 +7,9 @@ types — so the model runs on a laptop and in the cluster alike.
 
 from __future__ import annotations
 
-from sqlalchemy import JSON, Boolean, Integer, String, Text
+import uuid
+
+from sqlalchemy import JSON, Boolean, Integer, String, Text, Uuid
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
@@ -33,6 +35,9 @@ class TaskModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     use_browser: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     # Optional signed skill this task runs under (by name).
     skill: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    # Sub-agent delegation: a spawned task points at its parent and tracks depth.
+    parent_id: Mapped[uuid.UUID | None] = mapped_column(Uuid(), nullable=True, index=True)
+    depth: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     # The action awaiting approval while paused: {"tool": ..., "args": {...}}.
     pending_action: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 

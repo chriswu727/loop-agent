@@ -67,6 +67,8 @@ class TaskRead(BaseModel):
     require_approval: bool
     use_browser: bool
     skill: str | None
+    parent_id: uuid.UUID | None
+    depth: int
     limits: LimitsRead
     summary: str | None
     verification_score: int
@@ -97,6 +99,8 @@ class TaskRead(BaseModel):
             require_approval=m.require_approval,  # type: ignore[attr-defined]
             use_browser=m.use_browser,  # type: ignore[attr-defined]
             skill=m.skill,  # type: ignore[attr-defined]
+            parent_id=m.parent_id,  # type: ignore[attr-defined]
+            depth=m.depth,  # type: ignore[attr-defined]
             limits=LimitsRead(
                 max_steps=m.max_steps,  # type: ignore[attr-defined]
                 token_budget=m.token_budget,  # type: ignore[attr-defined]

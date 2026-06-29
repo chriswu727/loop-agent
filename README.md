@@ -69,6 +69,10 @@ axes a chat-log agent can't easily copy:
   **downloadable** from the task view.
 - **Cross-task memory** — a `remember` tool + a `MEMORY.md` store the agent reads
   at the start of every task, so it carries knowledge between tasks.
+- **Delegate to sub-agents** — `spawn` hands a self-contained sub-goal to a fresh
+  sub-agent that runs its own verified, sandboxed loop and returns a Receipt; a
+  big task becomes a *tree* of independently-verified sub-tasks (depth- and
+  budget-bounded).
 - **Browse the web** — opt a task into `use_browser` and the agent drives a real
   headless browser through an MCP server it spawns (`@playwright/mcp`): navigate,
   read the page, click, type, extract. Same path the email/calendar connectors
@@ -147,7 +151,7 @@ differentiator roadmap: [`docs/STRATEGY.md`](./docs/STRATEGY.md).
 ## Tests
 
 ```bash
-cd apps/api && . .venv/bin/activate && pytest    # ~98 tests, all offline
+cd apps/api && . .venv/bin/activate && pytest    # ~100 tests, all offline
 ```
 
 Drives every stop condition with a scripted fake model; proves the sandbox
@@ -160,8 +164,9 @@ default-denied, and the provider cascade falls over correctly.
 Delivered: tool-using agent core, re-execution Receipts, tamper-evident ledger,
 capability envelope, default-deny egress, approval gate, injection quarantine,
 signed skills, document editing, cross-task memory, triggers + scheduler, SSE,
-provider registry, an **MCP client with a headless browser**, and **container
-isolation** (shell commands jailed in an ephemeral Docker container).
+provider registry, an **MCP client with a headless browser**, **container
+isolation** (shell commands jailed in an ephemeral Docker container), and
+**multi-agent delegation** (`spawn` → a tree of verified sub-agents).
 
 Next: more MCP connectors over the same client (email / calendar) and chat-app
 inlets — all built on the same agent core and safety model.
