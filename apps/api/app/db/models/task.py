@@ -45,6 +45,8 @@ class TaskModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     verification_score: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     verified_by: Mapped[str | None] = mapped_column(String(20), nullable=True)  # execution|judgment
     receipt_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # How the run's shell commands were isolated: "container" or "inline".
+    sandbox: Mapped[str | None] = mapped_column(String(20), nullable=True)
     steps_used: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     tokens_used: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     workspace_path: Mapped[str | None] = mapped_column(String(1024), nullable=True)

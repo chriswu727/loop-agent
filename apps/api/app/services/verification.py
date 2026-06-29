@@ -16,9 +16,8 @@ from __future__ import annotations
 
 import asyncio
 import shutil
-import tempfile
+import uuid
 from dataclasses import asdict, dataclass
-from pathlib import Path
 from typing import Any
 
 from app.tools import ToolExecutor, ToolStatus, Workspace
@@ -39,13 +38,18 @@ async def run_checks(
     approval_mode: str = "auto",
     command_timeout: int = 60,
     output_limit: int = 4000,
+    sandbox_image: str | None = None,
+    sandbox_memory: str = "512m",
+    sandbox_cpus: str = "1",
 ) -> list[CheckResult]:
     """Re-run each check on a fresh copy of the workspace. Never raises — a bad
     check definition becomes a failed result the verifier can act on."""
     if not checks:
         return []
 
-    tmp_root = Path(await asyncio.to_thread(tempfile.mkdtemp, prefix="loop-verify-"))
+    # Copy under the workspaces root (a path the container can bind-mount) rather
+    # than system temp, so re-verification runs in the same sandbox as the agent.
+    tmp_root = source.root.parent / f"verify-{uuid.uuid4().hex[:12]}"
     try:
         copy_dir = tmp_root / "ws"
         await asyncio.to_thread(shutil.copytree, source.root, copy_dir)
@@ -55,6 +59,9 @@ async def run_checks(
             approval_mode=approval_mode,
             command_timeout=command_timeout,
             output_limit=output_limit,
+            sandbox_image=sandbox_image,
+            sandbox_memory=sandbox_memory,
+            sandbox_cpus=sandbox_cpus,
         )
         results: list[CheckResult] = []
         for check in checks:

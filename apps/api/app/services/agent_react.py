@@ -43,6 +43,7 @@ from app.tools.envelope import EXECUTOR_TOOLS
 from app.tools.guards import make_egress_guard
 from app.tools.mcp import McpBrowser
 from app.tools.policy import Verdict, evaluate_command
+from app.tools.sandbox import docker_available, image_present
 
 log = get_logger("agent")
 
@@ -98,6 +99,7 @@ class AgentReactService:
         self._skill_instructions = ""  # instructions from the task's signed skill
         self._browser_specs = ""  # MCP browser tool list, injected into planning
         self._mcp_tools: set[str] = set()  # extra (MCP) tool names the planner may call
+        self._sandbox_image: str | None = None  # container image for run_command, or None
 
     async def run(self, task_id: uuid.UUID) -> None:
         """Run, or resume, a task. A task is resumable when it was paused on an
@@ -145,6 +147,9 @@ class AgentReactService:
             _combine_tools(task.allowed_tools, skill_tools),
             egress_allowed=(task.allow_egress and skill_egress) or task.use_browser,
         )
+        sandbox_image, sandbox_label = self._resolve_sandbox()
+        self._sandbox_image = sandbox_image
+        task.sandbox = sandbox_label
         executor = ToolExecutor(
             workspace,
             approval_mode=settings.agent_approval_mode,
@@ -152,6 +157,9 @@ class AgentReactService:
             output_limit=settings.agent_command_output_limit,
             envelope=envelope,
             before_tool=make_egress_guard(envelope),
+            sandbox_image=sandbox_image,
+            sandbox_memory=settings.agent_sandbox_memory,
+            sandbox_cpus=settings.agent_sandbox_cpus,
         )
 
         # Spin up a headless browser (MCP) if the task opted in. A startup failure
@@ -183,6 +191,18 @@ class AgentReactService:
         finally:
             if browser is not None:
                 await browser.stop()
+
+    def _resolve_sandbox(self) -> tuple[str | None, str]:
+        """(image, label): which sandbox to use for run_command, and how to label
+        it. 'container' jails commands in Docker; 'inline' runs on the host (a
+        clearly-labeled reduced-isolation downgrade when Docker is unavailable)."""
+        if settings.agent_sandbox == "inline":
+            return None, "inline"
+        image = settings.agent_sandbox_image
+        if docker_available() and image_present(image):
+            return image, "container"
+        log.warning("agent.sandbox_downgrade", wanted=settings.agent_sandbox)
+        return None, "inline"
 
     async def _start_browser(self, task: TaskModel) -> McpBrowser | None:
         if not (task.use_browser and settings.agent_browser_enabled):
@@ -408,6 +428,9 @@ class AgentReactService:
             approval_mode=settings.agent_approval_mode,
             command_timeout=settings.agent_command_timeout_seconds,
             output_limit=settings.agent_command_output_limit,
+            sandbox_image=self._sandbox_image,
+            sandbox_memory=settings.agent_sandbox_memory,
+            sandbox_cpus=settings.agent_sandbox_cpus,
         )
         checks_passed = all(r.passed for r in check_results) if check_results else None
         verified_by = "execution" if check_results else "judgment"

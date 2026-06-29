@@ -13,6 +13,7 @@ from typing import Any
 from app.tools.base import ToolError, ToolResult, ToolStatus
 from app.tools.envelope import CapabilityEnvelope
 from app.tools.policy import Verdict, evaluate_command
+from app.tools.sandbox import run_command_in_container
 from app.tools.shell import run_command
 from app.tools.workspace import Workspace
 
@@ -56,11 +57,19 @@ class ToolExecutor:
         before_tool: BeforeHook | None = None,
         after_tool: AfterHook | None = None,
         mcp: Any = None,
+        sandbox_image: str | None = None,
+        sandbox_memory: str = "512m",
+        sandbox_cpus: str = "1",
     ) -> None:
         self.workspace = workspace
         self.approval_mode = approval_mode
         self.command_timeout = command_timeout
         self.output_limit = output_limit
+        # When set, run_command runs inside an ephemeral container instead of the
+        # host. Network is granted only when the envelope allows egress.
+        self.sandbox_image = sandbox_image
+        self.sandbox_memory = sandbox_memory
+        self.sandbox_cpus = sandbox_cpus
         # The single point where the task's declared authority is enforced.
         self.envelope = envelope or CapabilityEnvelope.full()
         self.before_tool = before_tool
@@ -123,6 +132,17 @@ class ToolExecutor:
         if verdict is Verdict.DENY:
             return ToolResult(f"Blocked by safety policy ({reason}). Try a safer approach.",
                               ToolStatus.BLOCKED)
+        if self.sandbox_image is not None:
+            return await run_command_in_container(
+                command,
+                self.workspace.root,
+                image=self.sandbox_image,
+                network=self.envelope.egress_allowed,
+                timeout_seconds=self.command_timeout,
+                output_limit=self.output_limit,
+                memory=self.sandbox_memory,
+                cpus=self.sandbox_cpus,
+            )
         return await run_command(
             command,
             self.workspace.root,

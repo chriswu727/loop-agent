@@ -3,6 +3,23 @@
 For whoever picks this up next. Why the agent is built the way it is, and the
 constraints that aren't obvious from the code.
 
+## Container isolation (differentiator #4)
+
+`run_command` runs in an ephemeral Docker container (`loop-sandbox`, built from
+`apps/api/sandbox.Dockerfile` with the office libs), not on the host. Only the
+task workspace is bind-mounted at `/workspace`; the rootfs is read-only, memory/
+CPU/pids are capped, and the network is **off by default** (`--network none`) —
+granted only when the envelope allows egress. So a command can read and write the
+workspace but cannot reach the host filesystem or the network. The verifier
+re-runs its checks in the same kind of container over a workspace copy (the copy
+lives under the workspaces root so it is a Docker-shared path on macOS). Mode is
+`AGENT_SANDBOX`: `auto` (container when Docker + image are present, else a
+clearly-labeled inline downgrade), `container`, or `inline`. The chosen mode is
+recorded on the task and in the Receipt (`isolation: container|inline`). This
+closes the old "shell is fenced, not jailed" gap — verified live: a containerized
+run reported `uname -s` = Linux (not the host's Darwin), and the spike confirmed
+network-deny and that `~/.ssh` is unreadable from inside.
+
 ## MCP client + headless browser
 
 Loop is an MCP client. When a task opts into `use_browser`, the engine spawns an

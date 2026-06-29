@@ -42,6 +42,7 @@ def upgrade() -> None:
         sa.Column("verification_score", sa.Integer(), nullable=False),
         sa.Column("verified_by", sa.String(length=20), nullable=True),
         sa.Column("receipt_hash", sa.String(length=64), nullable=True),
+        sa.Column("sandbox", sa.String(length=20), nullable=True),
         sa.Column("steps_used", sa.Integer(), nullable=False),
         sa.Column("tokens_used", sa.Integer(), nullable=False),
         sa.Column("workspace_path", sa.String(length=1024), nullable=True),

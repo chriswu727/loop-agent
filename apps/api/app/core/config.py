@@ -112,6 +112,15 @@ class Settings(BaseSettings):
     agent_browser_enabled: bool = True
     agent_browser_command: str = "npx -y @playwright/mcp@latest --headless --isolated"
 
+    # ---- Sandbox: run the agent's shell commands in an ephemeral container ----
+    # auto = container when Docker + the image are available, else inline (labeled);
+    # container = require the container (fall back to inline, labeled, if missing);
+    # inline = always run on the host (zero-infra, reduced isolation).
+    agent_sandbox: Literal["auto", "container", "inline"] = "auto"
+    agent_sandbox_image: str = "loop-sandbox:latest"
+    agent_sandbox_memory: str = "512m"
+    agent_sandbox_cpus: str = "1"
+
     @computed_field  # type: ignore[prop-decorator]
     @property
     def is_production(self) -> bool:

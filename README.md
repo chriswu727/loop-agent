@@ -46,9 +46,10 @@ axes a chat-log agent can't easily copy:
 - **Least authority by construction.** Each task runs under a declared
   **capability envelope** enforced at one choke point: which tools it may use,
   default-deny network egress, and an optional human approval gate for risky
-  commands. **Skills are signed** (ed25519) and refused if tampered. Untrusted
-  data (tool output, files, memory) is framed so the agent never obeys
-  instructions hidden inside it.
+  commands. Shell commands are **jailed in an ephemeral container** (only the
+  workspace mounted, no network by default, can't read the host). **Skills are
+  signed** (ed25519) and refused if tampered. Untrusted data (tool output, files,
+  memory) is framed so the agent never obeys instructions hidden inside it.
 
 | Differentiator | What it means |
 |----------------|---------------|
@@ -146,7 +147,7 @@ differentiator roadmap: [`docs/STRATEGY.md`](./docs/STRATEGY.md).
 ## Tests
 
 ```bash
-cd apps/api && . .venv/bin/activate && pytest    # ~93 tests, all offline
+cd apps/api && . .venv/bin/activate && pytest    # ~98 tests, all offline
 ```
 
 Drives every stop condition with a scripted fake model; proves the sandbox
@@ -159,11 +160,11 @@ default-denied, and the provider cascade falls over correctly.
 Delivered: tool-using agent core, re-execution Receipts, tamper-evident ledger,
 capability envelope, default-deny egress, approval gate, injection quarantine,
 signed skills, document editing, cross-task memory, triggers + scheduler, SSE,
-provider registry, and an **MCP client with a headless browser**.
+provider registry, an **MCP client with a headless browser**, and **container
+isolation** (shell commands jailed in an ephemeral Docker container).
 
-Next: more MCP connectors over the same client (email / calendar), container
-isolation (needs Docker), and chat-app inlets — all built on the same agent core
-and safety model.
+Next: more MCP connectors over the same client (email / calendar) and chat-app
+inlets — all built on the same agent core and safety model.
 
 ## License
 

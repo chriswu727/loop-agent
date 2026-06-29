@@ -147,6 +147,17 @@ export default function TaskDetail() {
               ? 'Verified by re-execution'
               : 'Verified by judgment (not re-executed)'}
           </span>
+          {task.sandbox && (
+            <span
+              className={
+                task.sandbox === 'container'
+                  ? 'rounded-md bg-blue-500/15 px-2 py-0.5 font-medium text-blue-600 dark:text-blue-400'
+                  : 'rounded-md bg-black/5 px-2 py-0.5 font-medium opacity-60 dark:bg-white/10'
+              }
+            >
+              {task.sandbox === 'container' ? 'Container-isolated' : 'Inline (reduced isolation)'}
+            </span>
+          )}
           {task.receipt_hash && (
             <span className="font-mono opacity-40">receipt {task.receipt_hash.slice(0, 12)}</span>
           )}
