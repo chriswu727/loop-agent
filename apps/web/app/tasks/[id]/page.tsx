@@ -10,6 +10,7 @@ import { StepItem } from '@/components/step-item';
 import { StatusPill, stopReasonLabel } from '@/components/status-pill';
 import { WorkspaceFiles } from '@/components/workspace-files';
 import { ApiError, tasksApi } from '@/lib/api-client';
+import { apiBaseUrl } from '@/lib/env';
 
 const TERMINAL = new Set(['completed', 'cancelled', 'failed']);
 const POLL_MS = 1200;
@@ -48,17 +49,53 @@ export default function TaskDetail() {
   }, [id]);
 
   function resumeAfterAnswer(updated: Task) {
+    // The open stream (or the fallback poll) will push the resumed state; this is
+    // just an optimistic local update so the UI reacts immediately.
     setTask(updated);
-    if (timer.current) clearTimeout(timer.current);
-    timer.current = setTimeout(poll, POLL_MS);
   }
 
+  // Primary: a single Server-Sent Events stream pushes a full snapshot on every
+  // change. Fallback: if SSE fails (proxy, older browser), revert to polling.
   useEffect(() => {
-    poll();
+    let es: EventSource | null = null;
+    let usingFallback = false;
+
+    try {
+      es = new EventSource(`${apiBaseUrl()}/api/v1/tasks/${id}/events`);
+      es.onmessage = (e) => {
+        try {
+          const snap = JSON.parse(e.data) as {
+            task: Task;
+            steps: Step[];
+            files: FileEntry[];
+            ledger: LedgerStatus;
+          };
+          setTask(snap.task);
+          setSteps(snap.steps);
+          setFiles(snap.files);
+          setLedger(snap.ledger);
+          setError(null);
+          if (TERMINAL.has(snap.task.status)) es?.close();
+        } catch {
+          /* ignore malformed frames */
+        }
+      };
+      es.onerror = () => {
+        es?.close();
+        if (!usingFallback) {
+          usingFallback = true;
+          poll();
+        }
+      };
+    } catch {
+      poll();
+    }
+
     return () => {
+      es?.close();
       if (timer.current) clearTimeout(timer.current);
     };
-  }, [poll]);
+  }, [id, poll]);
 
   async function cancel() {
     try {

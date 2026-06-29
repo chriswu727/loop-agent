@@ -7,17 +7,26 @@ background task, so the loop never sees a half-written row.
 
 from __future__ import annotations
 
+import asyncio
 import uuid
+from collections.abc import AsyncIterator
 
 from fastapi import APIRouter, BackgroundTasks, File, Query, UploadFile, status
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 
 from app.api.v1.deps import TaskServiceDep, rate_limit
+from app.db.session import get_sessionmaker
+from app.exceptions import NotFoundError
+from app.repositories.step import StepRepository
+from app.repositories.task import TaskRepository
 from app.schemas.common import Page
 from app.schemas.file import FileContent, FileEntry
 from app.schemas.step import LedgerStatus, StepRead
-from app.schemas.task import LimitDefaults, RespondIn, TaskCreate, TaskRead
+from app.schemas.task import LimitDefaults, RespondIn, TaskCreate, TaskRead, TaskSnapshot
 from app.services.runner import trigger_task
+from app.services.task import TaskService
+
+_TERMINAL = {"completed", "cancelled", "failed"}
 
 router = APIRouter(prefix="/tasks", tags=["tasks"])
 
@@ -106,6 +115,51 @@ async def list_steps(task_id: uuid.UUID, service: TaskServiceDep) -> list[StepRe
 )
 async def verify_ledger(task_id: uuid.UUID, service: TaskServiceDep) -> LedgerStatus:
     return LedgerStatus(**await service.verify_ledger(task_id))  # type: ignore[arg-type]
+
+
+async def _build_snapshot(service: TaskService, task_id: uuid.UUID) -> TaskSnapshot:
+    task = await service.get(task_id)
+    steps = await service.list_steps(task_id)
+    files = await service.list_files(task_id)
+    ledger = await service.verify_ledger(task_id)
+    return TaskSnapshot(
+        task=TaskRead.from_model(task),
+        steps=[StepRead.model_validate(s) for s in steps],
+        files=[FileEntry(path=p, size=s) for p, s in files],
+        ledger=LedgerStatus(**ledger),  # type: ignore[arg-type]
+    )
+
+
+async def _event_stream(task_id: uuid.UUID) -> AsyncIterator[str]:
+    """Push a full task snapshot whenever something changes, until terminal.
+    Server-side polling drives a single client connection (no client polling)."""
+    sessionmaker = get_sessionmaker()
+    last_fp: tuple[object, ...] | None = None
+    for _ in range(1800):  # ~15 min safety cap at 0.5s cadence
+        async with sessionmaker() as session:
+            service = TaskService(TaskRepository(session), StepRepository(session))
+            try:
+                snapshot = await _build_snapshot(service, task_id)
+            except NotFoundError:
+                yield 'event: error\ndata: {"detail":"task not found"}\n\n'
+                return
+        t = snapshot.task
+        fp = (t.status, t.steps_used, t.tokens_used, t.updated_at.isoformat())
+        if fp != last_fp:
+            last_fp = fp
+            yield f"data: {snapshot.model_dump_json()}\n\n"
+        if t.status in _TERMINAL:
+            return
+        await asyncio.sleep(0.5)
+
+
+@router.get("/{task_id}/events", summary="Stream live task updates (SSE)")
+async def task_events(task_id: uuid.UUID) -> StreamingResponse:
+    return StreamingResponse(
+        _event_stream(task_id),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @router.get(

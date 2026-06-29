@@ -12,6 +12,8 @@ from datetime import datetime
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.core.config import settings
+from app.schemas.file import FileEntry
+from app.schemas.step import LedgerStatus, StepRead
 
 
 class LimitsIn(BaseModel):
@@ -106,6 +108,15 @@ class TaskRead(BaseModel):
             created_at=m.created_at,  # type: ignore[attr-defined]
             updated_at=m.updated_at,  # type: ignore[attr-defined]
         )
+
+
+class TaskSnapshot(BaseModel):
+    """One streamed update: everything the live task view renders."""
+
+    task: TaskRead
+    steps: list[StepRead]
+    files: list[FileEntry]
+    ledger: LedgerStatus
 
 
 class LimitDefaults(BaseModel):
