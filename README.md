@@ -102,6 +102,8 @@ on the two axes a chat-log agent can't retrofit:
   headless browser through an MCP server it spawns (`@playwright/mcp`): navigate,
   read the page, click, type, extract. Same path the email/calendar connectors
   will take. Gated as network egress.
+- **See images** — with a vision provider (Gemini) configured, the agent can
+  `see_image` an uploaded screenshot/photo and act on what it describes.
 - **Email** — opt a task into `use_email` and the agent can `read_inbox` (IMAP,
   read-only, quarantined) and `send_email` (SMTP) — sending always pauses for
   your approval first.

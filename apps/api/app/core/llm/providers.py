@@ -20,7 +20,7 @@ GLM_URL = "https://open.bigmodel.cn/api/paas/v4/chat/completions"
 ANTHROPIC_URL = "https://api.anthropic.com/v1/messages"
 
 DEEPSEEK_MODEL = "deepseek-chat"
-GEMINI_MODEL = "gemini-2.0-flash"
+GEMINI_MODEL = "gemini-2.5-flash"
 GLM_MODEL = "glm-4-flash"
 ANTHROPIC_MODEL = "claude-sonnet-4-6"
 
@@ -200,6 +200,46 @@ async def call_ollama(
     content = data["choices"][0]["message"]["content"]
     tokens = int(data.get("usage", {}).get("total_tokens", 0))
     return content, tokens
+
+
+async def call_gemini_vision(
+    client: httpx.AsyncClient, api_key: str, prompt: str, image: bytes, mime: str
+) -> str:
+    """Describe/answer about an image with Gemini (which is multimodal)."""
+    import base64
+
+    try:
+        resp = await client.post(
+            GEMINI_URL.format(model=GEMINI_MODEL),
+            params={"key": api_key},
+            json={
+                "contents": [
+                    {
+                        "role": "user",
+                        "parts": [
+                            {"text": prompt},
+                            {
+                                "inline_data": {
+                                    "mime_type": mime,
+                                    "data": base64.b64encode(image).decode(),
+                                }
+                            },
+                        ],
+                    }
+                ],
+                "generationConfig": {"maxOutputTokens": 800, "temperature": 0.2},
+            },
+        )
+    except httpx.HTTPError as exc:
+        raise LLMError(f"gemini vision request failed: {exc}", retryable=True) from exc
+
+    _raise_for_status(resp, "gemini-vision")
+    data = resp.json()
+    candidates = data.get("candidates", [])
+    if not candidates:
+        return "(the vision model returned no description)"
+    parts = candidates[0].get("content", {}).get("parts", [])
+    return "".join(p.get("text", "") for p in parts) or "(no description)"
 
 
 _DEMO_FIB = "a, b = 0, 1\nfor _ in range(12):\n    print(a, end=' ')\n    a, b = b, a + b\n"

@@ -47,8 +47,9 @@ from app.tools.envelope import EXECUTOR_TOOLS
 from app.tools.guards import make_egress_guard
 from app.tools.mcp import McpBrowser
 from app.tools.policy import Verdict, evaluate_command
-from app.tools.registry import CALENDAR_SPEC, EMAIL_SPEC
+from app.tools.registry import CALENDAR_SPEC, EMAIL_SPEC, VISION_SPEC
 from app.tools.sandbox import docker_available, image_present
+from app.tools.vision import VisionTools
 
 log = get_logger("agent")
 
@@ -110,6 +111,7 @@ class AgentReactService:
         self._browser_specs = ""  # MCP browser tool list, injected into planning
         self._email_specs = ""  # email tool list, injected into planning
         self._calendar_specs = ""  # calendar tool list, injected into planning
+        self._vision_specs = ""  # see_image tool, injected into planning when available
         self._conversation = ""  # earlier turns of a chat/session, injected into planning
         self._mcp_tools: set[str] = set()  # extra tool names the planner may call
         self._sandbox_image: str | None = None  # container image for run_command, or None
@@ -198,6 +200,12 @@ class AgentReactService:
             executor.calendar = CalendarTools()
             self._mcp_tools |= CalendarTools.tool_names
             self._calendar_specs = CALENDAR_SPEC
+
+        # Vision (see_image) is available whenever a multimodal provider is set.
+        if settings.gemini_api_key:
+            executor.vision = VisionTools(workspace)
+            self._mcp_tools |= VisionTools.tool_names
+            self._vision_specs = VISION_SPEC
 
         task.status = TaskStatus.RUNNING.value
         task.workspace_path = str(workspace.root)
@@ -308,6 +316,7 @@ class AgentReactService:
                 self._browser_specs,
                 self._email_specs,
                 self._calendar_specs,
+                self._vision_specs,
                 self._conversation,
                 allow_spawn=task.depth < settings.agent_max_spawn_depth,
             )

@@ -45,6 +45,7 @@ def plan_prompts(
     browser_tools: str = "",
     email_tools: str = "",
     calendar_tools: str = "",
+    vision_tools: str = "",
     conversation: str = "",
     allow_spawn: bool = False,
 ) -> tuple[str, str]:
@@ -58,6 +59,7 @@ def plan_prompts(
         + (f"{SPAWN_SPEC}\n" if allow_spawn else "")
         + (f"{email_tools}\n" if email_tools.strip() else "")
         + (f"{calendar_tools}\n" if calendar_tools.strip() else "")
+        + (f"{vision_tools}\n" if vision_tools.strip() else "")
         + (
             "\nA headless browser is available — use these tools to navigate and "
             "read live web pages (browser_snapshot returns the page's accessible "

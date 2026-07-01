@@ -65,6 +65,12 @@ CALENDAR_SPEC = (
     "This writes to the real calendar, so it pauses for the user to approve first."
 )
 
+# Offered only when a vision-capable provider (Gemini) is configured.
+VISION_SPEC = (
+    '- see_image: look at an image file and get a description. args: {"path": '
+    '"screenshot.png", "prompt": "optional question"}. The result is [DATA].'
+)
+
 # ``finish``, ``ask_user``, ``remember`` and ``spawn`` are handled by the loop.
 VALID_TOOLS = {
     "write_file",
@@ -92,6 +98,7 @@ class ToolExecutor:
         mcp: Any = None,
         email: Any = None,
         calendar: Any = None,
+        vision: Any = None,
         sandbox_image: str | None = None,
         sandbox_memory: str = "512m",
         sandbox_cpus: str = "1",
@@ -115,9 +122,10 @@ class ToolExecutor:
         self.mcp = mcp
         self.email = email
         self.calendar = calendar
+        self.vision = vision
 
     def _provider_for(self, tool: str) -> Any:
-        for provider in (self.mcp, self.email, self.calendar):
+        for provider in (self.mcp, self.email, self.calendar, self.vision):
             if provider is not None and tool in provider.tool_names:
                 return provider
         return None
