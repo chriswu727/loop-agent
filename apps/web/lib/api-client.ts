@@ -113,6 +113,10 @@ export const tasksApi = {
   children: (id: string) => apiFetch<Task[]>(`/api/v1/tasks/${id}/children`),
   steps: (id: string) => apiFetch<Step[]>(`/api/v1/tasks/${id}/steps`),
   ledger: (id: string) => apiFetch<LedgerStatus>(`/api/v1/tasks/${id}/ledger`),
+  receipt: (id: string) =>
+    apiFetch<{ receipt: Record<string, unknown>; valid: boolean; recomputed_hash: string }>(
+      `/api/v1/tasks/${id}/receipt`,
+    ),
   files: (id: string) => apiFetch<FileEntry[]>(`/api/v1/tasks/${id}/files`),
   fileContent: (id: string, path: string) =>
     apiFetch<FileContent>(`/api/v1/tasks/${id}/files/${path}`),

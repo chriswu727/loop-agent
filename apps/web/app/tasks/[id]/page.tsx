@@ -6,6 +6,7 @@ import { useParams } from 'next/navigation';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AskUserBox } from '@/components/ask-user-box';
 import { BudgetMeter } from '@/components/budget-meter';
+import { ReceiptPanel } from '@/components/receipt-panel';
 import { StepItem } from '@/components/step-item';
 import { StatusPill, stopReasonLabel } from '@/components/status-pill';
 import { WorkspaceFiles } from '@/components/workspace-files';
@@ -245,6 +246,8 @@ export default function TaskDetail() {
           </div>
         </section>
       )}
+
+      {task.receipt_hash && <ReceiptPanel taskId={task.id} />}
 
       <WorkspaceFiles taskId={task.id} files={files} />
 

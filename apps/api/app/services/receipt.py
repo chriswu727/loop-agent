@@ -63,13 +63,26 @@ def build_receipt(
     }
     # Content address: hash the canonical body (stable key order, no whitespace
     # drift), then store the hash alongside it.
-    canonical = json.dumps(body, sort_keys=True, separators=(",", ":"))
-    receipt_hash = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+    receipt_hash = _canonical_hash(body)
     receipt = {"receipt_hash": receipt_hash, **body}
 
     workspace.write(RECEIPT_JSON, json.dumps(receipt, indent=2, ensure_ascii=False))
     workspace.write(RECEIPT_MD, _render_markdown(receipt))
     return receipt_hash, receipt
+
+
+def _canonical_hash(body: dict[str, Any]) -> str:
+    canonical = json.dumps(body, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def verify_receipt(receipt: dict[str, Any]) -> tuple[bool, str]:
+    """Recompute a receipt's content hash from its body and compare to the stored
+    one. Returns (ok, recomputed_hash). Any tampering with a recorded fact — the
+    goal, a check verdict, a file's sha256, the ledger head — changes the hash."""
+    body = {k: v for k, v in receipt.items() if k != "receipt_hash"}
+    recomputed = _canonical_hash(body)
+    return recomputed == receipt.get("receipt_hash"), recomputed
 
 
 def _render_markdown(receipt: dict[str, Any]) -> str:

@@ -7,6 +7,7 @@ configured caps is what makes "within the limit" a guarantee, not a suggestion.
 
 from __future__ import annotations
 
+import json
 import uuid
 from pathlib import Path
 
@@ -162,6 +163,17 @@ class TaskService:
     async def list_files(self, task_id: uuid.UUID) -> list[tuple[str, int]]:
         ws = await self._workspace(task_id)
         return ws.list_files() if ws else []
+
+    async def get_receipt(self, task_id: uuid.UUID) -> dict | None:
+        """The parsed receipt.json from the task's workspace, or None if absent."""
+        ws = await self._workspace(task_id)
+        if ws is None:
+            return None
+        try:
+            content = ws.read("receipt.json", limit=500_000)
+            return json.loads(content)
+        except (FileNotFoundError, ValueError, OSError):
+            return None
 
     async def read_file(self, task_id: uuid.UUID, relpath: str) -> tuple[str, int, bool]:
         ws = await self._workspace(task_id)

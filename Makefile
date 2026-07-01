@@ -53,6 +53,10 @@ logs: ## Tail logs from all services
 dev: ## Run web + api in watch mode locally (requires `make setup`)
 	turbo run dev
 
+.PHONY: verify-receipt
+verify-receipt: ## Independently verify a Receipt: make verify-receipt f=path/to/receipt.json
+	cd apps/api && python scripts/verify_receipt.py $(f)
+
 .PHONY: demo
 demo: ## Zero-key demo API on :8000 (no API key needed; scripted model)
 	cd apps/api && . .venv/bin/activate && \
