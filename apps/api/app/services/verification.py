@@ -84,8 +84,10 @@ async def _run_one(
         expect_stdout = check.get("expect_stdout")
         result = await executor.execute("run_command", {"command": command})
         out = result.observation
-        exit_ok = (result.status is ToolStatus.OK) if expect_exit == 0 else (
-            f"exit code {expect_exit}" in out
+        exit_ok = (
+            (result.status is ToolStatus.OK)
+            if expect_exit == 0
+            else (f"exit code {expect_exit}" in out)
         )
         stdout_ok = (expect_stdout is None) or (str(expect_stdout) in out)
         passed = bool(exit_ok and stdout_ok and result.status is not ToolStatus.BLOCKED)
@@ -107,8 +109,9 @@ async def _run_one(
         except Exception as exc:
             return CheckResult("file_contains", path, False, str(exc)[:200])
         passed = text in content
-        return CheckResult("file_contains", path, passed,
-                           "contains text" if passed else "text not found")
+        return CheckResult(
+            "file_contains", path, passed, "contains text" if passed else "text not found"
+        )
 
     return CheckResult(kind or "unknown", "", False, f"unknown check kind: {kind!r}")
 

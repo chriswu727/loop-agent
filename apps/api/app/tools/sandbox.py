@@ -26,9 +26,7 @@ def docker_available() -> bool:
     import subprocess
 
     try:
-        return subprocess.run(
-            ["docker", "info"], capture_output=True, timeout=10
-        ).returncode == 0
+        return subprocess.run(["docker", "info"], capture_output=True, timeout=10).returncode == 0
     except Exception:
         return False
 
@@ -37,9 +35,12 @@ def image_present(image: str) -> bool:
     import subprocess
 
     try:
-        return subprocess.run(
-            ["docker", "image", "inspect", image], capture_output=True, timeout=10
-        ).returncode == 0
+        return (
+            subprocess.run(
+                ["docker", "image", "inspect", image], capture_output=True, timeout=10
+            ).returncode
+            == 0
+        )
     except Exception:
         return False
 
@@ -57,14 +58,32 @@ async def run_command_in_container(
 ) -> ToolResult:
     name = f"loop-{uuid.uuid4().hex[:12]}"
     argv = [
-        "docker", "run", "--rm", "--name", name,
-        "--network", "bridge" if network else "none",
-        "--memory", memory, "--memory-swap", memory, "--cpus", cpus, "--pids-limit", "256",
-        "--read-only", "--tmpfs", "/tmp:rw,size=64m,exec",
-        "-v", f"{workspace_root}:/workspace",
-        "-w", "/workspace",
+        "docker",
+        "run",
+        "--rm",
+        "--name",
+        name,
+        "--network",
+        "bridge" if network else "none",
+        "--memory",
+        memory,
+        "--memory-swap",
+        memory,
+        "--cpus",
+        cpus,
+        "--pids-limit",
+        "256",
+        "--read-only",
+        "--tmpfs",
+        "/tmp:rw,size=64m,exec",
+        "-v",
+        f"{workspace_root}:/workspace",
+        "-w",
+        "/workspace",
         image,
-        "sh", "-lc", command,
+        "sh",
+        "-lc",
+        command,
     ]
     try:
         proc = await asyncio.create_subprocess_exec(
@@ -94,8 +113,12 @@ async def run_command_in_container(
 async def _force_remove(name: str) -> None:
     try:
         rm = await asyncio.create_subprocess_exec(
-            "docker", "rm", "-f", name,
-            stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL,
+            "docker",
+            "rm",
+            "-f",
+            name,
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.DEVNULL,
         )
         await rm.wait()
     except Exception:

@@ -60,12 +60,21 @@ def test_reply_for_each_state() -> None:
 async def test_find_awaiting_for_chat(session: AsyncSession) -> None:
     repo = TaskRepository(session)
     common = dict(  # noqa: C408
-        rubric=[], max_steps=5, token_budget=1000, summary=None,
-        verification_score=0, steps_used=0, tokens_used=0, workspace_path=None,
+        rubric=[],
+        max_steps=5,
+        token_budget=1000,
+        summary=None,
+        verification_score=0,
+        steps_used=0,
+        tokens_used=0,
+        workspace_path=None,
     )
     await repo.create(
-        goal="open one", status=TaskStatus.AWAITING_INPUT.value, chat_id="42",
-        pending_question="q?", **common,
+        goal="open one",
+        status=TaskStatus.AWAITING_INPUT.value,
+        chat_id="42",
+        pending_question="q?",
+        **common,
     )
     await repo.create(
         goal="finished one", status=TaskStatus.COMPLETED.value, chat_id="42", **common

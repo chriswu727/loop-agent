@@ -48,9 +48,9 @@ async def test_tick_fires_due_trigger(session: AsyncSession, monkeypatch) -> Non
     assert fired == 1
 
     # A task was published and the trigger's state advanced.
-    _published, total = await TaskService(
-        TaskRepository(session), StepRepository(session)
-    ).list(limit=10, offset=0)
+    _published, total = await TaskService(TaskRepository(session), StepRepository(session)).list(
+        limit=10, offset=0
+    )
     assert total == 1
     await session.refresh(trigger)
     assert trigger.fire_count == 1

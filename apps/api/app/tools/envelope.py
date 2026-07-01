@@ -35,8 +35,8 @@ class CapabilityEnvelope:
         """Build from a user/skill-supplied tool list. ``None`` means full tool
         access; an empty or invalid list is narrowed to whatever valid tools were
         named. Network egress is default-deny unless explicitly granted."""
-        allowed = EXECUTOR_TOOLS if tools is None else frozenset(
-            t for t in tools if t in EXECUTOR_TOOLS
+        allowed = (
+            EXECUTOR_TOOLS if tools is None else frozenset(t for t in tools if t in EXECUTOR_TOOLS)
         )
         return cls(allowed_tools=allowed, egress_allowed=egress_allowed)
 

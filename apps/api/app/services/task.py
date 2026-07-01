@@ -23,8 +23,23 @@ from app.tools.base import ToolError
 from app.tools.workspace import Workspace
 
 _APPROVAL_WORDS = frozenset(
-    {"yes", "y", "approve", "approved", "ok", "okay", "allow", "sure", "proceed",
-     "是", "好", "可以", "批准", "同意", "允许"}
+    {
+        "yes",
+        "y",
+        "approve",
+        "approved",
+        "ok",
+        "okay",
+        "allow",
+        "sure",
+        "proceed",
+        "是",
+        "好",
+        "可以",
+        "批准",
+        "同意",
+        "允许",
+    }
 )
 
 
@@ -191,15 +206,11 @@ class TaskService:
             # Approval gate: yes/no decides whether the pending action runs.
             approved = _is_approval(answer)
             if steps:
-                steps[-1].observation += (
-                    f"\nUser {'approved' if approved else 'denied'}: {answer}"
-                )
+                steps[-1].observation += f"\nUser {'approved' if approved else 'denied'}: {answer}"
             if not approved:
                 task.pending_action = None  # denied -> the action is dropped
         elif steps:
-            steps[-1].observation = (
-                f"You asked: {task.pending_question}\nUser answered: {answer}"
-            )
+            steps[-1].observation = f"You asked: {task.pending_question}\nUser answered: {answer}"
 
         task.pending_question = None
         task.status = TaskStatus.PENDING.value  # pending == ready to (re)run

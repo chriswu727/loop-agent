@@ -124,9 +124,9 @@ def generate_keypair() -> tuple[str, str]:
     private_pem = private.private_bytes(
         Encoding.PEM, PrivateFormat.PKCS8, encryption_algorithm=_no_encryption()
     ).decode()
-    public_pem = private.public_key().public_bytes(
-        Encoding.PEM, PublicFormat.SubjectPublicKeyInfo
-    ).decode()
+    public_pem = (
+        private.public_key().public_bytes(Encoding.PEM, PublicFormat.SubjectPublicKeyInfo).decode()
+    )
     return private_pem, public_pem
 
 

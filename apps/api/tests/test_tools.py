@@ -149,8 +149,11 @@ async def test_egress_guard_blocks_network_by_default(tmp_path) -> None:
     from app.tools.guards import make_egress_guard
 
     deny = CapabilityEnvelope.from_tools(None)  # egress default-deny
-    ex = ToolExecutor(tmp_path_ws := Workspace(tmp_path / "ws"),
-                      envelope=deny, before_tool=make_egress_guard(deny))
+    ex = ToolExecutor(
+        tmp_path_ws := Workspace(tmp_path / "ws"),
+        envelope=deny,
+        before_tool=make_egress_guard(deny),
+    )
     assert tmp_path_ws  # workspace constructed
     blocked = await ex.execute("run_command", {"command": "curl https://example.com"})
     assert blocked.status is ToolStatus.BLOCKED

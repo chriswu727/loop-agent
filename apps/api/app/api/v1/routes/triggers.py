@@ -26,9 +26,7 @@ async def create_trigger(payload: TriggerCreate, service: TriggerServiceDep) -> 
     return TriggerRead.model_validate(await service.create(payload))
 
 
-@router.delete(
-    "/{trigger_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Delete a trigger"
-)
+@router.delete("/{trigger_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Delete a trigger")
 async def delete_trigger(trigger_id: uuid.UUID, service: TriggerServiceDep) -> None:
     await service.delete(trigger_id)
 

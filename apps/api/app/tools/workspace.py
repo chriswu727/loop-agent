@@ -29,8 +29,9 @@ class Workspace:
         if not relative or relative.strip() in (".", "/"):
             raise ToolError("A file path is required", blocked=True)
         if os.path.isabs(relative):
-            raise ToolError("Absolute paths are not allowed; use a path inside the workspace",
-                            blocked=True)
+            raise ToolError(
+                "Absolute paths are not allowed; use a path inside the workspace", blocked=True
+            )
         target = (self.root / relative).resolve()
         if target != self.root and self.root not in target.parents:
             raise ToolError(f"Path {relative!r} escapes the workspace", blocked=True)

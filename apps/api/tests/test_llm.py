@@ -30,8 +30,7 @@ async def test_ollama_adapter_hits_local_openai_endpoint(monkeypatch: pytest.Mon
         seen["auth"] = request.headers.get("authorization")
         return httpx.Response(
             200,
-            json={"choices": [{"message": {"content": "local hi"}}],
-                  "usage": {"total_tokens": 5}},
+            json={"choices": [{"message": {"content": "local hi"}}], "usage": {"total_tokens": 5}},
         )
 
     content, tokens = await call_ollama(
@@ -100,8 +99,10 @@ async def test_fallback_cascades_to_next_provider(monkeypatch: pytest.MonkeyPatc
             return httpx.Response(503, text="overloaded")  # retryable -> cascade
         return httpx.Response(
             200,
-            json={"choices": [{"message": {"content": "from deepseek"}}],
-                  "usage": {"total_tokens": 3}},
+            json={
+                "choices": [{"message": {"content": "from deepseek"}}],
+                "usage": {"total_tokens": 3},
+            },
         )
 
     llm = FallbackLLMClient(primary="anthropic", client=_client(handler))

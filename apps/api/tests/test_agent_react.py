@@ -52,8 +52,13 @@ class ScriptedLLM:
 
 
 async def _make_task(
-    session: AsyncSession, *, max_steps: int, token_budget: int,
-    require_approval: bool = False, skill: str | None = None, depth: int = 0,
+    session: AsyncSession,
+    *,
+    max_steps: int,
+    token_budget: int,
+    require_approval: bool = False,
+    skill: str | None = None,
+    depth: int = 0,
 ):
     repo = TaskRepository(session)
     task = await repo.create(
@@ -87,8 +92,11 @@ def _isolated_workspace(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None
 
 async def test_goal_achieved_when_verifier_accepts_finish(session: AsyncSession) -> None:
     plans = [
-        {"thought": "write the file", "tool": "write_file",
-         "args": {"path": "result.txt", "content": "done"}},
+        {
+            "thought": "write the file",
+            "tool": "write_file",
+            "args": {"path": "result.txt", "content": "done"},
+        },
         {"thought": "all set", "tool": "finish", "args": {"summary": "wrote result.txt"}},
     ]
     task = await _make_task(session, max_steps=10, token_budget=1_000_000)
@@ -117,8 +125,9 @@ async def test_rejected_finish_then_gives_up_stuck(session: AsyncSession) -> Non
 
 
 async def test_stops_at_step_cap(session: AsyncSession) -> None:
-    plans = [{"thought": "keep writing", "tool": "write_file",
-              "args": {"path": "a.txt", "content": "x"}}]
+    plans = [
+        {"thought": "keep writing", "tool": "write_file", "args": {"path": "a.txt", "content": "x"}}
+    ]
     task = await _make_task(session, max_steps=3, token_budget=1_000_000)
     await _service(session, ScriptedLLM(plans)).run(task.id)
 
@@ -187,10 +196,12 @@ async def test_ask_user_pauses_then_resumes_to_completion(session: AsyncSession)
     from app.services.task import TaskService
 
     plans = [
-        {"thought": "need input", "tool": "ask_user",
-         "args": {"question": "Which language?"}},
-        {"thought": "now build", "tool": "write_file",
-         "args": {"path": "out.txt", "content": "python"}},
+        {"thought": "need input", "tool": "ask_user", "args": {"question": "Which language?"}},
+        {
+            "thought": "now build",
+            "tool": "write_file",
+            "args": {"path": "out.txt", "content": "python"},
+        },
         {"thought": "done", "tool": "finish", "args": {"summary": "built it"}},
     ]
     task = await _make_task(session, max_steps=10, token_budget=1_000_000)
@@ -240,15 +251,22 @@ async def test_run_produces_a_verifiable_hash_chain(session: AsyncSession) -> No
 
 async def test_passing_checks_yield_execution_verified_receipt(session: AsyncSession) -> None:
     plans = [
-        {"thought": "write it", "tool": "write_file",
-         "args": {"path": "out.txt", "content": "ready"}},
-        {"thought": "prove it", "tool": "finish", "args": {
-            "summary": "wrote out.txt",
-            "checks": [
-                {"kind": "file_exists", "path": "out.txt"},
-                {"kind": "file_contains", "path": "out.txt", "text": "ready"},
-            ],
-        }},
+        {
+            "thought": "write it",
+            "tool": "write_file",
+            "args": {"path": "out.txt", "content": "ready"},
+        },
+        {
+            "thought": "prove it",
+            "tool": "finish",
+            "args": {
+                "summary": "wrote out.txt",
+                "checks": [
+                    {"kind": "file_exists", "path": "out.txt"},
+                    {"kind": "file_contains", "path": "out.txt", "text": "ready"},
+                ],
+            },
+        },
     ]
     task = await _make_task(session, max_steps=10, token_budget=1_000_000)
     llm = ScriptedLLM(plans, verify={"score": 95, "met": True, "missing": []})
@@ -265,10 +283,16 @@ async def test_passing_checks_yield_execution_verified_receipt(session: AsyncSes
 
 async def test_failing_check_blocks_acceptance(session: AsyncSession) -> None:
     # The agent claims done with a check that cannot pass; the verifier refuses.
-    plans = [{"thought": "claim", "tool": "finish", "args": {
-        "summary": "all good",
-        "checks": [{"kind": "file_exists", "path": "does-not-exist.txt"}],
-    }}]
+    plans = [
+        {
+            "thought": "claim",
+            "tool": "finish",
+            "args": {
+                "summary": "all good",
+                "checks": [{"kind": "file_exists", "path": "does-not-exist.txt"}],
+            },
+        }
+    ]
     task = await _make_task(session, max_steps=10, token_budget=1_000_000)
     llm = ScriptedLLM(plans, verify={"score": 99, "met": True, "missing": []})
     await _service(session, llm).run(task.id)
@@ -300,10 +324,17 @@ async def test_verified_skill_applies_its_envelope(
     session: AsyncSession, tmp_path: Path, monkeypatch
 ) -> None:
     # A skill that only permits write_file -> run_command is blocked by the envelope.
-    _install_signed_skill(tmp_path, monkeypatch, name="filer", manifest={
-        "name": "filer", "instructions": "Only write files.",
-        "allowed_tools": ["write_file", "read_file"], "allow_egress": False,
-    })
+    _install_signed_skill(
+        tmp_path,
+        monkeypatch,
+        name="filer",
+        manifest={
+            "name": "filer",
+            "instructions": "Only write files.",
+            "allowed_tools": ["write_file", "read_file"],
+            "allow_egress": False,
+        },
+    )
     plans = [{"thought": "run", "tool": "run_command", "args": {"command": "echo hi"}}]
     task = await _make_task(session, max_steps=8, token_budget=1_000_000, skill="filer")
     await _service(session, ScriptedLLM(plans)).run(task.id)
@@ -335,8 +366,11 @@ async def test_remember_persists_across_tasks(session: AsyncSession) -> None:
     from app.services.memory import MemoryStore
 
     plans = [
-        {"thought": "note it", "tool": "remember",
-         "args": {"note": "The deploy command is make ship"}},
+        {
+            "thought": "note it",
+            "tool": "remember",
+            "args": {"note": "The deploy command is make ship"},
+        },
         {"thought": "done", "tool": "finish", "args": {"summary": "noted"}},
     ]
     task = await _make_task(session, max_steps=8, token_budget=1_000_000)
@@ -428,10 +462,16 @@ async def test_dangerous_command_is_blocked_not_run(session: AsyncSession) -> No
 async def test_spawn_delegates_to_a_verified_subagent(session: AsyncSession) -> None:
     # Parent delegates, the child writes a file and finishes, then the parent finishes.
     plans = [
-        {"thought": "delegate", "tool": "spawn",
-         "args": {"goal": "write child.txt with hello", "token_budget": 5000, "max_steps": 4}},
-        {"thought": "child writes", "tool": "write_file",
-         "args": {"path": "child.txt", "content": "hello"}},
+        {
+            "thought": "delegate",
+            "tool": "spawn",
+            "args": {"goal": "write child.txt with hello", "token_budget": 5000, "max_steps": 4},
+        },
+        {
+            "thought": "child writes",
+            "tool": "write_file",
+            "args": {"path": "child.txt", "content": "hello"},
+        },
         {"thought": "child done", "tool": "finish", "args": {"summary": "wrote child.txt"}},
         {"thought": "parent done", "tool": "finish", "args": {"summary": "delegated and composed"}},
     ]
@@ -492,12 +532,25 @@ async def test_send_email_pauses_for_approval(
     monkeypatch.setattr(settings, "smtp_host", "smtp.example.com")
     monkeypatch.setattr(settings, "smtp_user", "me@example.com")
     monkeypatch.setattr(settings, "smtp_password", "pw")
-    plans = [{"thought": "email them", "tool": "send_email",
-              "args": {"to": "a@b.com", "subject": "Hi", "body": "yo"}}]
+    plans = [
+        {
+            "thought": "email them",
+            "tool": "send_email",
+            "args": {"to": "a@b.com", "subject": "Hi", "body": "yo"},
+        }
+    ]
     task = await TaskRepository(session).create(
-        goal="email someone", status=TaskStatus.PENDING.value, rubric=[],
-        use_email=True, max_steps=6, token_budget=1_000_000, summary=None,
-        verification_score=0, steps_used=0, tokens_used=0, workspace_path=None,
+        goal="email someone",
+        status=TaskStatus.PENDING.value,
+        rubric=[],
+        use_email=True,
+        max_steps=6,
+        token_budget=1_000_000,
+        summary=None,
+        verification_score=0,
+        steps_used=0,
+        tokens_used=0,
+        workspace_path=None,
     )
     await session.commit()
     await _service(session, ScriptedLLM(plans)).run(task.id)

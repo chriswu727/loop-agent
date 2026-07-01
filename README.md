@@ -9,6 +9,11 @@ audit, and trust everything it did.**
 A complete, production-shaped agent on a layered Next.js + FastAPI foundation.
 Runs on a laptop with one LLM API key and no other infrastructure.
 
+[![CI](https://github.com/chriswu727/loop-agent/actions/workflows/ci.yml/badge.svg)](https://github.com/chriswu727/loop-agent/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
+[![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/)
+[![Tests](https://img.shields.io/badge/tests-109%20offline-brightgreen.svg)](./apps/api/tests)
+
 `Next.js 16` · `FastAPI` · `Python 3.12` · `Postgres or SQLite` · `MIT`
 
 </div>

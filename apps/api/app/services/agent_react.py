@@ -96,9 +96,7 @@ def _clamp_score(value: object) -> int:
 
 
 class AgentReactService:
-    def __init__(
-        self, tasks: TaskRepository, steps: StepRepository, llm: LLMClient
-    ) -> None:
+    def __init__(self, tasks: TaskRepository, steps: StepRepository, llm: LLMClient) -> None:
         self.tasks = tasks
         self.steps = steps
         self.llm = llm
@@ -125,8 +123,10 @@ class AgentReactService:
             log.info("agent.skip_non_pending", task_id=str(task_id), status=task.status)
             return
 
-        workspace = Workspace(Path(task.workspace_path or settings.agent_workspaces_root) /
-                              ("" if task.workspace_path else str(task.id)))
+        workspace = Workspace(
+            Path(task.workspace_path or settings.agent_workspaces_root)
+            / ("" if task.workspace_path else str(task.id))
+        )
 
         # Load the signed skill (if any) BEFORE anything runs. A skill that can't
         # be verified is refused outright — provenance is not optional.
@@ -251,8 +251,14 @@ class AgentReactService:
             task.pending_action = None
             result = await executor.execute(str(action["tool"]), dict(action.get("args", {})))
             await self._record_step(
-                task, start, "(approved by the user)", str(action["tool"]),
-                dict(action.get("args", {})), result.observation, result.status, 0,
+                task,
+                start,
+                "(approved by the user)",
+                str(action["tool"]),
+                dict(action.get("args", {})),
+                result.observation,
+                result.status,
+                0,
             )
             start += 1
             if start > task.max_steps:
@@ -279,8 +285,12 @@ class AgentReactService:
 
             tokens_left = max(0, task.token_budget - task.tokens_used)
             system, user = plan_prompts(
-                task.goal, task.rubric, workspace.tree(), self._history_view(),
-                task.max_steps - number + 1, tokens_left,
+                task.goal,
+                task.rubric,
+                workspace.tree(),
+                self._history_view(),
+                task.max_steps - number + 1,
+                tokens_left,
                 executor.envelope.restricted_executor_tools(),
                 executor.envelope.egress_allowed,
                 self._memory_snapshot,
@@ -317,8 +327,9 @@ class AgentReactService:
                 observation = self.memory.remember(note, str(topic) if topic else None)
                 if note:  # make it visible to the rest of this run too
                     self._memory_snapshot = f"{self._memory_snapshot}\n- {note}".strip()
-                await self._record_step(task, number, thought, "remember", args,
-                                        observation, ToolStatus.OK, step_tokens)
+                await self._record_step(
+                    task, number, thought, "remember", args, observation, ToolStatus.OK, step_tokens
+                )
                 if number >= task.max_steps:
                     await self._finish(task, StopReason.MAX_STEPS)
                     return
@@ -340,7 +351,12 @@ class AgentReactService:
                 to = str(args.get("to", "")).strip()
                 subject = str(args.get("subject", "")).strip()
                 await self._pause_for_action(
-                    task, "send_email", args, thought, number, step_tokens,
+                    task,
+                    "send_email",
+                    args,
+                    thought,
+                    number,
+                    step_tokens,
                     f"send an email to {to} (subject: {subject!r})",
                 )
                 return  # resumes when the user approves or denies
@@ -386,8 +402,9 @@ class AgentReactService:
                         "do not rewrite it again.]"
                     )
 
-            await self._record_step(task, number, thought, tool or "invalid", args,
-                                    observation, status, step_tokens)
+            await self._record_step(
+                task, number, thought, tool or "invalid", args, observation, status, step_tokens
+            )
 
             stalled = status is not ToolStatus.OK or same_path_writes >= 2
             consecutive_failures = consecutive_failures + 1 if stalled else 0
@@ -407,8 +424,14 @@ class AgentReactService:
     ) -> None:
         question = str(args.get("question", "")).strip() or "(the agent asked a question)"
         await self._record_step(
-            task, number, thought, "ask_user", {"question": question},
-            "Waiting for the user's answer.", ToolStatus.OK, tokens,
+            task,
+            number,
+            thought,
+            "ask_user",
+            {"question": question},
+            "Waiting for the user's answer.",
+            ToolStatus.OK,
+            tokens,
         )
         task.pending_question = question
         task.status = TaskStatus.AWAITING_INPUT.value
@@ -416,25 +439,47 @@ class AgentReactService:
         log.info("agent.awaiting_input", task_id=str(task.id), number=number)
 
     async def _pause_for_approval(
-        self, task: TaskModel, args: dict[str, Any], thought: str,
-        number: int, tokens: int, reason: str,
+        self,
+        task: TaskModel,
+        args: dict[str, Any],
+        thought: str,
+        number: int,
+        tokens: int,
+        reason: str,
     ) -> None:
         """Pause before running a non-allowlisted command until the user approves."""
         command = str(args.get("command", "")).strip()
         await self._pause_for_action(
-            task, "run_command", args, thought, number, tokens,
+            task,
+            "run_command",
+            args,
+            thought,
+            number,
+            tokens,
             f"run: {command} (reason: {reason})",
         )
 
     async def _pause_for_action(
-        self, task: TaskModel, tool: str, args: dict[str, Any], thought: str,
-        number: int, tokens: int, summary: str,
+        self,
+        task: TaskModel,
+        tool: str,
+        args: dict[str, Any],
+        thought: str,
+        number: int,
+        tokens: int,
+        summary: str,
     ) -> None:
         """Pause a side-effecting action until the user approves; resumes by
         running the stored pending_action when they answer yes."""
         await self._record_step(
-            task, number, thought, tool, args,
-            f"Paused — needs your approval to {summary}.", ToolStatus.BLOCKED, tokens,
+            task,
+            number,
+            thought,
+            tool,
+            args,
+            f"Paused — needs your approval to {summary}.",
+            ToolStatus.BLOCKED,
+            tokens,
         )
         task.pending_action = {"tool": tool, "args": args}
         task.pending_question = f"Approve this action? Answer yes or no.\n  {summary}"
@@ -450,24 +495,39 @@ class AgentReactService:
         as this step's observation. The child's tokens count against this task."""
         if task.depth >= settings.agent_max_spawn_depth:
             await self._record_step(
-                task, number, thought, "spawn", args,
+                task,
+                number,
+                thought,
+                "spawn",
+                args,
                 f"Blocked: sub-agent depth limit ({settings.agent_max_spawn_depth}) reached. "
-                "Do this part yourself.", ToolStatus.BLOCKED, plan_tokens,
+                "Do this part yourself.",
+                ToolStatus.BLOCKED,
+                plan_tokens,
             )
             return
         goal = str(args.get("goal", "")).strip()
         if len(goal) < 4:
             await self._record_step(
-                task, number, thought, "spawn", args,
-                "spawn needs a 'goal' describing the sub-task.", ToolStatus.ERROR, plan_tokens,
+                task,
+                number,
+                thought,
+                "spawn",
+                args,
+                "spawn needs a 'goal' describing the sub-task.",
+                ToolStatus.ERROR,
+                plan_tokens,
             )
             return
 
         remaining = max(0, task.token_budget - task.tokens_used - plan_tokens)
         child_budget = max(1_000, min(_as_int(args.get("token_budget"), remaining), remaining))
         child_steps = max(
-            1, min(_as_int(args.get("max_steps"), settings.agent_max_steps_default),
-                   settings.agent_max_steps_cap)
+            1,
+            min(
+                _as_int(args.get("max_steps"), settings.agent_max_steps_default),
+                settings.agent_max_steps_cap,
+            ),
         )
         allowed = args.get("allowed_tools")
         child = await self.tasks.create(
@@ -508,8 +568,14 @@ class AgentReactService:
             f"score={child.verification_score}.\nSummary: {child.summary or '(none)'}.{files_line}"
         )
         await self._record_step(
-            task, number, thought, "spawn", args, observation,
-            ToolStatus.OK if ok else ToolStatus.ERROR, plan_tokens,
+            task,
+            number,
+            thought,
+            "spawn",
+            args,
+            observation,
+            ToolStatus.OK if ok else ToolStatus.ERROR,
+            plan_tokens,
         )
 
     async def _copy_subtask_outputs(self, task: TaskModel, child: TaskModel) -> str | None:
@@ -568,7 +634,8 @@ class AgentReactService:
         )
 
         check_results = await run_checks(
-            checks, workspace,
+            checks,
+            workspace,
             approval_mode=settings.agent_approval_mode,
             command_timeout=settings.agent_command_timeout_seconds,
             output_limit=settings.agent_command_output_limit,
@@ -602,16 +669,28 @@ class AgentReactService:
             verdict += "\nchecks:\n" + checks_summary(check_results)
         if missing:
             verdict += "\nmissing:\n" + "\n".join(f"- {m}" for m in missing)
-        await self._record_step(task, number, thought, "finish", args, verdict,
-                                ToolStatus.OK, plan_tokens + result.tokens)
+        await self._record_step(
+            task,
+            number,
+            thought,
+            "finish",
+            args,
+            verdict,
+            ToolStatus.OK,
+            plan_tokens + result.tokens,
+        )
 
         if met:
             task.summary = summary
             task.verification_score = score
             task.verified_by = verified_by
             receipt_hash, _ = build_receipt(
-                task, check_results, score=score, verified_by=verified_by,
-                workspace=workspace, ledger_head=self._last_hash,
+                task,
+                check_results,
+                score=score,
+                verified_by=verified_by,
+                workspace=workspace,
+                ledger_head=self._last_hash,
             )
             task.receipt_hash = receipt_hash
             await self._finish(task, StopReason.GOAL_ACHIEVED)
@@ -645,8 +724,13 @@ class AgentReactService:
     ) -> None:
         prev_hash = self._last_hash
         this_hash = step_hash(
-            prev_hash, number=number, tool=tool, tool_args=args,
-            observation=observation, status=status.value, tokens=tokens,
+            prev_hash,
+            number=number,
+            tool=tool,
+            tool_args=args,
+            observation=observation,
+            status=status.value,
+            tokens=tokens,
         )
         await self.steps.create(
             task_id=task.id,
@@ -669,8 +753,12 @@ class AgentReactService:
 
     @staticmethod
     def _format_history(
-        number: int, thought: str, tool: str, args: dict[str, Any],
-        observation: str, status: ToolStatus,
+        number: int,
+        thought: str,
+        tool: str,
+        args: dict[str, Any],
+        observation: str,
+        status: ToolStatus,
     ) -> str:
         arg_preview = ", ".join(f"{k}={str(v)[:60]!r}" for k, v in args.items())
         obs = observation if len(observation) <= 600 else observation[:600] + " …[truncated]"
@@ -706,8 +794,12 @@ class AgentReactService:
         task.stop_reason = reason.value
         await self._commit()
         log.info(
-            "agent.finish", task_id=str(task.id), reason=reason.value,
-            steps=task.steps_used, tokens=task.tokens_used, score=task.verification_score,
+            "agent.finish",
+            task_id=str(task.id),
+            reason=reason.value,
+            steps=task.steps_used,
+            tokens=task.tokens_used,
+            score=task.verification_score,
         )
 
     async def _commit(self) -> None:

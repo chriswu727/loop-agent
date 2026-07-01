@@ -31,12 +31,8 @@ def upgrade() -> None:
         sa.Column(
             "require_approval", sa.Boolean(), nullable=False, server_default=sa.text("false")
         ),
-        sa.Column(
-            "use_browser", sa.Boolean(), nullable=False, server_default=sa.text("false")
-        ),
-        sa.Column(
-            "use_email", sa.Boolean(), nullable=False, server_default=sa.text("false")
-        ),
+        sa.Column("use_browser", sa.Boolean(), nullable=False, server_default=sa.text("false")),
+        sa.Column("use_email", sa.Boolean(), nullable=False, server_default=sa.text("false")),
         sa.Column("pending_action", sa.JSON(), nullable=True),
         sa.Column("skill", sa.String(length=100), nullable=True),
         sa.Column("parent_id", sa.Uuid(), nullable=True),
@@ -126,11 +122,15 @@ def upgrade() -> None:
         ),
         sa.Column("skill", sa.String(length=100), nullable=True),
         sa.Column(
-            "created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"),
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
             nullable=False,
         ),
         sa.Column(
-            "updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"),
+            "updated_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
             nullable=False,
         ),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_triggers")),

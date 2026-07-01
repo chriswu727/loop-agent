@@ -29,9 +29,7 @@ async def test_create_list_fire_delete(client: AsyncClient) -> None:
     assert any(t["id"] == tid for t in listed)
 
     # Fire it with the secret -> a task is published (the agent run is stubbed).
-    fired = await client.post(
-        f"/api/v1/triggers/{tid}/fire", headers={"X-Trigger-Secret": sec}
-    )
+    fired = await client.post(f"/api/v1/triggers/{tid}/fire", headers={"X-Trigger-Secret": sec})
     assert fired.status_code == 200
     task = fired.json()
     assert task["status"] == "pending"

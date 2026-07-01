@@ -25,8 +25,9 @@ def _chain(task_id: uuid.UUID, specs: list[tuple[str, dict[str, Any], str]]) -> 
     prev = genesis_hash(task_id)
     out: list[_Step] = []
     for i, (tool, args, obs) in enumerate(specs, 1):
-        h = step_hash(prev, number=i, tool=tool, tool_args=args, observation=obs,
-                      status="ok", tokens=i)
+        h = step_hash(
+            prev, number=i, tool=tool, tool_args=args, observation=obs, status="ok", tokens=i
+        )
         out.append(_Step(i, tool, args, obs, "ok", i, prev, h))
         prev = h
     return out
@@ -34,16 +35,26 @@ def _chain(task_id: uuid.UUID, specs: list[tuple[str, dict[str, Any], str]]) -> 
 
 def test_valid_chain_verifies() -> None:
     tid = uuid.uuid4()
-    steps = _chain(tid, [("write_file", {"path": "a"}, "wrote a"),
-                         ("run_command", {"command": "python a"}, "exit 0")])
+    steps = _chain(
+        tid,
+        [
+            ("write_file", {"path": "a"}, "wrote a"),
+            ("run_command", {"command": "python a"}, "exit 0"),
+        ],
+    )
     ok, broken = verify_chain(tid, steps)
     assert ok is True and broken is None
 
 
 def test_tampered_observation_breaks_chain() -> None:
     tid = uuid.uuid4()
-    steps = _chain(tid, [("write_file", {"path": "a"}, "wrote a"),
-                         ("run_command", {"command": "python a"}, "exit 0")])
+    steps = _chain(
+        tid,
+        [
+            ("write_file", {"path": "a"}, "wrote a"),
+            ("run_command", {"command": "python a"}, "exit 0"),
+        ],
+    )
     steps[0].observation = "exit 0 — actually it failed"  # edit a record after the fact
     ok, broken = verify_chain(tid, steps)
     assert ok is False and broken == 1

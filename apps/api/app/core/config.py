@@ -78,9 +78,7 @@ class Settings(BaseSettings):
     # no API key); pick the model with OLLAMA_MODEL.
     ollama_base_url: str | None = None
     ollama_model: str = "llama3.2"
-    llm_default_provider: Literal[
-        "anthropic", "deepseek", "gemini", "glm", "ollama"
-    ] = "deepseek"
+    llm_default_provider: Literal["anthropic", "deepseek", "gemini", "glm", "ollama"] = "deepseek"
     llm_timeout_seconds: int = 120
 
     # ---- Agent loop limits (the "within the limit" guardrails) ----

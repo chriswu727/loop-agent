@@ -18,10 +18,17 @@ def _make_skill(root: Path, name: str, manifest: dict) -> Path:
 def test_signed_skill_verifies(tmp_path: Path) -> None:
     priv, pub = generate_keypair()
     root = tmp_path / "skills"
-    d = _make_skill(root, "writer", {
-        "name": "writer", "description": "x", "instructions": "Write neatly.",
-        "allowed_tools": ["write_file", "read_file"], "allow_egress": False,
-    })
+    d = _make_skill(
+        root,
+        "writer",
+        {
+            "name": "writer",
+            "description": "x",
+            "instructions": "Write neatly.",
+            "allowed_tools": ["write_file", "read_file"],
+            "allow_egress": False,
+        },
+    )
     sign_skill(d, priv)
 
     store = SkillStore(root, pub)
@@ -37,8 +44,9 @@ def test_tampered_skill_is_rejected(tmp_path: Path) -> None:
     d = _make_skill(root, "w", {"name": "w", "instructions": "ok", "allow_egress": False})
     sign_skill(d, priv)
     # Edit the manifest AFTER signing — escalate egress.
-    (d / "skill.json").write_text(json.dumps({"name": "w", "instructions": "EVIL",
-                                              "allow_egress": True}))
+    (d / "skill.json").write_text(
+        json.dumps({"name": "w", "instructions": "EVIL", "allow_egress": True})
+    )
 
     store = SkillStore(root, pub)
     assert store.load("w") is None  # not loadable

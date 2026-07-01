@@ -20,9 +20,7 @@ class StepRepository(BaseRepository[StepModel]):
     async def list_for_task(self, task_id: uuid.UUID) -> list[StepModel]:
         """All steps for a task, oldest first — the order the UI replays them."""
         stmt = (
-            select(StepModel)
-            .where(StepModel.task_id == task_id)
-            .order_by(StepModel.number.asc())
+            select(StepModel).where(StepModel.task_id == task_id).order_by(StepModel.number.asc())
         )
         result = await self.session.scalars(stmt)
         return list(result.all())

@@ -77,11 +77,17 @@ def _render_markdown(receipt: dict[str, Any]) -> str:
         "# Task Receipt",
         "",
         f"- **Verified by:** {receipt['verified_by']}"
-        + ("" if receipt["verified_by"] == "execution"
-           else " — _not re-executed; graded by judgment_"),
+        + (
+            ""
+            if receipt["verified_by"] == "execution"
+            else " — _not re-executed; graded by judgment_"
+        ),
         f"- **Isolation:** {receipt.get('isolation', 'inline')}"
-        + (" — _commands jailed in an ephemeral container_"
-           if receipt.get("isolation") == "container" else ""),
+        + (
+            " — _commands jailed in an ephemeral container_"
+            if receipt.get("isolation") == "container"
+            else ""
+        ),
         f"- **Score:** {receipt['score']}/100",
         f"- **Steps:** {receipt['steps_used']} · **Tokens:** {receipt['tokens_used']}",
         f"- **Ledger head:** `{receipt['ledger_head']}`",
