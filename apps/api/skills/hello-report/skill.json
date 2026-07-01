@@ -1,0 +1,7 @@
+{
+  "name": "hello-report",
+  "description": "Writes a short dated report to report.md, using only file tools.",
+  "instructions": "Write a concise report to report.md: an H1 with today's date, then 2-3 bullet points summarizing the goal. Use only write_file and read_file; do not run shell commands.",
+  "allowed_tools": ["write_file", "read_file"],
+  "allow_egress": false
+}

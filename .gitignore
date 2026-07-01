@@ -48,8 +48,12 @@ agent_memory/
 apps/api/agent_memory/
 
 # ---------- Agent skills (dev bundles) + signing keys ----------
-apps/api/skills/
+# Ignore runtime skill dirs and all *.pem (private signing keys), but keep the
+# committed example skill and its PUBLIC trust key so signed skills work OOTB.
+apps/api/skills/*
+!apps/api/skills/hello-report/
 *.pem
+!apps/api/skills/trust_key.pem
 
 # ---------- OS / editor ----------
 .DS_Store
