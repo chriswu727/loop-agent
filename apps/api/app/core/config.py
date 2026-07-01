@@ -83,7 +83,13 @@ class Settings(BaseSettings):
     # no API key); pick the model with OLLAMA_MODEL.
     ollama_base_url: str | None = None
     ollama_model: str = "llama3.2"
-    llm_default_provider: Literal["anthropic", "deepseek", "gemini", "glm", "ollama"] = "deepseek"
+    # Zero-key demo: a deterministic scripted "model" that drives one real,
+    # verified task (writes + runs fib.py) so a fresh clone shows the full loop
+    # and a Receipt with no API key. Enable with DEMO_MODE=1.
+    demo_mode: bool = False
+    llm_default_provider: Literal["anthropic", "deepseek", "gemini", "glm", "ollama", "mock"] = (
+        "deepseek"
+    )
     llm_timeout_seconds: int = 120
 
     # ---- Agent loop limits (the "within the limit" guardrails) ----

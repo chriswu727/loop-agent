@@ -19,6 +19,7 @@ from app.core.llm.providers import (
     call_deepseek,
     call_gemini,
     call_glm,
+    call_mock,
     call_ollama,
 )
 
@@ -39,6 +40,8 @@ PROVIDERS: dict[str, ProviderSpec] = {
     "glm": ProviderSpec(call_glm, "glm_api_key"),
     # Local model: "key" is the base URL, so it's configured when that's set.
     "ollama": ProviderSpec(call_ollama, "ollama_base_url"),
+    # Zero-key demo: configured exactly when DEMO_MODE is on.
+    "mock": ProviderSpec(call_mock, "demo_mode"),
 }
 
 

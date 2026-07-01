@@ -7,6 +7,8 @@ contained entirely here; everything above sees one uniform shape.
 
 from __future__ import annotations
 
+import json
+
 import httpx
 
 from app.core.config import settings
@@ -198,6 +200,66 @@ async def call_ollama(
     content = data["choices"][0]["message"]["content"]
     tokens = int(data.get("usage", {}).get("total_tokens", 0))
     return content, tokens
+
+
+_DEMO_FIB = "a, b = 0, 1\nfor _ in range(12):\n    print(a, end=' ')\n    a, b = b, a + b\n"
+_DEMO_SEQ = "0 1 1 2 3 5 8 13 21 34 55 89"
+
+
+async def call_mock(
+    client: httpx.AsyncClient,
+    api_key: str,
+    system: str,
+    user: str,
+    *,
+    max_tokens: int,
+    temperature: float,
+) -> tuple[str, int]:
+    """A deterministic, offline 'model' for DEMO_MODE. It drives one real task —
+    write fib.py, run it, finish with checks the verifier re-runs — so a fresh
+    clone shows the full verified loop (and a Receipt) with no API key. It reads
+    the run history in the prompt to decide the next step, so it self-sequences."""
+    if "JSON array of 3 to 6" in user:  # understand
+        content = json.dumps(
+            ["Prints the first 12 Fibonacci numbers", "The script runs without error"]
+        )
+    elif '"met"' in user:  # verify
+        content = json.dumps({"met": True, "score": 96, "missing": []})
+    elif "[run_command]" in user:  # already ran it -> finish with proof
+        content = json.dumps(
+            {
+                "thought": "It runs and prints the sequence — done.",
+                "tool": "finish",
+                "args": {
+                    "summary": "Wrote fib.py; verified it prints the first 12 Fibonacci numbers.",
+                    "checks": [
+                        {
+                            "kind": "command",
+                            "command": "python3 fib.py",
+                            "expect_stdout": _DEMO_SEQ,
+                        },
+                        {"kind": "file_exists", "path": "fib.py"},
+                    ],
+                },
+            }
+        )
+    elif "[write_file]" in user:  # wrote it -> run it
+        content = json.dumps(
+            {
+                "thought": "Run it to confirm the output.",
+                "tool": "run_command",
+                "args": {"command": "python3 fib.py"},
+            }
+        )
+    else:  # first step -> write the script
+        content = json.dumps(
+            {
+                "thought": "Write the Fibonacci script.",
+                "tool": "write_file",
+                "args": {"path": "fib.py", "content": _DEMO_FIB},
+            }
+        )
+    return content, 12
 
 
 def wrap_parse_error(provider: str, exc: Exception) -> LLMError:

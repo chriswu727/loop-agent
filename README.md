@@ -115,6 +115,21 @@ on the two axes a chat-log agent can't retrofit:
 - **Live view** — the task page streams updates over SSE (with a polling
   fallback): the step timeline, budget meters, output files, and ledger status.
 
+## Try it in 30 seconds (no API key)
+
+Want to see the verified loop before signing up for anything? A built-in demo
+model drives one real task end-to-end — writes `fib.py`, runs it, and the
+verifier **re-executes its checks** to produce a Receipt — with **no API key**:
+
+```bash
+make setup && make demo          # API on :8000, scripted model, DEMO_MODE=1
+# then, in another terminal:
+NEXT_PUBLIC_API_URL=http://localhost:8000 pnpm --filter web dev
+```
+
+Open http://localhost:3000, publish anything, and watch it plan → write → run →
+**verify** → Receipt. Then add a real key (below) to point it at your own goals.
+
 ## Quickstart (zero infrastructure)
 
 No Docker, no Postgres, no Redis. You need **Python 3.12+**, **Node 20+**, and

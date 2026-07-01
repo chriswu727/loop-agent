@@ -53,6 +53,13 @@ logs: ## Tail logs from all services
 dev: ## Run web + api in watch mode locally (requires `make setup`)
 	turbo run dev
 
+.PHONY: demo
+demo: ## Zero-key demo API on :8000 (no API key needed; scripted model)
+	cd apps/api && . .venv/bin/activate && \
+	DEMO_MODE=1 LLM_DEFAULT_PROVIDER=mock EXECUTION_MODE=inline CACHE_BACKEND=memory \
+	AGENT_SANDBOX=inline DATABASE_URL="sqlite+aiosqlite:///./loop_demo.db" \
+	uvicorn app.main:app --port 8000
+
 # ---------- Database ----------
 .PHONY: migrate
 migrate: ## Apply all database migrations

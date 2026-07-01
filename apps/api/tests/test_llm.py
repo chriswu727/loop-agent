@@ -18,7 +18,7 @@ def _client(handler) -> httpx.AsyncClient:
 
 
 def test_registry_lists_all_providers() -> None:
-    assert set(PROVIDERS) == {"anthropic", "deepseek", "gemini", "glm", "ollama"}
+    assert set(PROVIDERS) == {"anthropic", "deepseek", "gemini", "glm", "ollama", "mock"}
 
 
 async def test_ollama_adapter_hits_local_openai_endpoint(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -596,3 +596,27 @@ async def test_create_event_pauses_for_approval(
     assert task.status == TaskStatus.AWAITING_INPUT.value
     assert task.pending_action["tool"] == "create_event"
     assert "approve" in (task.pending_question or "").lower()
+
+
+async def test_demo_mode_runs_a_verified_task_with_no_api_key(
+    session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # DEMO_MODE + the scripted "mock" model drives a real, re-execution-verified
+    # task (write fib.py, run it, finish with checks) — no API key at all.
+    from app.core.llm.client import FallbackLLMClient
+
+    monkeypatch.setattr(settings, "demo_mode", True)
+    monkeypatch.setattr(settings, "agent_sandbox", "inline")  # host python3, deterministic
+
+    task = await _make_task(session, max_steps=8, token_budget=1_000_000)
+    service = AgentReactService(
+        TaskRepository(session), StepRepository(session), FallbackLLMClient(primary="mock")
+    )
+    await service.run(task.id)
+
+    await session.refresh(task)
+    assert task.status == TaskStatus.COMPLETED.value
+    assert task.stop_reason == StopReason.GOAL_ACHIEVED.value
+    assert task.verified_by == "execution"  # the checks actually re-ran and passed
+    assert task.receipt_hash  # a Receipt was produced
+    assert (Path(task.workspace_path) / "fib.py").exists()
