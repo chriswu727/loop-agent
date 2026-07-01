@@ -4,7 +4,7 @@
 # Multi-stage: `dev` (hot reload, used by compose) and non-root `runner` (prod).
 # Build context is the REPO ROOT:  docker build -f infra/docker/web.Dockerfile .
 # =============================================================================
-FROM node:24-alpine AS base
+FROM node:26-alpine AS base
 RUN corepack enable
 WORKDIR /app
 
