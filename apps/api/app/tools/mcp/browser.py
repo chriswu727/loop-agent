@@ -10,6 +10,7 @@ Browsing is network egress, so it is only started for tasks that opt in
 
 from __future__ import annotations
 
+import asyncio
 import shlex
 from contextlib import AsyncExitStack
 from typing import Any
@@ -19,6 +20,7 @@ from app.core.logging import get_logger
 log = get_logger("mcp")
 
 _OUTPUT_CAP = 5000  # chars of a tool result fed back to the agent (snapshots are big)
+_CALL_TIMEOUT = 60  # seconds before a single browser action is abandoned
 
 
 class McpBrowser:
@@ -48,7 +50,12 @@ class McpBrowser:
     async def call(self, name: str, args: dict[str, Any]) -> str:
         if self._session is None:
             return "Browser session is not available."
-        res = await self._session.call_tool(name, args)
+        # Bound the call so a hung navigation can't hang the task (and leak its DB
+        # session) forever — every other tool primitive is time-bounded too.
+        try:
+            res = await asyncio.wait_for(self._session.call_tool(name, args), timeout=_CALL_TIMEOUT)
+        except TimeoutError:
+            return f"{name} timed out after {_CALL_TIMEOUT}s."
         text = "".join(getattr(c, "text", "") for c in getattr(res, "content", []))
         if not text:
             return "(no text output)"

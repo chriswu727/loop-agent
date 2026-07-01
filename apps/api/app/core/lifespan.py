@@ -43,6 +43,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     cache = create_cache()
     app.state.cache = cache
 
+    # Fail any task left RUNNING by a previous crash/restart so it can't hang
+    # forever (the UI would show it "running" and then just stop).
+    from app.db.session import get_sessionmaker
+    from app.services.runner import reconcile_interrupted_tasks
+
+    async with get_sessionmaker()() as session:
+        await reconcile_interrupted_tasks(session)
+
     # Start the trigger heartbeat (fires due interval triggers). Inline-mode only
     # so we don't run two schedulers when a separate worker is deployed.
     scheduler_stop: asyncio.Event | None = None

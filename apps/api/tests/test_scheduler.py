@@ -58,3 +58,30 @@ async def test_tick_fires_due_trigger(session: AsyncSession, monkeypatch) -> Non
 
     # A second immediate tick does not re-fire (interval not yet elapsed).
     assert await service.tick() == 0
+
+
+async def test_reconcile_fails_interrupted_running_tasks(session: AsyncSession) -> None:
+    from app.domain.task import StopReason, TaskStatus
+    from app.services.runner import reconcile_interrupted_tasks
+
+    repo = TaskRepository(session)
+    common = dict(  # noqa: C408
+        rubric=[],
+        max_steps=5,
+        token_budget=1000,
+        summary=None,
+        verification_score=0,
+        steps_used=0,
+        tokens_used=0,
+        workspace_path=None,
+    )
+    running = await repo.create(goal="was mid-run", status=TaskStatus.RUNNING.value, **common)
+    paused = await repo.create(goal="paused", status=TaskStatus.AWAITING_INPUT.value, **common)
+    await session.commit()
+
+    assert await reconcile_interrupted_tasks(session) == 1
+    await session.refresh(running)
+    await session.refresh(paused)
+    assert running.status == TaskStatus.FAILED.value
+    assert running.stop_reason == StopReason.ERROR.value
+    assert paused.status == TaskStatus.AWAITING_INPUT.value  # untouched — still resumable
