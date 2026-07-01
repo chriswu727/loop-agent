@@ -107,9 +107,25 @@ class Settings(BaseSettings):
     # Cross-task memory store (MEMORY.md + topics/), shared across tasks.
     agent_memory_root: str = "./agent_memory"
     # Signed skills: a folder of skill bundles, and the ed25519 trust public key
-    # (PEM) a skill's signature must verify against to be loadable.
+    # a skill's signature must verify against to be loadable. The key can be an
+    # inline PEM, or (cleaner for a multi-line PEM) a file path — defaulting to the
+    # committed dev trust root so the bundled example skill works out of the box.
     agent_skills_root: str = "./skills"
     agent_skill_trust_public_key: str | None = None
+    agent_skill_trust_public_key_file: str | None = "./skills/trust_key.pem"
+
+    def trust_public_key_pem(self) -> str | None:
+        if self.agent_skill_trust_public_key:
+            return self.agent_skill_trust_public_key
+        if self.agent_skill_trust_public_key_file:
+            try:
+                from pathlib import Path
+
+                return Path(self.agent_skill_trust_public_key_file).read_text()
+            except OSError:
+                return None
+        return None
+
     agent_command_timeout_seconds: int = 60
     agent_command_output_limit: int = 4_000  # chars of command output kept
     # auto  = run allowlisted/unknown commands, hard-block dangerous ones

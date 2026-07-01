@@ -57,6 +57,14 @@ dev: ## Run web + api in watch mode locally (requires `make setup`)
 verify-receipt: ## Independently verify a Receipt: make verify-receipt f=path/to/receipt.json
 	cd apps/api && python scripts/verify_receipt.py $(f)
 
+.PHONY: skill-keygen
+skill-keygen: ## Generate a skill signing keypair: make skill-keygen out=.
+	cd apps/api && . .venv/bin/activate && python scripts/skill_tool.py keygen $(or $(out),.)
+
+.PHONY: skill-sign
+skill-sign: ## Sign a skill: make skill-sign dir=skills/foo key=signing_key.pem
+	cd apps/api && . .venv/bin/activate && python scripts/skill_tool.py sign $(dir) $(key)
+
 .PHONY: demo
 demo: ## Zero-key demo API on :8000 (no API key needed; scripted model)
 	cd apps/api && . .venv/bin/activate && \

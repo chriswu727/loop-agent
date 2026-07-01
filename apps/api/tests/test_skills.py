@@ -76,3 +76,20 @@ def test_no_trust_key_means_nothing_verifies(tmp_path: Path) -> None:
     d = _make_skill(root, "w", {"name": "w", "instructions": "a"})
     sign_skill(d, priv)
     assert SkillStore(root, None).load("w") is None
+
+
+def test_bundled_example_skill_verifies_with_default_trust_key() -> None:
+    """The committed skills/hello-report signs against the committed trust key, so
+    the signed-skills feature is live out of the box (not an empty dropdown)."""
+    from pathlib import Path
+
+    from app.core.config import settings
+    from app.services.skills import SkillStore
+
+    pem = settings.trust_public_key_pem()
+    assert pem is not None  # the default file-based trust key loads
+    store = SkillStore(Path(settings.agent_skills_root), pem)
+    skill = store.load("hello-report")
+    assert skill is not None and skill.verified
+    assert skill.manifest.allowed_tools == ["write_file", "read_file"]
+    assert skill.manifest.allow_egress is False

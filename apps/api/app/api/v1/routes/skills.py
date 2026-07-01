@@ -24,7 +24,7 @@ class SkillRead(BaseModel):
 
 @router.get("", response_model=list[SkillRead], summary="List installed skills")
 async def list_skills() -> list[SkillRead]:
-    store = SkillStore(Path(settings.agent_skills_root), settings.agent_skill_trust_public_key)
+    store = SkillStore(Path(settings.agent_skills_root), settings.trust_public_key_pem())
     return [
         SkillRead(
             name=s.manifest.name,

@@ -136,9 +136,7 @@ class AgentReactService:
         skill_egress = True
         self._skill_instructions = ""
         if task.skill:
-            store = SkillStore(
-                Path(settings.agent_skills_root), settings.agent_skill_trust_public_key
-            )
+            store = SkillStore(Path(settings.agent_skills_root), settings.trust_public_key_pem())
             skill = store.load(task.skill)
             if skill is None:
                 task.status = TaskStatus.FAILED.value
