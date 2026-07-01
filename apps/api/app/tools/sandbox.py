@@ -10,8 +10,8 @@ container is removed on exit (``--rm``) and force-removed if it overruns.
 from __future__ import annotations
 
 import asyncio
+import subprocess
 import uuid
-from functools import lru_cache
 from pathlib import Path
 
 from app.core.logging import get_logger
@@ -19,16 +19,24 @@ from app.tools.base import ToolResult, ToolStatus
 
 log = get_logger("sandbox")
 
+# Cache only a *positive* result: once the daemon is confirmed up it stays up, so
+# we skip the ~0.5s `docker info` on later tasks. A negative result is NOT cached,
+# so starting Docker after the app boots is picked up on the next task (the old
+# lru_cache pinned "unavailable" for the whole process — a real footgun).
+_docker_confirmed = False
 
-@lru_cache(maxsize=1)
+
 def docker_available() -> bool:
-    """Whether a Docker daemon is reachable. Cached for the process lifetime."""
-    import subprocess
-
+    """Whether a Docker daemon is reachable right now."""
+    global _docker_confirmed
+    if _docker_confirmed:
+        return True
     try:
-        return subprocess.run(["docker", "info"], capture_output=True, timeout=10).returncode == 0
+        ok = subprocess.run(["docker", "info"], capture_output=True, timeout=10).returncode == 0
     except Exception:
-        return False
+        ok = False
+    _docker_confirmed = ok
+    return ok
 
 
 def image_present(image: str) -> bool:

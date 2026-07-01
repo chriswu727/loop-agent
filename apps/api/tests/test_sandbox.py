@@ -63,3 +63,42 @@ async def test_no_sandbox_uses_host(tmp_path: Path, monkeypatch: pytest.MonkeyPa
 
 def test_image_present_false_for_missing() -> None:
     assert image_present("loop-definitely-not-real:nope") is False
+
+
+def test_docker_available_does_not_cache_negative(monkeypatch: pytest.MonkeyPatch) -> None:
+    import app.tools.sandbox as sb
+
+    sb._docker_confirmed = False
+    calls = {"n": 0}
+
+    class _R:
+        returncode = 1
+
+    def fake_run(*a: object, **k: object) -> _R:
+        calls["n"] += 1
+        return _R()
+
+    monkeypatch.setattr(sb.subprocess, "run", fake_run)
+    assert sb.docker_available() is False
+    assert sb.docker_available() is False
+    assert calls["n"] == 2  # negative not cached -> re-checked (Docker may start later)
+
+
+def test_docker_available_caches_positive(monkeypatch: pytest.MonkeyPatch) -> None:
+    import app.tools.sandbox as sb
+
+    sb._docker_confirmed = False
+    calls = {"n": 0}
+
+    class _R:
+        returncode = 0
+
+    def fake_run(*a: object, **k: object) -> _R:
+        calls["n"] += 1
+        return _R()
+
+    monkeypatch.setattr(sb.subprocess, "run", fake_run)
+    assert sb.docker_available() is True
+    assert sb.docker_available() is True
+    assert calls["n"] == 1  # positive cached -> no repeat docker info
+    sb._docker_confirmed = False  # reset so other tests re-detect real Docker
