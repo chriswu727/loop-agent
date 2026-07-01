@@ -14,18 +14,10 @@ import asyncio
 import contextlib
 
 import httpx
-from sqlalchemy import select
 
 from app.core.config import settings
 from app.core.logging import get_logger
-from app.db.models.task import TaskModel
-from app.db.session import get_sessionmaker
-from app.domain.task import StopReason, TaskStatus
-from app.repositories.step import StepRepository
-from app.repositories.task import TaskRepository
-from app.schemas.task import TaskCreate
-from app.services.runner import execute_task
-from app.services.task import TaskService
+from app.services.chat import reply_for, run_chat_turn
 
 log = get_logger("telegram")
 
@@ -50,51 +42,13 @@ class TelegramClient:
         )
 
 
-def reply_for(task: TaskModel) -> str:
-    """Turn a task's terminal/paused state into a chat reply."""
-    if task.status == TaskStatus.AWAITING_INPUT.value:
-        return task.pending_question or "I need a bit more information to continue."
-    if task.status == TaskStatus.COMPLETED.value:
-        if task.stop_reason == StopReason.GOAL_ACHIEVED.value:
-            return f"Done. {task.summary or ''}".strip()
-        return f"Stopped ({task.stop_reason}). {task.summary or ''}".strip()
-    if task.status == TaskStatus.FAILED.value:
-        return f"Failed: {task.error or 'unknown error'}"
-    return f"Status: {task.status}"
-
-
-async def _find_awaiting(session, chat_id: str) -> TaskModel | None:
-    result = await session.execute(
-        select(TaskModel)
-        .where(TaskModel.chat_id == chat_id)
-        .where(TaskModel.status == TaskStatus.AWAITING_INPUT.value)
-        .order_by(TaskModel.updated_at.desc())
-        .limit(1)
-    )
-    return result.scalar_one_or_none()
-
-
 async def handle_chat_message(client: TelegramClient, chat_id: str, text: str) -> None:
-    sessionmaker = get_sessionmaker()
-    async with sessionmaker() as session:
-        awaiting = await _find_awaiting(session, chat_id)
-        service = TaskService(TaskRepository(session), StepRepository(session))
-        if awaiting is not None:
-            await service.respond(awaiting.id, text)  # answer the open question
-            task_id = awaiting.id
-        else:
-            if len(text) < 4:
-                await client.send_message(chat_id, "Send me a task (a few words or more).")
-                return
-            task = await service.publish(TaskCreate(goal=text, chat_id=chat_id))
-            task_id = task.id
-
-    await execute_task(task_id)  # runs to completion or the next pause (own session)
-
-    async with sessionmaker() as session:
-        task = await TaskRepository(session).get(task_id)
-        if task is not None:
-            await client.send_message(chat_id, reply_for(task))
+    if len(text) < 4:
+        await client.send_message(chat_id, "Send me a task (a few words or more).")
+        return
+    task = await run_chat_turn(chat_id, text)  # shared with the HTTP /chat endpoint
+    if task is not None:
+        await client.send_message(chat_id, reply_for(task))
 
 
 async def run_telegram_bot(stop: asyncio.Event) -> None:

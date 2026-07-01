@@ -13,7 +13,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.models.task import TaskModel
 from app.domain.task import StopReason, TaskStatus
 from app.repositories.task import TaskRepository
-from app.services.telegram import TelegramClient, _find_awaiting, reply_for
+from app.services.chat import find_awaiting, reply_for
+from app.services.telegram import TelegramClient
 
 
 async def test_client_get_updates_and_send() -> None:
@@ -81,9 +82,9 @@ async def test_find_awaiting_for_chat(session: AsyncSession) -> None:
     )
     await session.commit()
 
-    found = await _find_awaiting(session, "42")
+    found = await find_awaiting(session, "42")
     assert found is not None and found.status == TaskStatus.AWAITING_INPUT.value
-    assert await _find_awaiting(session, "999") is None  # different chat
+    assert await find_awaiting(session, "999") is None  # different chat
 
 
 async def test_bot_refuses_to_start_without_allowlist(monkeypatch) -> None:

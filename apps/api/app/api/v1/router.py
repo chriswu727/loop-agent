@@ -10,7 +10,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends
 
 from app.api.v1.auth import require_api_token
-from app.api.v1.routes import memory, skills, tasks, triggers
+from app.api.v1.routes import chat, memory, skills, tasks, triggers
 
 # One gate for the whole surface: with API_TOKEN set, every route needs it.
 api_router = APIRouter(dependencies=[Depends(require_api_token)])
@@ -18,3 +18,4 @@ api_router.include_router(tasks.router)
 api_router.include_router(memory.router)
 api_router.include_router(skills.router)
 api_router.include_router(triggers.router)
+api_router.include_router(chat.router)
