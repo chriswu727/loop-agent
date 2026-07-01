@@ -116,9 +116,13 @@ class TaskService:
         await self.get(task_id)  # 404 if the task is unknown
         return await self.steps.list_for_task(task_id)
 
-    async def verify_ledger(self, task_id: uuid.UUID) -> dict[str, object]:
-        """Re-verify the tamper-evident step chain for a task."""
-        steps = await self.list_steps(task_id)
+    async def verify_ledger(
+        self, task_id: uuid.UUID, steps: list[StepModel] | None = None
+    ) -> dict[str, object]:
+        """Re-verify the tamper-evident step chain. Callers that already have the
+        steps (e.g. the snapshot builder) pass them in to avoid a second fetch."""
+        if steps is None:
+            steps = await self.list_steps(task_id)
         ok, broken_at = verify_chain(task_id, steps)
         head = steps[-1].hash if steps else genesis_hash(task_id)
         return {"verified": ok, "head": head, "length": len(steps), "broken_at": broken_at}

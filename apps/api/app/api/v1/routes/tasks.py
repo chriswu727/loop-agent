@@ -141,7 +141,7 @@ async def _build_snapshot(service: TaskService, task_id: uuid.UUID) -> TaskSnaps
     task = await service.get(task_id)
     steps = await service.list_steps(task_id)
     files = await service.list_files(task_id)
-    ledger = await service.verify_ledger(task_id)
+    ledger = await service.verify_ledger(task_id, steps=steps)  # reuse the loaded steps
     return TaskSnapshot(
         task=TaskRead.from_model(task),
         steps=[StepRead.model_validate(s) for s in steps],
@@ -151,24 +151,26 @@ async def _build_snapshot(service: TaskService, task_id: uuid.UUID) -> TaskSnaps
 
 
 async def _event_stream(task_id: uuid.UUID) -> AsyncIterator[str]:
-    """Push a full task snapshot whenever something changes, until terminal.
-    Server-side polling drives a single client connection (no client polling)."""
+    """Push a full task snapshot whenever something changes, until terminal. Each
+    tick does a *cheap* fingerprint fetch (one task row) and only rebuilds the full
+    snapshot — steps, files, ledger re-hash — when it actually changed, so an idle
+    open tab costs one small query per tick instead of dozens."""
     sessionmaker = get_sessionmaker()
     last_fp: tuple[object, ...] | None = None
     for _ in range(1800):  # ~15 min safety cap at 0.5s cadence
         async with sessionmaker() as session:
             service = TaskService(TaskRepository(session), StepRepository(session))
-            try:
-                snapshot = await _build_snapshot(service, task_id)
-            except NotFoundError:
+            task = await service.tasks.get(task_id)
+            if task is None:
                 yield 'event: error\ndata: {"detail":"task not found"}\n\n'
                 return
-        t = snapshot.task
-        fp = (t.status, t.steps_used, t.tokens_used, t.updated_at.isoformat())
-        if fp != last_fp:
-            last_fp = fp
-            yield f"data: {snapshot.model_dump_json()}\n\n"
-        if t.status in _TERMINAL:
+            fp = (task.status, task.steps_used, task.tokens_used, task.updated_at.isoformat())
+            terminal = task.status in _TERMINAL
+            if fp != last_fp:
+                last_fp = fp
+                snapshot = await _build_snapshot(service, task_id)
+                yield f"data: {snapshot.model_dump_json()}\n\n"
+        if terminal:
             return
         await asyncio.sleep(0.5)
 
