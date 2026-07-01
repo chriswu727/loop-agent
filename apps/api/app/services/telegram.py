@@ -86,11 +86,7 @@ async def handle_chat_message(client: TelegramClient, chat_id: str, text: str) -
             if len(text) < 4:
                 await client.send_message(chat_id, "Send me a task (a few words or more).")
                 return
-            task = await service.publish(TaskCreate(goal=text))
-            task.chat_id = chat_id
-            await session.flush()
-            await session.refresh(task)
-            await session.commit()
+            task = await service.publish(TaskCreate(goal=text, chat_id=chat_id))
             task_id = task.id
 
     await execute_task(task_id)  # runs to completion or the next pause (own session)

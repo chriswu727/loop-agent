@@ -620,3 +620,40 @@ async def test_demo_mode_runs_a_verified_task_with_no_api_key(
     assert task.verified_by == "execution"  # the checks actually re-ran and passed
     assert task.receipt_hash  # a Receipt was produced
     assert (Path(task.workspace_path) / "fib.py").exists()
+
+
+async def test_conversation_context_from_prior_turns(session: AsyncSession) -> None:
+    repo = TaskRepository(session)
+    common = dict(  # noqa: C408
+        rubric=[],
+        max_steps=5,
+        token_budget=1000,
+        verification_score=0,
+        steps_used=0,
+        tokens_used=0,
+        workspace_path=None,
+    )
+    await repo.create(
+        goal="write greet.py",
+        status=TaskStatus.COMPLETED.value,
+        chat_id="s1",
+        summary="Wrote greet.py that prints hello.",
+        **common,
+    )
+    await session.commit()
+    current = await repo.create(
+        goal="now add a docstring to it",
+        status=TaskStatus.PENDING.value,
+        chat_id="s1",
+        summary=None,
+        **common,
+    )
+    solo = await repo.create(
+        goal="unrelated", status=TaskStatus.PENDING.value, chat_id=None, summary=None, **common
+    )
+    await session.commit()
+
+    svc = _service(session, ScriptedLLM([]))
+    convo = await svc._build_conversation(current)
+    assert "write greet.py" in convo and "Wrote greet.py" in convo  # prior turn threaded in
+    assert await svc._build_conversation(solo) == ""  # no chat_id -> no context

@@ -81,6 +81,7 @@ export interface PublishBody {
   use_browser?: boolean;
   use_email?: boolean;
   use_calendar?: boolean;
+  chat_id?: string | null;
   skill?: string | null;
   limits?: {
     max_steps?: number;

@@ -43,6 +43,8 @@ class TaskCreate(BaseModel):
     use_email: bool = False
     # When true, give the agent calendar tools (list/create). Implies network egress.
     use_calendar: bool = False
+    # Groups tasks into one conversation/session (prior turns become context).
+    chat_id: str | None = None
     # Run under this signed skill (by name). Refused if it doesn't verify.
     skill: str | None = None
 

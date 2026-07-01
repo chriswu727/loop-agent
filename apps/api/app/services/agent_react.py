@@ -110,6 +110,7 @@ class AgentReactService:
         self._browser_specs = ""  # MCP browser tool list, injected into planning
         self._email_specs = ""  # email tool list, injected into planning
         self._calendar_specs = ""  # calendar tool list, injected into planning
+        self._conversation = ""  # earlier turns of a chat/session, injected into planning
         self._mcp_tools: set[str] = set()  # extra tool names the planner may call
         self._sandbox_image: str | None = None  # container image for run_command, or None
 
@@ -204,6 +205,7 @@ class AgentReactService:
         # resumed run sees its own past actions (and the user's answer).
         await self._rebuild_history(task.id)
         self._memory_snapshot = self.memory.snapshot()  # what it remembers across tasks
+        self._conversation = await self._build_conversation(task)  # earlier turns of this chat
         await self._commit()
         resuming = task.steps_used > 0
         log.info("agent.start", task_id=str(task.id), resuming=resuming, goal=task.goal[:80])
@@ -306,6 +308,7 @@ class AgentReactService:
                 self._browser_specs,
                 self._email_specs,
                 self._calendar_specs,
+                self._conversation,
                 allow_spawn=task.depth < settings.agent_max_spawn_depth,
             )
             result = await self.llm.complete(system, user, max_tokens=1200, temperature=0.5)
@@ -624,10 +627,24 @@ class AgentReactService:
             log.warning("agent.subtask_copy_failed", task_id=str(task.id), child=str(child.id))
             return None
 
+    async def _build_conversation(self, task: TaskModel) -> str:
+        """Earlier turns of this chat/session (goal -> reply), chronological, so a
+        follow-up like 'now also add tests' has the context it refers to."""
+        if not task.chat_id:
+            return ""
+        prior = await self.tasks.recent_for_chat(task.chat_id, exclude_id=task.id, limit=5)
+        turns = [t for t in reversed(prior) if t.summary]  # chronological, answered only
+        if not turns:
+            return ""
+        return "\n".join(
+            f'- You were asked: "{t.goal[:200]}" -> you replied: "{(t.summary or "")[:300]}"'
+            for t in turns
+        )
+
     # --- LLM phases -------------------------------------------------------
 
     async def _understand(self, goal: str) -> tuple[list[str], int]:
-        system, user = understand_prompts(goal)
+        system, user = understand_prompts(goal, self._conversation)
         result = await self.llm.complete(system, user, max_tokens=500, temperature=0.4)
         parsed = _extract_json(result.content)
         if isinstance(parsed, list):

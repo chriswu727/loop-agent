@@ -41,6 +41,20 @@ class TaskRepository(BaseRepository[TaskModel]):
         )
         return list((await self.session.scalars(stmt)).all())
 
+    async def recent_for_chat(
+        self, chat_id: str, *, exclude_id: uuid.UUID, limit: int = 5
+    ) -> list[TaskModel]:
+        """Earlier turns of the same conversation (most recent first) — used to
+        give a chat/session multi-turn context."""
+        stmt = (
+            select(TaskModel)
+            .where(TaskModel.chat_id == chat_id)
+            .where(TaskModel.id != exclude_id)
+            .order_by(TaskModel.created_at.desc())
+            .limit(limit)
+        )
+        return list((await self.session.scalars(stmt)).all())
+
     async def update_state(self, task_id: uuid.UUID, **values: object) -> TaskModel | None:
         """Patch live loop columns (status, best_score, tokens_used, …).
 

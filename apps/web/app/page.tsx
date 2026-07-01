@@ -42,9 +42,14 @@ export default async function Home() {
       <header className="mb-8">
         <div className="flex items-center justify-between">
           <h1 className="text-2xl font-bold tracking-tight">{env.NEXT_PUBLIC_APP_NAME}</h1>
-          <Link href="/triggers" className="text-sm opacity-60 transition hover:opacity-100">
-            Triggers →
-          </Link>
+          <nav className="flex gap-4 text-sm">
+            <Link href="/chat" className="opacity-60 transition hover:opacity-100">
+              Chat →
+            </Link>
+            <Link href="/triggers" className="opacity-60 transition hover:opacity-100">
+              Triggers →
+            </Link>
+          </nav>
         </div>
         <p className="mt-1 text-sm opacity-60">
           Publish a goal. The agent plans it, writes files and runs commands in its own sandboxed
