@@ -19,14 +19,15 @@ FROM base AS builder
 RUN python -m venv /opt/venv
 COPY apps/api/pyproject.toml apps/api/README.md /app/
 COPY apps/api/app /app/app
-RUN pip install --upgrade pip && pip install .
+# [office] = openpyxl/python-docx/pandas so the verifier can re-open edited docs.
+RUN pip install --upgrade pip && pip install ".[office]"
 
 # ---- dev: editable install + dev tools + hot reload ----
 FROM base AS dev
 RUN python -m venv /opt/venv
 COPY apps/api/pyproject.toml apps/api/README.md /app/
 COPY apps/api/app /app/app
-RUN pip install --upgrade pip && pip install -e ".[dev]"
+RUN pip install --upgrade pip && pip install -e ".[dev,office]"
 EXPOSE 8000
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
 

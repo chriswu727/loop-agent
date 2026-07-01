@@ -17,8 +17,15 @@ help: ## Show this help
 setup: ## Install all dependencies (JS + Python) and copy env
 	@test -f .env || cp .env.example .env
 	corepack enable && pnpm install
-	cd apps/api && python -m venv .venv && . .venv/bin/activate && pip install -e ".[dev]"
-	@echo "✔ Setup complete. Run 'make up' to start the stack."
+	cd apps/api && python -m venv .venv && . .venv/bin/activate && pip install -e ".[dev,office]"
+	-$(MAKE) sandbox-image
+	@echo "Setup complete. Run 'make up' to start the stack."
+
+.PHONY: sandbox-image
+sandbox-image: ## Build the container-isolation image (needs Docker running)
+	@docker info >/dev/null 2>&1 \
+		&& docker build -f apps/api/sandbox.Dockerfile -t loop-sandbox:latest apps/api \
+		|| echo "Docker not running — skipping sandbox image (tasks will run inline)."
 
 # ---------- Local stack (Docker) ----------
 .PHONY: up

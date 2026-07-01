@@ -97,20 +97,26 @@ axes a chat-log agent can't easily copy:
 
 ## Quickstart (zero infrastructure)
 
-No Docker, no Postgres, no Redis. Node 20+, Python 3.12+, and one LLM API key.
+No Docker, no Postgres, no Redis. You need **Python 3.12+**, **Node 20+**, and
+**pnpm 10** (`corepack enable`), plus one LLM API key.
 
 ```bash
 # 1) Backend (FastAPI on SQLite, agent runs in-process)
 cd apps/api
 python -m venv .venv && . .venv/bin/activate
-pip install -e ".[dev]" && pip install -e ".[office]"   # office libs for doc editing
-export DEEPSEEK_API_KEY=sk-...        # or ANTHROPIC_API_KEY / GEMINI_API_KEY / GLM_API_KEY
+pip install -e ".[dev,office]"        # office extras = xlsx/docx/csv editing
+export DEEPSEEK_API_KEY=sk-...         # or ANTHROPIC_API_KEY / GEMINI_API_KEY / GLM_API_KEY
 export DATABASE_URL="sqlite+aiosqlite:///./loop.db"
 export EXECUTION_MODE=inline CACHE_BACKEND=memory
 uvicorn app.main:app --port 8000
 
-# 2) Frontend (another terminal, from the repo root)
+# 2) Frontend (another terminal, from the repo ROOT)
+corepack enable && pnpm install
 NEXT_PUBLIC_API_URL=http://localhost:8000 pnpm --filter web dev
+
+# 3) (optional, recommended) build the sandbox image so shell commands run
+#    jailed in a container instead of on your host — needs Docker running:
+docker build -f apps/api/sandbox.Dockerfile -t loop-sandbox:latest apps/api
 ```
 
 Open http://localhost:3000 and try *"Write a Python script that prints the first

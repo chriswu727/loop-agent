@@ -39,5 +39,9 @@ keeps history readable and enables automated changelogs later.
 
 ## Adding a feature
 
-Follow [`docs/guides/adding-a-feature.md`](./docs/guides/adding-a-feature.md) and
-use the `items` example as your template.
+The `triggers` resource is a clean, complete vertical to copy: model
+(`app/db/models/trigger.py`) → migration → repository → service
+(`app/services/trigger.py`) → schema → route (`app/api/v1/routes/triggers.py`) →
+tests (`tests/test_triggers.py`) → web page (`apps/web/app/triggers`). Keep the
+layering: transport → service → repository → domain. Design rationale lives in
+[`docs/loop.md`](./docs/loop.md).
