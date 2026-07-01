@@ -37,6 +37,7 @@ export function PublishForm({
   const [requireApproval, setRequireApproval] = useState(false);
   const [useBrowser, setUseBrowser] = useState(false);
   const [useEmail, setUseEmail] = useState(false);
+  const [useCalendar, setUseCalendar] = useState(false);
   const [skill, setSkill] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -58,6 +59,7 @@ export function PublishForm({
         require_approval: requireApproval,
         use_browser: useBrowser,
         use_email: useEmail,
+        use_calendar: useCalendar,
         skill: skill || null,
       };
       if (files.length > 0) {
@@ -163,6 +165,14 @@ export function PublishForm({
             onChange={(e) => setUseEmail(e.target.checked)}
           />
           Use email
+        </label>
+        <label className="flex cursor-pointer items-center gap-1.5 opacity-80">
+          <input
+            type="checkbox"
+            checked={useCalendar}
+            onChange={(e) => setUseCalendar(e.target.checked)}
+          />
+          Use calendar
         </label>
         {skills.length > 0 && (
           <select

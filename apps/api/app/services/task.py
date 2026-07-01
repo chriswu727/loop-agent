@@ -75,6 +75,7 @@ class TaskService:
             require_approval=payload.require_approval,
             use_browser=payload.use_browser,
             use_email=payload.use_email,
+            use_calendar=payload.use_calendar,
             skill=payload.skill,
             max_steps=max_steps,
             token_budget=token_budget,

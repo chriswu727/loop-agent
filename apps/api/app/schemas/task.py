@@ -41,6 +41,8 @@ class TaskCreate(BaseModel):
     use_browser: bool = False
     # When true, give the agent email tools (send/read). Implies network egress.
     use_email: bool = False
+    # When true, give the agent calendar tools (list/create). Implies network egress.
+    use_calendar: bool = False
     # Run under this signed skill (by name). Refused if it doesn't verify.
     skill: str | None = None
 
@@ -69,6 +71,7 @@ class TaskRead(BaseModel):
     require_approval: bool
     use_browser: bool
     use_email: bool
+    use_calendar: bool
     skill: str | None
     parent_id: uuid.UUID | None
     depth: int
@@ -102,6 +105,7 @@ class TaskRead(BaseModel):
             require_approval=m.require_approval,  # type: ignore[attr-defined]
             use_browser=m.use_browser,  # type: ignore[attr-defined]
             use_email=m.use_email,  # type: ignore[attr-defined]
+            use_calendar=m.use_calendar,  # type: ignore[attr-defined]
             skill=m.skill,  # type: ignore[attr-defined]
             parent_id=m.parent_id,  # type: ignore[attr-defined]
             depth=m.depth,  # type: ignore[attr-defined]

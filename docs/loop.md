@@ -20,6 +20,18 @@ reply formatting per task state, and the awaiting-task lookup; the full round
 trip reuses already-tested publish/respond/execute and needs a bot token to run
 live.
 
+## Calendar (list / create)
+
+Same shape as email, one step toward OpenClaw capability parity. With
+`use_calendar` (and CalDAV creds), the agent gets `list_events` (read-only,
+framed as `[DATA]`) and `create_event` (writes to the real calendar → always
+routed through the approval gate). Backed by CalDAV (`caldav` lib, optional
+`[calendar]` extra), so it works with iCloud / Fastmail / Nextcloud via an app
+password; Google Calendar needs OAuth (future). Dispatches through the same
+`ToolExecutor` provider list as browser/email, so the envelope applies and
+`use_calendar` implies egress. Tested offline against a mocked CalDAV calendar
+(list + create + approval pause); live use needs creds.
+
 ## Email (send / read)
 
 With `use_email` (and SMTP/IMAP creds configured), the agent gets two tools:

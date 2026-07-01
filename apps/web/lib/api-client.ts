@@ -80,6 +80,7 @@ export interface PublishBody {
   require_approval?: boolean;
   use_browser?: boolean;
   use_email?: boolean;
+  use_calendar?: boolean;
   skill?: string | null;
   limits?: {
     max_steps?: number;

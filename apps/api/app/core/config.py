@@ -145,6 +145,17 @@ class Settings(BaseSettings):
     def email_configured(self) -> bool:
         return bool(self.smtp_host and self.smtp_user and self.smtp_password)
 
+    # ---- Calendar over CalDAV (a task opts in with use_calendar) ----
+    # Works with iCloud / Fastmail / Nextcloud / etc. via an app password.
+    caldav_url: str | None = None
+    caldav_user: str | None = None
+    caldav_password: str | None = None
+    caldav_calendar: str | None = None  # pick a calendar by name; else the first
+
+    @property
+    def calendar_configured(self) -> bool:
+        return bool(self.caldav_url and self.caldav_user and self.caldav_password)
+
     # ---- MCP: headless browser (a task opts in with use_browser) ----
     agent_browser_enabled: bool = True
     agent_browser_command: str = "npx -y @playwright/mcp@latest --headless --isolated"

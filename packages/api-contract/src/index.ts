@@ -38,6 +38,7 @@ export interface Task {
   require_approval: boolean;
   use_browser: boolean;
   use_email: boolean;
+  use_calendar: boolean;
   skill: string | null;
   limits: Limits;
   summary: string | null;

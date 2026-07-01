@@ -41,12 +41,13 @@ from app.services.receipt import build_receipt
 from app.services.skills import SkillStore
 from app.services.verification import checks_summary, run_checks
 from app.tools import VALID_TOOLS, CapabilityEnvelope, ToolExecutor, ToolStatus, Workspace
+from app.tools.calendar import CalendarTools
 from app.tools.email import EmailTools
 from app.tools.envelope import EXECUTOR_TOOLS
 from app.tools.guards import make_egress_guard
 from app.tools.mcp import McpBrowser
 from app.tools.policy import Verdict, evaluate_command
-from app.tools.registry import EMAIL_SPEC
+from app.tools.registry import CALENDAR_SPEC, EMAIL_SPEC
 from app.tools.sandbox import docker_available, image_present
 
 log = get_logger("agent")
@@ -108,6 +109,7 @@ class AgentReactService:
         self._skill_instructions = ""  # instructions from the task's signed skill
         self._browser_specs = ""  # MCP browser tool list, injected into planning
         self._email_specs = ""  # email tool list, injected into planning
+        self._calendar_specs = ""  # calendar tool list, injected into planning
         self._mcp_tools: set[str] = set()  # extra tool names the planner may call
         self._sandbox_image: str | None = None  # container image for run_command, or None
 
@@ -158,7 +160,10 @@ class AgentReactService:
         envelope = CapabilityEnvelope.from_tools(
             _combine_tools(task.allowed_tools, skill_tools),
             egress_allowed=(
-                (task.allow_egress and skill_egress) or task.use_browser or task.use_email
+                (task.allow_egress and skill_egress)
+                or task.use_browser
+                or task.use_email
+                or task.use_calendar
             ),
         )
         sandbox_image, sandbox_label = self._resolve_sandbox()
@@ -189,6 +194,11 @@ class AgentReactService:
             executor.email = EmailTools()
             self._mcp_tools |= EmailTools.tool_names
             self._email_specs = EMAIL_SPEC
+
+        if task.use_calendar and settings.calendar_configured:
+            executor.calendar = CalendarTools()
+            self._mcp_tools |= CalendarTools.tool_names
+            self._calendar_specs = CALENDAR_SPEC
 
         task.status = TaskStatus.RUNNING.value
         task.workspace_path = str(workspace.root)
@@ -297,6 +307,7 @@ class AgentReactService:
                 self._skill_instructions,
                 self._browser_specs,
                 self._email_specs,
+                self._calendar_specs,
                 allow_spawn=task.depth < settings.agent_max_spawn_depth,
             )
             result = await self.llm.complete(system, user, max_tokens=1200, temperature=0.5)
@@ -358,6 +369,20 @@ class AgentReactService:
                     number,
                     step_tokens,
                     f"send an email to {to} (subject: {subject!r})",
+                )
+                return  # resumes when the user approves or denies
+
+            if tool == "create_event":
+                # Writing to the real calendar is side-effecting: always approve.
+                summary = str(args.get("summary", "")).strip()
+                await self._pause_for_action(
+                    task,
+                    "create_event",
+                    args,
+                    thought,
+                    number,
+                    step_tokens,
+                    f"add a calendar event {summary!r} at {args.get('start', '?')}",
                 )
                 return  # resumes when the user approves or denies
 

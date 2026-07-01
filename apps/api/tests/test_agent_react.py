@@ -560,3 +560,39 @@ async def test_send_email_pauses_for_approval(
     assert task.pending_action["tool"] == "send_email"
     assert task.pending_action["args"]["to"] == "a@b.com"
     assert "approve" in (task.pending_question or "").lower()
+
+
+async def test_create_event_pauses_for_approval(
+    session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Calendar enabled + configured -> create_event always pauses for approval.
+    monkeypatch.setattr(settings, "caldav_url", "https://dav.example.com")
+    monkeypatch.setattr(settings, "caldav_user", "me")
+    monkeypatch.setattr(settings, "caldav_password", "pw")
+    plans = [
+        {
+            "thought": "book it",
+            "tool": "create_event",
+            "args": {"summary": "Dentist", "start": "2026-07-02T15:00:00"},
+        }
+    ]
+    task = await TaskRepository(session).create(
+        goal="add a calendar event",
+        status=TaskStatus.PENDING.value,
+        rubric=[],
+        use_calendar=True,
+        max_steps=6,
+        token_budget=1_000_000,
+        summary=None,
+        verification_score=0,
+        steps_used=0,
+        tokens_used=0,
+        workspace_path=None,
+    )
+    await session.commit()
+    await _service(session, ScriptedLLM(plans)).run(task.id)
+
+    await session.refresh(task)
+    assert task.status == TaskStatus.AWAITING_INPUT.value
+    assert task.pending_action["tool"] == "create_event"
+    assert "approve" in (task.pending_question or "").lower()
