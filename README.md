@@ -38,10 +38,30 @@ It stops on the first of: **goal achieved** (verified), **step limit**, **token
 budget**, **stuck** (too many failed/blocked actions), or **cancelled**. Every
 limit is clamped to a configured ceiling, so a task can never run away.
 
-## Why Loop instead of an OpenClaw-style agent
+## Why Loop — the safe, verifiable alternative
 
-Loop is designed to be the agent you can leave running unattended. It wins on two
-axes a chat-log agent can't easily copy:
+Chat-first personal agents (OpenClaw and its kind) are wildly popular — and,
+per independent researchers at **Cisco, Microsoft, Kaspersky and Giskard**, a
+security minefield: hundreds of reported vulnerabilities, plaintext credential
+leaks, and prompt-injection attacks that have **exfiltrated a real private key
+from a linked inbox**. The standing advice is literally "don't run it with your
+main accounts or on a machine with sensitive data."
+
+Loop is the agent you *can* leave running unattended. It does the same class of
+real work, but is built so those specific attacks can't succeed — and so "done"
+is a fact you can replay, not a claim in a chat log.
+
+|                     | Chat-first agents (OpenClaw-style)            | **Loop**                                             |
+|---------------------|-----------------------------------------------|------------------------------------------------------|
+| **"Done" means**    | a chat reply — no notion of completion        | a **re-executed, hash-chained Receipt** you can replay |
+| **Shell / tools**   | main session runs on the **host**             | jailed in an **ephemeral container**, default-deny egress |
+| **Skills**          | thousands, **unsigned**, injected into the prompt | **ed25519-signed**, capability-scoped, refused if tampered |
+| **Inbound email/DMs** | injection has exfiltrated real private keys | quarantined as `[DATA]`; sending/acting needs your approval |
+| **Secrets**         | plaintext credential leaks reported           | never returned by the API; optional bearer-token gate |
+| **Reach**           | 20+ chat channels, huge skill marketplace     | Telegram + browser + email today (more landing)      |
+
+Loop concedes raw breadth for now and is closing that gap — but it wins outright
+on the two axes a chat-log agent can't retrofit:
 
 - **Verifiable completion.** Every accepted task ships a content-addressed,
   tamper-evident **Receipt** (`receipt.json` + `RECEIPT.md`): the goal, the
