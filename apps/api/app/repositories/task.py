@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import uuid
 
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.task import TaskModel
@@ -15,6 +16,30 @@ class TaskRepository(BaseRepository[TaskModel]):
 
     def __init__(self, session: AsyncSession) -> None:
         super().__init__(session)
+
+    async def list_roots(self, *, limit: int, offset: int) -> list[TaskModel]:
+        """Top-level tasks only — spawned sub-agents (parent_id set) are excluded
+        so they don't pollute the task list; they show under their parent."""
+        stmt = (
+            select(TaskModel)
+            .where(TaskModel.parent_id.is_(None))
+            .order_by(TaskModel.created_at.desc())
+            .limit(limit)
+            .offset(offset)
+        )
+        return list((await self.session.scalars(stmt)).all())
+
+    async def count_roots(self) -> int:
+        stmt = select(func.count()).select_from(TaskModel).where(TaskModel.parent_id.is_(None))
+        return (await self.session.scalar(stmt)) or 0
+
+    async def list_children(self, parent_id: uuid.UUID) -> list[TaskModel]:
+        stmt = (
+            select(TaskModel)
+            .where(TaskModel.parent_id == parent_id)
+            .order_by(TaskModel.created_at.asc())
+        )
+        return list((await self.session.scalars(stmt)).all())
 
     async def update_state(self, task_id: uuid.UUID, **values: object) -> TaskModel | None:
         """Patch live loop columns (status, best_score, tokens_used, …).

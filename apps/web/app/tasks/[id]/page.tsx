@@ -23,8 +23,15 @@ export default function TaskDetail() {
   const [steps, setSteps] = useState<Step[]>([]);
   const [files, setFiles] = useState<FileEntry[]>([]);
   const [ledger, setLedger] = useState<LedgerStatus | null>(null);
+  const [children, setChildren] = useState<Task[]>([]);
   const [error, setError] = useState<string | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Sub-agents appear as spawn steps; refetch the child tasks when one shows up.
+  const spawnCount = steps.filter((s) => s.tool === 'spawn').length;
+  useEffect(() => {
+    if (spawnCount > 0) tasksApi.children(id).then(setChildren).catch(() => {});
+  }, [id, spawnCount]);
 
   const poll = useCallback(async () => {
     try {
@@ -206,6 +213,36 @@ export default function TaskDetail() {
           <p className="whitespace-pre-wrap rounded-xl border border-black/10 bg-white/60 p-4 text-sm leading-relaxed dark:border-white/10 dark:bg-black/30">
             {task.summary}
           </p>
+        </section>
+      )}
+
+      {children.length > 0 && (
+        <section className="mt-6">
+          <h2 className="mb-2 text-sm font-medium opacity-70">
+            Sub-agents ({children.length})
+          </h2>
+          <div className="grid gap-2">
+            {children.map((c) => (
+              <Link
+                key={c.id}
+                href={`/tasks/${c.id}`}
+                className="flex items-center justify-between gap-3 rounded-xl border border-black/10 bg-white/40 p-3 text-sm transition hover:border-blue-500/40 dark:border-white/10 dark:bg-white/[0.02]"
+              >
+                <span className="min-w-0 truncate opacity-80">{c.goal}</span>
+                <span className="flex shrink-0 items-center gap-2 text-xs">
+                  <StatusPill status={c.status} />
+                  {c.verified_by === 'execution' && (
+                    <span className="rounded bg-green-500/15 px-1.5 py-0.5 text-green-600 dark:text-green-400">
+                      verified {c.verification_score}
+                    </span>
+                  )}
+                  {c.receipt_hash && (
+                    <span className="font-mono opacity-40">{c.receipt_hash.slice(0, 8)}</span>
+                  )}
+                </span>
+              </Link>
+            ))}
+          </div>
         </section>
       )}
 

@@ -90,10 +90,20 @@ class TaskService:
         await self.tasks.session.commit()
         return task
 
-    async def list(self, *, limit: int, offset: int) -> tuple[list[TaskModel], int]:
-        tasks = await self.tasks.list(limit=limit, offset=offset)
-        total = await self.tasks.count()
+    async def list(
+        self, *, limit: int, offset: int, root_only: bool = True
+    ) -> tuple[list[TaskModel], int]:
+        if root_only:
+            tasks = await self.tasks.list_roots(limit=limit, offset=offset)
+            total = await self.tasks.count_roots()
+        else:
+            tasks = await self.tasks.list(limit=limit, offset=offset)
+            total = await self.tasks.count()
         return tasks, total
+
+    async def list_children(self, task_id: uuid.UUID) -> list[TaskModel]:
+        await self.get(task_id)  # 404 if unknown
+        return await self.tasks.list_children(task_id)
 
     async def get(self, task_id: uuid.UUID) -> TaskModel:
         task = await self.tasks.get(task_id)

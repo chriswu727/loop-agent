@@ -42,14 +42,24 @@ async def list_tasks(
     service: TaskServiceDep,
     limit: int = Query(default=50, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
+    root: bool = Query(default=True, description="Only top-level tasks (hide sub-agents)"),
 ) -> Page[TaskRead]:
-    tasks, total = await service.list(limit=limit, offset=offset)
+    tasks, total = await service.list(limit=limit, offset=offset, root_only=root)
     return Page[TaskRead](
         items=[TaskRead.from_model(t) for t in tasks],
         total=total,
         limit=limit,
         offset=offset,
     )
+
+
+@router.get(
+    "/{task_id}/children",
+    response_model=list[TaskRead],
+    summary="Sub-agents spawned by this task",
+)
+async def task_children(task_id: uuid.UUID, service: TaskServiceDep) -> list[TaskRead]:
+    return [TaskRead.from_model(t) for t in await service.list_children(task_id)]
 
 
 @router.post(

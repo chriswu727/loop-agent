@@ -110,6 +110,7 @@ export const tasksApi = {
       `/api/v1/tasks?limit=${params?.limit ?? 50}&offset=${params?.offset ?? 0}`,
     ),
   get: (id: string) => apiFetch<Task>(`/api/v1/tasks/${id}`),
+  children: (id: string) => apiFetch<Task[]>(`/api/v1/tasks/${id}/children`),
   steps: (id: string) => apiFetch<Step[]>(`/api/v1/tasks/${id}/steps`),
   ledger: (id: string) => apiFetch<LedgerStatus>(`/api/v1/tasks/${id}/ledger`),
   files: (id: string) => apiFetch<FileEntry[]>(`/api/v1/tasks/${id}/files`),
