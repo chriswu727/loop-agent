@@ -84,3 +84,19 @@ async def test_find_awaiting_for_chat(session: AsyncSession) -> None:
     found = await _find_awaiting(session, "42")
     assert found is not None and found.status == TaskStatus.AWAITING_INPUT.value
     assert await _find_awaiting(session, "999") is None  # different chat
+
+
+async def test_bot_refuses_to_start_without_allowlist(monkeypatch) -> None:
+    import asyncio
+
+    import app.services.telegram as tg
+
+    monkeypatch.setattr(tg.settings, "telegram_bot_token", "tok")
+    monkeypatch.setattr(tg.settings, "telegram_allowed_chat_ids", None)
+    monkeypatch.setattr(tg.settings, "telegram_allow_public", False)
+
+    def _boom(*a: object, **k: object) -> object:
+        raise AssertionError("must not start polling without an allowlist")
+
+    monkeypatch.setattr(tg.httpx, "AsyncClient", _boom)
+    await tg.run_telegram_bot(asyncio.Event())  # returns immediately, never polls

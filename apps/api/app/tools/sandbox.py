@@ -81,6 +81,17 @@ async def run_command_in_container(
         cpus,
         "--pids-limit",
         "256",
+        # Drop every capability, forbid regaining privileges via setuid binaries,
+        # run as the image's unprivileged uid, and never pull from a registry (we
+        # already checked the image is present — fail fast instead of a 75s stall).
+        "--cap-drop",
+        "ALL",
+        "--security-opt",
+        "no-new-privileges",
+        "--user",
+        "10001:10001",
+        "--pull",
+        "never",
         "--read-only",
         "--tmpfs",
         "/tmp:rw,size=64m,exec",

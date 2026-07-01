@@ -128,6 +128,15 @@ _NETWORK: tuple[tuple[re.Pattern[str], str], ...] = tuple(
         (r"\bbrew\s+(install|update|upgrade)\b", "brew"),
         (r"\bapt(-get)?\s+(install|update)\b", "apt"),
         (r"\bgo\s+get\b|\bcargo\s+(install|add|fetch)\b", "package fetch"),
+        # Interpreter one-liners that reach the network — the obvious way to slip
+        # past the token denylist (`python3 -c "import urllib; urlopen(...)"`).
+        # Best-effort on the inline path; container mode enforces --network none.
+        (
+            r"\b(python3?|node|deno|bun|ruby|perl|php)\b.*-[ce]\b.*"
+            r"(urllib|requests|httpx|http\.client|socket|urlopen|ftplib|smtplib|"
+            r"net/http|open-uri|file_get_contents|fetch\s*\(|https?://)",
+            "interpreter network access",
+        ),
     ]
 )
 

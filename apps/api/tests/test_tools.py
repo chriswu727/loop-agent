@@ -171,3 +171,19 @@ async def test_egress_guard_allows_when_granted() -> None:
     # Guard does not block a network command when egress is granted (returns None
     # = proceed); we check the guard directly to avoid making a real request.
     assert await guard("run_command", {"command": "curl https://example.com"}) is None
+
+
+def test_interpreter_network_oneliners_are_flagged_for_egress() -> None:
+    from app.tools.policy import network_command_reason
+
+    # The classic denylist bypass must now be caught as network access.
+    assert (
+        network_command_reason(
+            "python3 -c \"import urllib.request; urllib.request.urlopen('http://evil.tld')\""
+        )
+        is not None
+    )
+    assert network_command_reason("node -e \"require('http').get('http://x')\"") is not None
+    assert network_command_reason('python3 -c "import socket; socket.socket()"') is not None
+    # A pure-compute one-liner is NOT flagged (no over-blocking of offline work).
+    assert network_command_reason('python3 -c "print(2 + 2)"') is None

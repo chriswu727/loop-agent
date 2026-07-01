@@ -36,7 +36,9 @@ class Settings(BaseSettings):
     version: str = "0.1.0"
 
     # ---- HTTP server ----
-    api_host: str = "0.0.0.0"
+    # Bind to loopback by default: the agent can run shell commands, so the API
+    # must not be network-reachable out of the box. Containers set API_HOST=0.0.0.0.
+    api_host: str = "127.0.0.1"
     api_port: int = 8000
     cors_origins: list[str] = Field(default_factory=lambda: ["http://localhost:3000"])
 
@@ -44,6 +46,9 @@ class Settings(BaseSettings):
     secret_key: str = "change-me-in-production-use-openssl-rand-hex-32"
     access_token_expire_minutes: int = 30
     jwt_algorithm: str = "HS256"
+    # When set, every /api/v1 route requires `Authorization: Bearer <token>`
+    # (health stays open). Unset = open, only safe on a trusted/loopback network.
+    api_token: str | None = None
 
     # ---- Logging ----
     log_level: str = "info"
@@ -115,9 +120,11 @@ class Settings(BaseSettings):
 
     # ---- Chat inlet (Telegram). Set the bot token to enable. ----
     telegram_bot_token: str | None = None
-    # Comma-separated chat ids allowed to command the bot. Empty = allow all
-    # (only safe for a private bot); set it for anything that can act.
+    # Comma-separated chat ids allowed to command the bot. The bot can run code and
+    # send email, so with no allowlist it refuses to start unless you explicitly
+    # opt into a public bot below.
     telegram_allowed_chat_ids: str | None = None
+    telegram_allow_public: bool = False
 
     def telegram_allowlist(self) -> set[str]:
         raw = self.telegram_allowed_chat_ids or ""

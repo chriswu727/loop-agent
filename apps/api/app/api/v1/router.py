@@ -7,11 +7,13 @@ mounted at the application root, not here — see ``app/main.py``.)
 
 from __future__ import annotations
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 
+from app.api.v1.auth import require_api_token
 from app.api.v1.routes import memory, skills, tasks, triggers
 
-api_router = APIRouter()
+# One gate for the whole surface: with API_TOKEN set, every route needs it.
+api_router = APIRouter(dependencies=[Depends(require_api_token)])
 api_router.include_router(tasks.router)
 api_router.include_router(memory.router)
 api_router.include_router(skills.router)

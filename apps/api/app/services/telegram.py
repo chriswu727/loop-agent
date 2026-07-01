@@ -106,7 +106,12 @@ async def run_telegram_bot(stop: asyncio.Event) -> None:
     if not token:
         return
     allow = settings.telegram_allowlist()
-    log.info("telegram.started", allowlisted=len(allow) or "all")
+    if not allow and not settings.telegram_allow_public:
+        # Fail closed: a bot that can run code + send email must not answer the
+        # whole internet. Set TELEGRAM_ALLOWED_CHAT_IDS, or opt in explicitly.
+        log.error("telegram.refused_no_allowlist")
+        return
+    log.info("telegram.started", allowlisted=len(allow) or "public")
     offset = 0
     async with httpx.AsyncClient(timeout=40) as http:
         client = TelegramClient(token, http)
