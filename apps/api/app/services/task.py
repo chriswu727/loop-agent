@@ -92,7 +92,7 @@ class TaskService:
         await self.tasks.session.commit()
         return task
 
-    async def list(
+    async def list_tasks(
         self, *, limit: int, offset: int, root_only: bool = True
     ) -> tuple[list[TaskModel], int]:
         if root_only:
@@ -249,7 +249,7 @@ class TaskService:
         if edited:
             last = steps[-1]
             last.hash = step_hash(
-                last.prev_hash,
+                last.prev_hash or "",
                 number=last.number,
                 tool=last.tool,
                 tool_args=last.tool_args,

@@ -45,7 +45,7 @@ async def list_tasks(
     offset: int = Query(default=0, ge=0),
     root: bool = Query(default=True, description="Only top-level tasks (hide sub-agents)"),
 ) -> Page[TaskRead]:
-    tasks, total = await service.list(limit=limit, offset=offset, root_only=root)
+    tasks, total = await service.list_tasks(limit=limit, offset=offset, root_only=root)
     return Page[TaskRead](
         items=[TaskRead.from_model(t) for t in tasks],
         total=total,

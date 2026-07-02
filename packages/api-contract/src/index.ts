@@ -40,6 +40,8 @@ export interface Task {
   use_email: boolean;
   use_calendar: boolean;
   skill: string | null;
+  parent_id: string | null;
+  depth: number;
   limits: Limits;
   summary: string | null;
   verification_score: number;

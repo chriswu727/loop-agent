@@ -30,10 +30,10 @@ async def test_root_filter_and_children(session: AsyncSession) -> None:
     await session.commit()
 
     svc = TaskService(repo, StepRepository(session))
-    roots, total = await svc.list(limit=50, offset=0, root_only=True)
+    roots, total = await svc.list_tasks(limit=50, offset=0, root_only=True)
     assert total == 1 and roots[0].id == parent.id  # child excluded from the list
 
-    _all, total_all = await svc.list(limit=50, offset=0, root_only=False)
+    _all, total_all = await svc.list_tasks(limit=50, offset=0, root_only=False)
     assert total_all == 2
 
     children = await svc.list_children(parent.id)
