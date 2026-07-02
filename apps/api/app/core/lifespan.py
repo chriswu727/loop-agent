@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING
 
 from app.cache.redis import create_cache
 from app.core.config import settings
+from app.core.llm.client import aclose_llm_client
 from app.core.logging import configure_logging, get_logger
 from app.db.session import dispose_engine, init_engine
 from app.observability.tracing import setup_tracing
@@ -43,13 +44,15 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     cache = create_cache()
     app.state.cache = cache
 
-    # Fail any task left RUNNING by a previous crash/restart so it can't hang
-    # forever (the UI would show it "running" and then just stop).
-    from app.db.session import get_sessionmaker
-    from app.services.runner import reconcile_interrupted_tasks
+    # Fail any task this node left RUNNING by a previous crash/restart. Only in
+    # inline mode — in worker mode a separate process owns runs, so the API
+    # restarting must not fail tasks a live worker is still executing.
+    if settings.execution_mode == "inline":
+        from app.db.session import get_sessionmaker
+        from app.services.runner import reconcile_interrupted_tasks
 
-    async with get_sessionmaker()() as session:
-        await reconcile_interrupted_tasks(session)
+        async with get_sessionmaker()() as session:
+            await reconcile_interrupted_tasks(session)
 
     # Start the trigger heartbeat (fires due interval triggers). Inline-mode only
     # so we don't run two schedulers when a separate worker is deployed.
@@ -77,13 +80,18 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     finally:
         log.info("shutdown.begin")
         if scheduler_stop is not None and scheduler_task is not None:
+            # Cancel (not just signal): a tick mid-agent-run would otherwise make
+            # shutdown wait for the whole run. reconcile fixes any left RUNNING.
             scheduler_stop.set()
-            await scheduler_task
+            scheduler_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await scheduler_task
         if telegram_stop is not None and telegram_task is not None:
             telegram_stop.set()
             telegram_task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await telegram_task
+        await aclose_llm_client()
         await cache.close()
         await dispose_engine()
         log.info("shutdown.complete")

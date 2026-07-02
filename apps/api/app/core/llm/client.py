@@ -103,3 +103,11 @@ def get_llm_client() -> FallbackLLMClient:
     if _client is None:
         _client = FallbackLLMClient()
     return _client
+
+
+async def aclose_llm_client() -> None:
+    """Close the shared client's connection pool on shutdown (no-op if unused)."""
+    global _client
+    if _client is not None:
+        await _client.aclose()
+        _client = None

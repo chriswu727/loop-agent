@@ -32,7 +32,7 @@ jobs:
         # The suite is fully offline: in-memory SQLite + mocked tools. No services.
 
   web:
-    name: web · typecheck + build
+    name: web · lint + typecheck + build
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -44,6 +44,7 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
       - run: pnpm typecheck
       - run: pnpm build
         env:

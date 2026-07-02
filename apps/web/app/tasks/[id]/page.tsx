@@ -3,7 +3,7 @@
 import type { FileEntry, LedgerStatus, Step, Task } from '@repo/api-contract';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { AskUserBox } from '@/components/ask-user-box';
 import { BudgetMeter } from '@/components/budget-meter';
 import { ReceiptPanel } from '@/components/receipt-panel';
@@ -26,35 +26,12 @@ export default function TaskDetail() {
   const [ledger, setLedger] = useState<LedgerStatus | null>(null);
   const [children, setChildren] = useState<Task[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Sub-agents appear as spawn steps; refetch the child tasks when one shows up.
   const spawnCount = steps.filter((s) => s.tool === 'spawn').length;
   useEffect(() => {
     if (spawnCount > 0) tasksApi.children(id).then(setChildren).catch(() => {});
   }, [id, spawnCount]);
-
-  const poll = useCallback(async () => {
-    try {
-      const [t, s, f, l] = await Promise.all([
-        tasksApi.get(id),
-        tasksApi.steps(id),
-        tasksApi.files(id),
-        tasksApi.ledger(id).catch(() => null),
-      ]);
-      setTask(t);
-      setSteps(s);
-      setFiles(f);
-      setLedger(l);
-      setError(null);
-      if (!TERMINAL.has(t.status)) {
-        timer.current = setTimeout(poll, POLL_MS);
-      }
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Lost contact with the API.');
-      timer.current = setTimeout(poll, POLL_MS * 2);
-    }
-  }, [id]);
 
   function resumeAfterAnswer(updated: Task) {
     // The open stream (or the fallback poll) will push the resumed state; this is
@@ -67,6 +44,32 @@ export default function TaskDetail() {
   useEffect(() => {
     let es: EventSource | null = null;
     let usingFallback = false;
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+
+    // Fallback when SSE is unavailable: poll, re-scheduling itself until terminal.
+    async function poll() {
+      if (cancelled) return;
+      try {
+        const [t, s, f, l] = await Promise.all([
+          tasksApi.get(id),
+          tasksApi.steps(id),
+          tasksApi.files(id),
+          tasksApi.ledger(id).catch(() => null),
+        ]);
+        if (cancelled) return;
+        setTask(t);
+        setSteps(s);
+        setFiles(f);
+        setLedger(l);
+        setError(null);
+        if (!TERMINAL.has(t.status)) timer = setTimeout(poll, POLL_MS);
+      } catch (err) {
+        if (cancelled) return;
+        setError(err instanceof ApiError ? err.message : 'Lost contact with the API.');
+        timer = setTimeout(poll, POLL_MS * 2);
+      }
+    }
 
     try {
       es = new EventSource(`${apiBaseUrl()}/api/v1/tasks/${id}/events`);
@@ -100,10 +103,11 @@ export default function TaskDetail() {
     }
 
     return () => {
+      cancelled = true;
       es?.close();
-      if (timer.current) clearTimeout(timer.current);
+      if (timer) clearTimeout(timer);
     };
-  }, [id, poll]);
+  }, [id]);
 
   async function cancel() {
     try {

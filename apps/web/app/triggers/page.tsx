@@ -27,8 +27,19 @@ export default function TriggersPage() {
   }, []);
 
   useEffect(() => {
-    load();
-  }, [load]);
+    let active = true;
+    triggersApi
+      .list()
+      .then((t) => {
+        if (active) setTriggers(t);
+      })
+      .catch(() => {
+        /* API may be down; leave the list empty */
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   async function create(e: React.FormEvent) {
     e.preventDefault();

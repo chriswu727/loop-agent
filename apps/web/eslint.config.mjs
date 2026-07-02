@@ -1,12 +1,11 @@
-import { dirname } from 'path';
-import { fileURLToPath } from 'url';
-import { FlatCompat } from '@eslint/eslintrc';
-import base from '@repo/eslint-config';
+import next from 'eslint-config-next';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
-const compat = new FlatCompat({ baseDirectory: __dirname });
-
-const eslintConfig = [...base, ...compat.extends('next/core-web-vitals', 'next/typescript')];
+// Next 16 ships a native flat config (parser + TS + core-web-vitals rules).
+// Use it directly — layering the monorepo base's typed rules on top conflicts
+// with Next's parser. FlatCompat is gone (it crashed on the plugin).
+const eslintConfig = [
+  { ignores: ['.next/**', 'node_modules/**', 'next-env.d.ts', 'eslint.config.mjs'] },
+  ...next,
+];
 
 export default eslintConfig;

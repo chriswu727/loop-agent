@@ -29,7 +29,9 @@ export default function ChatPage() {
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
   const sessionId = useRef<string>('');
-  const pendingTask = useRef<string | null>(null); // an awaiting-input task to answer
+  // State (not a ref): the placeholder reads it during render, and it drives whether
+  // the next message answers an open question or starts a new task.
+  const [pendingTask, setPendingTask] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -60,7 +62,7 @@ export default function ChatPage() {
       }
       update(taskId, { text: replyFor(t), status: t.status });
       if (t.status === 'awaiting_input') {
-        pendingTask.current = taskId;
+        setPendingTask(taskId);
         return;
       }
       if (TERMINAL.has(t.status)) return;
@@ -75,9 +77,9 @@ export default function ChatPage() {
     setMessages((m) => [...m, { role: 'user', text }]);
     try {
       let task: Task;
-      if (pendingTask.current) {
-        task = await tasksApi.respond(pendingTask.current, text); // answer the open question
-        pendingTask.current = null;
+      if (pendingTask) {
+        task = await tasksApi.respond(pendingTask, text); // answer the open question
+        setPendingTask(null);
       } else {
         task = await tasksApi.publish({ goal: text, chat_id: sessionId.current });
       }
@@ -94,7 +96,7 @@ export default function ChatPage() {
     const sid = crypto.randomUUID();
     localStorage.setItem('loop-chat-session', sid);
     sessionId.current = sid;
-    pendingTask.current = null;
+    setPendingTask(null);
     setMessages([]);
   }
 
@@ -156,7 +158,7 @@ export default function ChatPage() {
             }
           }}
           rows={1}
-          placeholder={pendingTask.current ? 'Answer the agent…' : 'Message Loop…'}
+          placeholder={pendingTask ? 'Answer the agent…' : 'Message Loop…'}
           className="max-h-32 flex-1 resize-none rounded-xl border border-black/10 bg-transparent px-3 py-2 text-sm outline-none focus:border-blue-500/60 dark:border-white/15"
         />
         <button
