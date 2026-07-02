@@ -16,6 +16,7 @@ from pathlib import Path
 
 from app.core.logging import get_logger
 from app.tools.base import ToolResult, ToolStatus
+from app.tools.shell import collect_output, format_result
 
 log = get_logger("sandbox")
 
@@ -112,21 +113,16 @@ async def run_command_in_container(
         return ToolResult(f"Failed to start sandbox: {exc}", ToolStatus.ERROR)
 
     try:
-        stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=timeout_seconds + 15)
-    except TimeoutError:
-        proc.kill()
-        await proc.wait()
-        await _force_remove(name)
-        return ToolResult(
-            f"Command timed out after {timeout_seconds}s and was killed.", ToolStatus.ERROR
+        # Same byte-capped drain as the host path, so a container spewing output
+        # can't exhaust host memory even though its own memory is capped.
+        raw, code = await collect_output(
+            proc, timeout_seconds=timeout_seconds + 15, output_limit=output_limit
         )
-
-    output = stdout.decode("utf-8", errors="replace") if stdout else ""
-    if len(output) > output_limit:
-        output = output[:output_limit] + f"\n... [truncated, {len(output)} chars total]"
-    code = proc.returncode
-    status = ToolStatus.OK if code == 0 else ToolStatus.ERROR
-    return ToolResult(f"exit code {code}\n" + (output or "(no output)"), status)
+    finally:
+        # Guarantee the container is gone (killing the client on timeout/overflow
+        # can orphan it; --rm only cleans up a clean exit).
+        await _force_remove(name)
+    return format_result(raw, code, timeout_seconds=timeout_seconds, output_limit=output_limit)
 
 
 async def _force_remove(name: str) -> None:

@@ -187,3 +187,27 @@ def test_interpreter_network_oneliners_are_flagged_for_egress() -> None:
     assert network_command_reason('python3 -c "import socket; socket.socket()"') is not None
     # A pure-compute one-liner is NOT flagged (no over-blocking of offline work).
     assert network_command_reason('python3 -c "print(2 + 2)"') is None
+
+
+async def test_run_command_scrubs_host_env(tmp_path, monkeypatch) -> None:
+    # A host secret must NOT reach the command's environment (so `env`/`printenv`
+    # can't leak API keys into the observation/ledger).
+    import os
+
+    from app.tools.shell import run_command
+
+    monkeypatch.setitem(os.environ, "LOOP_SECRET_XYZ", "topsecret123")
+    res = await run_command("env", tmp_path, timeout_seconds=10)
+    assert "topsecret123" not in res.observation
+    assert "LOOP_SECRET_XYZ" not in res.observation
+
+
+async def test_run_command_caps_runaway_output(tmp_path) -> None:
+    # A command spewing output must be bounded, not buffered whole into memory.
+    from app.tools.shell import run_command
+
+    res = await run_command(
+        "python3 -c \"print('x' * 500000)\"", tmp_path, timeout_seconds=15, output_limit=2000
+    )
+    assert "truncated" in res.observation
+    assert len(res.observation) < 20000  # bounded, not ~500KB
