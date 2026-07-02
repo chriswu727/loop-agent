@@ -115,6 +115,7 @@ class AgentReactService:
         self._conversation = ""  # earlier turns of a chat/session, injected into planning
         self._mcp_tools: set[str] = set()  # extra tool names the planner may call
         self._sandbox_image: str | None = None  # container image for run_command, or None
+        self._egress_allowed = False  # resolved egress; verification checks mirror it
 
     async def run(self, task_id: uuid.UUID) -> None:
         """Run, or resume, a task. A task is resumable when it was paused on an
@@ -167,6 +168,7 @@ class AgentReactService:
                 or task.use_calendar
             ),
         )
+        self._egress_allowed = envelope.egress_allowed
         sandbox_image, sandbox_label = self._resolve_sandbox()
         self._sandbox_image = sandbox_image
         task.sandbox = sandbox_label
@@ -454,6 +456,13 @@ class AgentReactService:
                 await self._finish(task, StopReason.STUCK)
                 return
 
+        # The loop exhausted its steps without any branch reaching a terminal
+        # state (e.g. a finish rejected on the very last step `continue`d). Never
+        # leave a task stuck RUNNING — treat it as hitting the step cap.
+        await self.session.refresh(task)
+        if task.status == TaskStatus.RUNNING.value:
+            await self._finish(task, StopReason.MAX_STEPS)
+
     async def _pause_for_user(
         self, task: TaskModel, args: dict[str, Any], thought: str, number: int, tokens: int
     ) -> None:
@@ -691,6 +700,7 @@ class AgentReactService:
             sandbox_image=self._sandbox_image,
             sandbox_memory=settings.agent_sandbox_memory,
             sandbox_cpus=settings.agent_sandbox_cpus,
+            egress_allowed=self._egress_allowed,
         )
         checks_passed = all(r.passed for r in check_results) if check_results else None
         verified_by = "execution" if check_results else "judgment"

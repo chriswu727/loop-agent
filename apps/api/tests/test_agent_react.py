@@ -657,3 +657,32 @@ async def test_conversation_context_from_prior_turns(session: AsyncSession) -> N
     convo = await svc._build_conversation(current)
     assert "write greet.py" in convo and "Wrote greet.py" in convo  # prior turn threaded in
     assert await svc._build_conversation(solo) == ""  # no chat_id -> no context
+
+
+async def test_ledger_stays_valid_after_respond(session: AsyncSession) -> None:
+    # Regression: recording a user answer used to rewrite the last step's
+    # observation after its hash was set, breaking verify_chain for every
+    # human-in-the-loop task. The chain must stay valid across respond().
+    from app.services.task import TaskService
+
+    plans = [{"thought": "need info", "tool": "ask_user", "args": {"question": "what color?"}}]
+    task = await _make_task(session, max_steps=6, token_budget=1_000_000)
+    await _service(session, ScriptedLLM(plans)).run(task.id)
+    await session.refresh(task)
+    assert task.status == TaskStatus.AWAITING_INPUT.value
+
+    svc = TaskService(TaskRepository(session), StepRepository(session))
+    assert (await svc.verify_ledger(task.id))["verified"] is True  # valid before answering
+    await svc.respond(task.id, "blue")
+    assert (await svc.verify_ledger(task.id))["verified"] is True  # still valid after (was broken)
+
+
+async def test_rejected_finish_on_last_step_is_not_stuck_running(session: AsyncSession) -> None:
+    # Regression: a finish rejected on the final allowed step used to `continue`
+    # off the end of the loop, leaving the task RUNNING forever.
+    plans = [{"thought": "done?", "tool": "finish", "args": {"summary": "maybe"}}]
+    task = await _make_task(session, max_steps=1, token_budget=1_000_000)
+    await _service(session, ScriptedLLM(plans, verify={"score": 10, "met": False})).run(task.id)
+    await session.refresh(task)
+    assert task.status == TaskStatus.COMPLETED.value  # reached a terminal state
+    assert task.status != TaskStatus.RUNNING.value

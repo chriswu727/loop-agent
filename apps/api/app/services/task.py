@@ -19,7 +19,7 @@ from app.exceptions import ConflictError, NotFoundError
 from app.repositories.step import StepRepository
 from app.repositories.task import TaskRepository
 from app.schemas.task import LimitsIn, TaskCreate
-from app.services.ledger import genesis_hash, verify_chain
+from app.services.ledger import genesis_hash, step_hash, verify_chain
 from app.tools.base import ToolError
 from app.tools.workspace import Workspace
 
@@ -230,15 +230,33 @@ class TaskService:
             raise ConflictError(f"Task is {task.status} and is not awaiting input")
         steps = await self.steps.list_for_task(task_id)
 
+        edited = False
         if task.pending_action is not None:
             # Approval gate: yes/no decides whether the pending action runs.
             approved = _is_approval(answer)
             if steps:
                 steps[-1].observation += f"\nUser {'approved' if approved else 'denied'}: {answer}"
+                edited = True
             if not approved:
                 task.pending_action = None  # denied -> the action is dropped
         elif steps:
             steps[-1].observation = f"You asked: {task.pending_question}\nUser answered: {answer}"
+            edited = True
+
+        # Recording the answer changes the last step's observation, which is part
+        # of its ledger hash — re-seal it so the tamper-evident chain stays valid.
+        # It's the last step, so nothing downstream needs re-chaining.
+        if edited:
+            last = steps[-1]
+            last.hash = step_hash(
+                last.prev_hash,
+                number=last.number,
+                tool=last.tool,
+                tool_args=last.tool_args,
+                observation=last.observation,
+                status=last.status,
+                tokens=last.tokens,
+            )
 
         task.pending_question = None
         task.status = TaskStatus.PENDING.value  # pending == ready to (re)run

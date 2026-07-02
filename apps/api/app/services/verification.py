@@ -15,12 +15,20 @@ Supported checks:
 from __future__ import annotations
 
 import asyncio
+import re
 import shutil
 import uuid
 from dataclasses import asdict, dataclass
 from typing import Any
 
-from app.tools import ToolExecutor, ToolStatus, Workspace
+from app.tools import CapabilityEnvelope, ToolExecutor, ToolStatus, Workspace
+from app.tools.guards import make_egress_guard
+
+
+def _leading_exit_code(out: str) -> int | None:
+    """Parse the exact exit code from a run_command observation ('exit code N\\n…')."""
+    match = re.match(r"exit code (-?\d+)", out)
+    return int(match.group(1)) if match else None
 
 
 @dataclass(slots=True)
@@ -41,6 +49,7 @@ async def run_checks(
     sandbox_image: str | None = None,
     sandbox_memory: str = "512m",
     sandbox_cpus: str = "1",
+    egress_allowed: bool = False,
 ) -> list[CheckResult]:
     """Re-run each check on a fresh copy of the workspace. Never raises — a bad
     check definition becomes a failed result the verifier can act on."""
@@ -54,11 +63,17 @@ async def run_checks(
         copy_dir = tmp_root / "ws"
         await asyncio.to_thread(shutil.copytree, source.root, copy_dir)
         workspace = Workspace(copy_dir)
+        # Verify under the same authority as the task: default-deny egress unless
+        # the task had it (so a check can't reach the network the task couldn't,
+        # and a legit network check isn't blocked in a container).
+        envelope = CapabilityEnvelope.from_tools(None, egress_allowed=egress_allowed)
         executor = ToolExecutor(
             workspace,
             approval_mode=approval_mode,
             command_timeout=command_timeout,
             output_limit=output_limit,
+            envelope=envelope,
+            before_tool=make_egress_guard(envelope),
             sandbox_image=sandbox_image,
             sandbox_memory=sandbox_memory,
             sandbox_cpus=sandbox_cpus,
@@ -84,11 +99,12 @@ async def _run_one(
         expect_stdout = check.get("expect_stdout")
         result = await executor.execute("run_command", {"command": command})
         out = result.observation
-        exit_ok = (
-            (result.status is ToolStatus.OK)
-            if expect_exit == 0
-            else (f"exit code {expect_exit}" in out)
-        )
+        try:
+            want_exit = int(expect_exit)
+        except (TypeError, ValueError):
+            want_exit = 0
+        code = _leading_exit_code(out)  # exact code, so "exit code 1" != "exit code 10"
+        exit_ok = code == want_exit
         stdout_ok = (expect_stdout is None) or (str(expect_stdout) in out)
         passed = bool(exit_ok and stdout_ok and result.status is not ToolStatus.BLOCKED)
         return CheckResult("command", command, passed, out[:300])
