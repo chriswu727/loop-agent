@@ -74,7 +74,8 @@ class Workspace:
         if len(updated.encode("utf-8")) > MAX_FILE_BYTES:
             raise ToolError("Edit would make the file too large", blocked=True)
         target.write_text(updated, encoding="utf-8")
-        return f"Edited {relative} (replaced 1 occurrence)"
+        # Echo the result so the agent sees the edit landed without a read_file.
+        return f"Edited {relative} (replaced 1 occurrence). Contents now:\n{_preview(updated)}"
 
     def read(self, relative: str, *, limit: int = 6000) -> str:
         target = self.resolve(relative)
