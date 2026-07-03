@@ -39,3 +39,19 @@ def test_history_observations_are_marked_data() -> None:
     )
     assert "[DATA]" in line
     assert "rm -rf" in line  # the content is shown, but framed as data
+
+
+def test_planner_surfaces_runtime_notices() -> None:
+    # A run-time notice (e.g. a requested tool went missing) reaches the planner
+    # prominently, so the agent adapts instead of pretending the tool worked.
+    _system, user = plan_prompts(
+        "browse example.com",
+        ["c"],
+        "(empty)",
+        "",
+        5,
+        1000,
+        notices="The browser you requested is UNAVAILABLE — it failed to start.",
+    )
+    assert "IMPORTANT:" in user
+    assert "UNAVAILABLE" in user

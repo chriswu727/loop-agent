@@ -47,6 +47,7 @@ def plan_prompts(
     calendar_tools: str = "",
     vision_tools: str = "",
     conversation: str = "",
+    notices: str = "",
     allow_spawn: bool = False,
 ) -> tuple[str, str]:
     system = (
@@ -124,9 +125,11 @@ def plan_prompts(
         if conversation.strip()
         else ""
     )
+    notices_block = f"IMPORTANT:\n{notices}\n" if notices.strip() else ""
     user = (
         f"Goal:\n{goal}\n\n"
         f"Success criteria:\n{criteria}\n\n"
+        f"{notices_block}"
         f"{convo_block}"
         f"{skill_block}"
         f"{memory_block}"

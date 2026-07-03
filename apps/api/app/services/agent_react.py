@@ -116,6 +116,7 @@ class AgentReactService:
         self._memory_snapshot = ""  # what the agent remembers, injected into planning
         self._skill_instructions = ""  # instructions from the task's signed skill
         self._browser_specs = ""  # MCP browser tool list, injected into planning
+        self._notices = ""  # run-time notices for the planner (e.g. a tool went missing)
         self._email_specs = ""  # email tool list, injected into planning
         self._calendar_specs = ""  # calendar tool list, injected into planning
         self._vision_specs = ""  # see_image tool, injected into planning when available
@@ -198,6 +199,14 @@ class AgentReactService:
             executor.mcp = browser
             self._browser_specs = browser.specs()
             self._mcp_tools |= set(browser.tool_names)
+        elif task.use_browser:
+            # Requested but couldn't start — tell the agent so it reports the gap
+            # instead of fabricating web content (Loop must not hallucinate).
+            self._notices += (
+                "The browser you requested is UNAVAILABLE — it failed to start. Do not "
+                "invent web page contents. If the goal needs the web, finish by reporting "
+                "you could not access it rather than guessing.\n"
+            )
 
         # Give the agent email tools if the task opted in and creds are configured.
         if task.use_email and settings.email_configured:
@@ -327,6 +336,7 @@ class AgentReactService:
                 self._calendar_specs,
                 self._vision_specs,
                 self._conversation,
+                notices=self._notices,
                 allow_spawn=task.depth < settings.agent_max_spawn_depth,
             )
             decision = await self.llm.complete(system, user, max_tokens=1200, temperature=0.5)
