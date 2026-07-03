@@ -237,5 +237,9 @@ async def test_egress_guard_blocks_network_via_script_file(tmp_path) -> None:
     assert blocked is not None and blocked.status is ToolStatus.BLOCKED
     assert await denied("run_command", {"command": "python calc.py"}) is None  # no network code
 
+    # A shell script that curls (no explicit http://) is caught too.
+    ws.write("grab.sh", "curl example.com -o out.html")
+    assert await denied("run_command", {"command": "sh grab.sh"}) is not None
+
     granted = make_egress_guard(CapabilityEnvelope.from_tools(None, egress_allowed=True), ws)
     assert await granted("run_command", {"command": "python fetch.py"}) is None  # egress allowed

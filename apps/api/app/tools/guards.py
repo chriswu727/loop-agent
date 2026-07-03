@@ -34,7 +34,9 @@ def make_egress_guard(
                         content = workspace.read(path, limit=200_000)
                     except Exception:
                         continue
-                    if code_network_reason(content) is not None:
+                    # A script reaches the network either via a library (urllib in
+                    # .py) or a network command (curl in .sh) — check both.
+                    if network_command_reason(content) or code_network_reason(content):
                         reason = f"script {path} reaches the network"
                         break
             if reason is not None:
