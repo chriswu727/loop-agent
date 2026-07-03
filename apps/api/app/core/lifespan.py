@@ -74,6 +74,16 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         telegram_stop = asyncio.Event()
         telegram_task = asyncio.create_task(run_telegram_bot(telegram_stop))
 
+    # Surface a misconfiguration at boot, not only when the first task fails.
+    from app.core.llm.registry import configured_providers
+
+    if not configured_providers(settings.llm_default_provider):
+        log.warning(
+            "startup.no_llm_provider",
+            hint="Tasks will fail. Set DEEPSEEK_API_KEY (or another), or DEMO_MODE=1 "
+            "to try it without a key, or OLLAMA_BASE_URL for a local model.",
+        )
+
     log.info("startup.complete")
     try:
         yield

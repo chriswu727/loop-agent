@@ -44,8 +44,9 @@ class FallbackLLMClient:
         chain = self._chain()
         if not chain:
             raise LLMError(
-                "No LLM provider configured — set ANTHROPIC_API_KEY, DEEPSEEK_API_KEY, "
-                "GEMINI_API_KEY or GLM_API_KEY",
+                "No LLM provider configured. Set an API key (DEEPSEEK_API_KEY, "
+                "ANTHROPIC_API_KEY, GEMINI_API_KEY or GLM_API_KEY), or run without a "
+                "key via DEMO_MODE=1 (scripted demo) or OLLAMA_BASE_URL (local model).",
                 retryable=False,
             )
 

@@ -116,5 +116,7 @@ async def test_fallback_cascades_to_next_provider(monkeypatch: pytest.MonkeyPatc
 async def test_no_provider_configured_raises(monkeypatch: pytest.MonkeyPatch) -> None:
     for attr in ("anthropic_api_key", "deepseek_api_key", "gemini_api_key", "glm_api_key"):
         monkeypatch.setattr(settings, attr, None)
-    with pytest.raises(LLMError):
+    with pytest.raises(LLMError) as err:
         await FallbackLLMClient(client=_client(lambda r: httpx.Response(200))).complete("s", "u")
+    # The message points to the zero-key escape hatches, not just API keys.
+    assert "DEMO_MODE" in str(err.value) and "OLLAMA_BASE_URL" in str(err.value)
