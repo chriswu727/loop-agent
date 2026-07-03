@@ -77,6 +77,9 @@ class Settings(BaseSettings):
     # ---- LLM providers (cascade: primary first, others as fallback) ----
     anthropic_api_key: str | None = None
     deepseek_api_key: str | None = None
+    # deepseek-chat (V3, fast/cheap) by default; set deepseek-reasoner (R1) for the
+    # stronger, pricier reasoning model.
+    deepseek_model: str = "deepseek-chat"
     gemini_api_key: str | None = None
     glm_api_key: str | None = None
     # Local, fully-offline model via Ollama. Set the base URL to enable it (it has
@@ -96,6 +99,9 @@ class Settings(BaseSettings):
     # Defaults are what a new task starts with; caps are the hard ceilings a
     # user cannot exceed, so a single task can never run away with cost.
     execution_mode: Literal["inline", "worker"] = "inline"
+    # Cap concurrent inline runs: each pins a DB connection for its whole run, so
+    # without a bound a burst of publishes exhausts the pool. Excess runs queue.
+    agent_max_concurrent_runs: int = 8
     agent_max_steps_default: int = 12
     agent_max_steps_cap: int = 40
     loop_token_budget_default: int = 60_000

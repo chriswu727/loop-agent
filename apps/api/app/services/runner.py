@@ -13,6 +13,7 @@ or background session always finds the row.
 
 from __future__ import annotations
 
+import asyncio
 import uuid
 
 from sqlalchemy import text
@@ -31,6 +32,19 @@ from app.workers.queue import enqueue
 log = get_logger("runner")
 
 RUN_TASK_JOB = "run_task"
+
+# One gate per event loop (tests spin up fresh loops), so concurrent runs — each
+# holding a DB session for its whole duration — can't exhaust the connection pool.
+_run_gates: dict[int, asyncio.Semaphore] = {}
+
+
+def _run_gate() -> asyncio.Semaphore:
+    loop_id = id(asyncio.get_running_loop())
+    gate = _run_gates.get(loop_id)
+    if gate is None:
+        gate = asyncio.Semaphore(settings.agent_max_concurrent_runs)
+        _run_gates[loop_id] = gate
+    return gate
 
 
 async def reconcile_interrupted_tasks(session: AsyncSession) -> int:
@@ -57,13 +71,16 @@ async def reconcile_interrupted_tasks(session: AsyncSession) -> int:
 
 
 async def execute_task(task_id: uuid.UUID) -> None:
-    """Run the full loop for one task in a freshly-owned session."""
-    sessionmaker = get_sessionmaker()
-    async with sessionmaker() as session:
-        tasks = TaskRepository(session)
-        steps = StepRepository(session)
-        service = AgentReactService(tasks, steps, get_llm_client())
-        await service.run(task_id)
+    """Run the full loop for one task in a freshly-owned session. Bounded by a
+    concurrency gate so the session (and its DB connection) is only held once a
+    slot is free — excess runs queue instead of exhausting the pool."""
+    async with _run_gate():
+        sessionmaker = get_sessionmaker()
+        async with sessionmaker() as session:
+            tasks = TaskRepository(session)
+            steps = StepRepository(session)
+            service = AgentReactService(tasks, steps, get_llm_client())
+            await service.run(task_id)
 
 
 async def trigger_task(task_id: uuid.UUID) -> None:

@@ -19,7 +19,6 @@ GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:ge
 GLM_URL = "https://open.bigmodel.cn/api/paas/v4/chat/completions"
 ANTHROPIC_URL = "https://api.anthropic.com/v1/messages"
 
-DEEPSEEK_MODEL = "deepseek-chat"
 GEMINI_MODEL = "gemini-2.5-flash"
 GLM_MODEL = "glm-4-flash"
 ANTHROPIC_MODEL = "claude-sonnet-4-6"
@@ -46,7 +45,7 @@ async def call_deepseek(
             DEEPSEEK_URL,
             headers={"Authorization": f"Bearer {api_key}"},
             json={
-                "model": DEEPSEEK_MODEL,
+                "model": settings.deepseek_model,
                 "messages": [
                     {"role": "system", "content": system},
                     {"role": "user", "content": user},
