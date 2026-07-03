@@ -133,10 +133,18 @@ import pytest as _pytest  # noqa: E402
         ("git clone https://github.com/x/y", True),
         ("npm install lodash", True),
         ("ssh user@host", True),
+        ("echo hi > /dev/tcp/1.2.3.4/80", True),  # bash socket bypass
+        ("aria2c http://x/file", True),
+        ("lynx http://example.com", True),
+        ("dig example.com", True),
+        ("ping -c1 8.8.8.8", True),
+        ("nslookup example.com", True),
         ("ls -la", False),
         ("python solution.py", False),
         ("git status", False),
         ("git commit -m x", False),
+        ("hostname", False),  # local, not a network probe
+        ("echo symlinks are fine", False),  # 'links' inside a word
     ],
 )
 def test_network_command_detection(command: str, is_network: bool) -> None:

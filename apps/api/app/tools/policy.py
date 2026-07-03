@@ -128,6 +128,12 @@ _NETWORK: tuple[tuple[re.Pattern[str], str], ...] = tuple(
         (r"\bbrew\s+(install|update|upgrade)\b", "brew"),
         (r"\bapt(-get)?\s+(install|update)\b", "apt"),
         (r"\bgo\s+get\b|\bcargo\s+(install|add|fetch)\b", "package fetch"),
+        # Bash pseudo-device sockets — the classic way to open a connection with
+        # no network binary at all (`echo x > /dev/tcp/host/port`).
+        (r"/dev/(tcp|udp)/", "bash /dev/tcp socket"),
+        (r"\b(aria2c|axel|wget2|httpie)\b", "downloader"),
+        (r"\b(lynx|w3m|links|elinks)\b", "text browser"),
+        (r"\b(dig|nslookup|ping|traceroute|tracepath)\b", "network probe"),
         # Interpreter one-liners that reach the network — the obvious way to slip
         # past the token denylist (`python3 -c "import urllib; urlopen(...)"`).
         # Best-effort on the inline path; container mode enforces --network none.
