@@ -43,3 +43,32 @@ async def test_execute_task_bounds_concurrency(monkeypatch: pytest.MonkeyPatch) 
     await asyncio.gather(*(runner.execute_task(uuid4()) for _ in range(6)))
 
     assert peak == 2  # reached the cap, never exceeded it
+
+
+async def test_worker_run_task_handler_dispatches(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The worker's run_task handler runs the loop for the payload's task id."""
+    import app.workers.worker as worker
+
+    called = []
+
+    async def fake_execute(task_id: object) -> None:
+        called.append(task_id)
+
+    monkeypatch.setattr("app.services.runner.execute_task", fake_execute)
+    tid = uuid4()
+    await worker.HANDLERS["run_task"]({"task_id": str(tid)})
+    assert called == [tid]
+
+
+async def test_trigger_task_enqueues_in_worker_mode(monkeypatch: pytest.MonkeyPatch) -> None:
+    """In worker mode, publishing enqueues the id instead of running inline."""
+    monkeypatch.setattr(settings, "execution_mode", "worker")
+    enqueued = []
+
+    async def fake_enqueue(job: str, payload: dict) -> None:
+        enqueued.append((job, payload))
+
+    monkeypatch.setattr(runner, "enqueue", fake_enqueue)
+    tid = uuid4()
+    await runner.trigger_task(tid)
+    assert enqueued == [(runner.RUN_TASK_JOB, {"task_id": str(tid)})]
