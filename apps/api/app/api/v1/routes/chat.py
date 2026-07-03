@@ -10,13 +10,20 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
+from app.api.v1.deps import rate_limit
 from app.schemas.chat import ChatIn, ChatOut
 from app.services.chat import reply_for, run_chat_turn
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
 
-@router.post("", response_model=ChatOut, summary="Send a message; run a turn and get the reply")
+@router.post(
+    "",
+    response_model=ChatOut,
+    summary="Send a message; run a turn and get the reply",
+    # Each call runs a whole agent loop, so gate abuse like the publish endpoint.
+    dependencies=[rate_limit(limit=20, window_seconds=60)],
+)
 async def chat(payload: ChatIn) -> ChatOut:
     task = await run_chat_turn(payload.chat_id, payload.message)
     if task is None:

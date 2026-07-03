@@ -79,3 +79,20 @@ async def test_run_chat_turn_routes_new_vs_resume(engine: object) -> None:
     resumed = await chat_svc.run_chat_turn("conv-2", "blue", sessionmaker=sm, execute=fake_execute)
     assert resumed is not None and resumed.id == awaiting_id
     assert resumed.pending_question is None  # the question was answered
+
+
+async def test_chat_is_rate_limited(client: AsyncClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Each /chat call runs a whole agent loop, so it's rate-limited like publish."""
+
+    async def fake_run(chat_id: str, message: str) -> None:
+        return None  # cheap: skip the real DB + LLM
+
+    monkeypatch.setattr("app.api.v1.routes.chat.run_chat_turn", fake_run)
+
+    statuses = []
+    for _ in range(22):
+        resp = await client.post("/api/v1/chat", json={"chat_id": "x", "message": "hello there"})
+        statuses.append(resp.status_code)
+
+    assert statuses[:20] == [200] * 20  # first 20 allowed in the window
+    assert 429 in statuses[20:]  # then rate-limited
