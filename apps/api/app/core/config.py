@@ -65,7 +65,7 @@ class Settings(BaseSettings):
     db_echo: bool = False
 
     # ---- Cache / broker ----
-    redis_url: RedisDsn = Field(default="redis://localhost:6379/0")  # type: ignore[arg-type]
+    redis_url: RedisDsn = Field(default="redis://localhost:6379/0")  # type: ignore[assignment]
     # "auto" uses an in-memory cache on the zero-infra (SQLite) path and Redis
     # otherwise; force either explicitly when you need to.
     cache_backend: Literal["auto", "redis", "memory"] = "auto"

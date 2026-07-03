@@ -88,10 +88,12 @@ def _combine_tools(a: list[str] | None, b: list[str] | None) -> list[str] | None
 
 
 def _as_int(value: object, default: int) -> int:
-    try:
-        return int(value)  # type: ignore[arg-type]
-    except (TypeError, ValueError):
-        return default
+    if isinstance(value, (int, float, str)):
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return default
+    return default
 
 
 def _clamp_score(value: object) -> int:
@@ -326,9 +328,9 @@ class AgentReactService:
                 self._conversation,
                 allow_spawn=task.depth < settings.agent_max_spawn_depth,
             )
-            result = await self.llm.complete(system, user, max_tokens=1200, temperature=0.5)
-            step_tokens = result.tokens
-            thought, tool, args = self._parse_decision(_extract_json(result.content))
+            decision = await self.llm.complete(system, user, max_tokens=1200, temperature=0.5)
+            step_tokens = decision.tokens
+            thought, tool, args = self._parse_decision(_extract_json(decision.content))
 
             if tool == "finish":
                 accepted, score, summary, _ = await self._handle_finish(

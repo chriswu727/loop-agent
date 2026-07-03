@@ -13,6 +13,7 @@ from __future__ import annotations
 import hashlib
 import json
 import uuid
+from collections.abc import Sequence
 from typing import Any, Protocol
 
 GENESIS_PREFIX = "loop-ledger-genesis:"
@@ -59,7 +60,7 @@ class _StepLike(Protocol):
     hash: str
 
 
-def verify_chain(task_id: uuid.UUID, steps: list[_StepLike]) -> tuple[bool, int | None]:
+def verify_chain(task_id: uuid.UUID, steps: Sequence[_StepLike]) -> tuple[bool, int | None]:
     """Recompute the chain from genesis. Returns (ok, broken_at_step_number)."""
     prev = genesis_hash(task_id)
     for s in steps:  # must be ordered by number

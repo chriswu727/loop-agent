@@ -9,7 +9,7 @@ the background-worker queue (see ``app/workers/queue.py``).
 from __future__ import annotations
 
 import time
-from typing import Protocol, runtime_checkable
+from typing import Protocol, cast, runtime_checkable
 
 import redis.asyncio as aioredis
 
@@ -36,7 +36,8 @@ class RedisCache:
         return self._client
 
     async def get(self, key: str) -> str | None:
-        return await self._client.get(key)
+        # decode_responses=True on the client, so values come back as str.
+        return cast("str | None", await self._client.get(key))
 
     async def set(self, key: str, value: str, *, ttl_seconds: int | None = None) -> None:
         await self._client.set(key, value, ex=ttl_seconds)

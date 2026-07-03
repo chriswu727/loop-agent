@@ -64,7 +64,7 @@ async def reconcile_interrupted_tasks(session: AsyncSession) -> int:
         },
     )
     await session.commit()
-    count = result.rowcount or 0
+    count = result.rowcount or 0  # type: ignore[attr-defined]
     if count:
         log.warning("runner.reconciled_interrupted", count=count)
     return count

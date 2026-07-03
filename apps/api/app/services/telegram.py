@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+from typing import Any, cast
 
 import httpx
 
@@ -27,14 +28,14 @@ class TelegramClient:
         self._base = f"https://api.telegram.org/bot{token}"
         self._client = client
 
-    async def get_updates(self, offset: int, poll_seconds: int = 20) -> list[dict]:
+    async def get_updates(self, offset: int, poll_seconds: int = 20) -> list[dict[str, Any]]:
         resp = await self._client.get(
             f"{self._base}/getUpdates",
             params={"offset": offset, "timeout": poll_seconds},
             timeout=poll_seconds + 10,
         )
         resp.raise_for_status()
-        return resp.json().get("result", [])
+        return cast("list[dict[str, Any]]", resp.json().get("result", []))
 
     async def send_message(self, chat_id: str, text: str) -> None:
         await self._client.post(

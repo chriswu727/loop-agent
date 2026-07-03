@@ -19,6 +19,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives.asymmetric.ed25519 import (
@@ -27,6 +28,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import (
 )
 from cryptography.hazmat.primitives.serialization import (
     Encoding,
+    NoEncryption,
     PrivateFormat,
     PublicFormat,
     load_pem_private_key,
@@ -46,7 +48,7 @@ class SkillManifest:
     allow_egress: bool
 
     @classmethod
-    def from_dict(cls, data: dict) -> SkillManifest:
+    def from_dict(cls, data: dict[str, Any]) -> SkillManifest:
         return cls(
             name=str(data.get("name", "")).strip(),
             description=str(data.get("description", "")),
@@ -138,7 +140,5 @@ def sign_skill(skill_dir: Path, private_pem: str) -> None:
     (skill_dir / SIGNATURE).write_bytes(signature)
 
 
-def _no_encryption():
-    from cryptography.hazmat.primitives.serialization import NoEncryption
-
+def _no_encryption() -> NoEncryption:
     return NoEncryption()

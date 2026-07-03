@@ -8,6 +8,7 @@ types — so the model runs on a laptop and in the cluster alike.
 from __future__ import annotations
 
 import uuid
+from typing import Any
 
 from sqlalchemy import JSON, Boolean, Integer, String, Text, Uuid
 from sqlalchemy.orm import Mapped, mapped_column
@@ -45,7 +46,7 @@ class TaskModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     # Chat origin: the channel/chat this task came from, so replies route back.
     chat_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     # The action awaiting approval while paused: {"tool": ..., "args": {...}}.
-    pending_action: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    pending_action: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
 
     # Limits — the hard guardrails for this task.
     max_steps: Mapped[int] = mapped_column(Integer, nullable=False)

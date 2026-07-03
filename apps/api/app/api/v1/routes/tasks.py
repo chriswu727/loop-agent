@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import uuid
 from collections.abc import AsyncIterator
+from typing import Any
 
 from fastapi import APIRouter, BackgroundTasks, File, Query, UploadFile, status
 from fastapi.responses import FileResponse, StreamingResponse
@@ -125,11 +126,11 @@ async def list_steps(task_id: uuid.UUID, service: TaskServiceDep) -> list[StepRe
     summary="Re-verify the task's tamper-evident step chain",
 )
 async def verify_ledger(task_id: uuid.UUID, service: TaskServiceDep) -> LedgerStatus:
-    return LedgerStatus(**await service.verify_ledger(task_id))  # type: ignore[arg-type]
+    return LedgerStatus(**await service.verify_ledger(task_id))
 
 
 @router.get("/{task_id}/receipt", summary="The task's Receipt + content-hash re-verification")
-async def task_receipt(task_id: uuid.UUID, service: TaskServiceDep) -> dict:
+async def task_receipt(task_id: uuid.UUID, service: TaskServiceDep) -> dict[str, Any]:
     receipt = await service.get_receipt(task_id)
     if receipt is None:
         raise NotFoundError("This task has no Receipt yet (only accepted tasks get one).")
@@ -146,7 +147,7 @@ async def _build_snapshot(service: TaskService, task_id: uuid.UUID) -> TaskSnaps
         task=TaskRead.from_model(task),
         steps=[StepRead.model_validate(s) for s in steps],
         files=[FileEntry(path=p, size=s) for p, s in files],
-        ledger=LedgerStatus(**ledger),  # type: ignore[arg-type]
+        ledger=LedgerStatus(**ledger),
     )
 
 

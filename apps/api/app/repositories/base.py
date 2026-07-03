@@ -60,4 +60,4 @@ class BaseRepository(Generic[ModelT]):
 
     async def delete(self, id_: uuid.UUID) -> int:
         result = await self.session.execute(sa_delete(self.model).where(self.model.id == id_))  # type: ignore[attr-defined]
-        return int(result.rowcount or 0)
+        return int(result.rowcount or 0)  # type: ignore[attr-defined]

@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import Depends, Request
+from fastapi import Depends, Request, params
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -26,7 +26,8 @@ SessionDep = Annotated[AsyncSession, Depends(get_session)]
 
 
 def get_cache(request: Request) -> Cache:
-    return request.app.state.cache
+    cache: Cache = request.app.state.cache
+    return cache
 
 
 CacheDep = Annotated[Cache, Depends(get_cache)]
@@ -74,10 +75,11 @@ CurrentSubject = Annotated[str, Depends(get_current_subject)]
 
 
 # --- Simple Redis-backed rate limiter --------------------------------------
-def rate_limit(*, limit: int = 60, window_seconds: int = 60) -> object:
+def rate_limit(*, limit: int = 60, window_seconds: int = 60) -> params.Depends:
     """Dependency factory: at most ``limit`` requests per ``window`` per client.
 
-    Usage: ``dependencies=[Depends(rate_limit(limit=10, window_seconds=60))]``.
+    Returns a ready Depends, so use it directly:
+    ``dependencies=[rate_limit(limit=10, window_seconds=60)]``.
     """
 
     async def _dependency(request: Request, cache: CacheDep) -> None:
@@ -87,4 +89,5 @@ def rate_limit(*, limit: int = 60, window_seconds: int = 60) -> object:
         if count > limit:
             raise RateLimitedError(f"Rate limit exceeded: {limit}/{window_seconds}s")
 
-    return Depends(_dependency)
+    dep: params.Depends = Depends(_dependency)
+    return dep

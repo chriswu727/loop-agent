@@ -11,7 +11,7 @@ concurrency:
 
 jobs:
   api:
-    name: api · ruff + tests
+    name: api · ruff + mypy + tests
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -27,6 +27,8 @@ jobs:
         run: |
           ruff check .
           ruff format --check .
+      - name: Types (mypy)
+        run: mypy app
       - name: Tests
         run: pytest -q
         # The suite is fully offline: in-memory SQLite + mocked tools. No services.

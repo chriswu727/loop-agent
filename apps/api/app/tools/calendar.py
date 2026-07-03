@@ -33,7 +33,7 @@ class CalendarTools:
     def _calendar(self) -> Any:
         import caldav
 
-        client = caldav.DAVClient(
+        client = caldav.DAVClient(  # type: ignore[operator]  # caldav ships no stubs
             url=settings.caldav_url or "",
             username=settings.caldav_user or "",
             password=settings.caldav_password or "",
@@ -81,8 +81,8 @@ class CalendarTools:
         cal = self._calendar()
         if cal is None:
             return "No calendar found for these credentials."
-        obj = Calendar()
-        event = Event()
+        obj = Calendar()  # type: ignore[no-untyped-call]  # icalendar ships no stubs
+        event = Event()  # type: ignore[no-untyped-call]
         event.add("summary", summary)
         event.add("dtstart", start)
         event.add("dtend", end)

@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import uuid
 from pathlib import Path
+from typing import Any
 
 from app.core.config import settings
 from app.db.models.step import StepModel
@@ -169,14 +170,15 @@ class TaskService:
         ws = await self._workspace(task_id)
         return ws.list_files() if ws else []
 
-    async def get_receipt(self, task_id: uuid.UUID) -> dict | None:
+    async def get_receipt(self, task_id: uuid.UUID) -> dict[str, Any] | None:
         """The parsed receipt.json from the task's workspace, or None if absent."""
         ws = await self._workspace(task_id)
         if ws is None:
             return None
         try:
             content = ws.read("receipt.json", limit=500_000)
-            return json.loads(content)
+            data: dict[str, Any] = json.loads(content)
+            return data
         except (FileNotFoundError, ValueError, OSError):
             return None
 

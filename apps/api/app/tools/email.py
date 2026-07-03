@@ -74,17 +74,19 @@ class EmailTools:
         return "\n".join(items) or "(inbox empty)"
 
 
-def _body_preview(parsed: EmailMessage, limit: int = 300) -> str:
+def _body_preview(parsed: Any, limit: int = 300) -> str:
+    # parsed comes from email.message_from_bytes (a Message, loosely typed); keep
+    # it Any and coerce the payload to bytes before decoding.
     try:
+        payload: Any = b""
         if parsed.is_multipart():
             for part in parsed.walk():
                 if part.get_content_type() == "text/plain":
-                    text = part.get_payload(decode=True) or b""
+                    payload = part.get_payload(decode=True) or b""
                     break
-            else:
-                text = b""
         else:
-            text = parsed.get_payload(decode=True) or b""
+            payload = parsed.get_payload(decode=True) or b""
+        text = payload if isinstance(payload, bytes) else b""
         body = text.decode("utf-8", errors="replace").strip().replace("\n", " ")
         return body[:limit] + ("…" if len(body) > limit else "")
     except Exception:
