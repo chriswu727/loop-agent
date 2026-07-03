@@ -1,16 +1,13 @@
-"""Pure domain entities for the autonomous agent. No framework, no ORM, no I/O.
+"""Pure domain enums for the autonomous agent — the task lifecycle and the reason
+a run stopped. No framework, no ORM, no I/O.
 
-A ``Task`` is what a user publishes: a goal plus the limits that bound how hard
-the agent is allowed to work. The agent then drives itself — planning, calling
-tools, observing results — until the goal is achieved or a limit stops it.
+The task's data lives on the ORM model (``db/models/task.py``) and its DTOs
+(``schemas/task.py``); these enums are the shared vocabulary both speak in.
 """
 
 from __future__ import annotations
 
 import enum
-import uuid
-from dataclasses import dataclass, field
-from datetime import datetime
 
 
 class TaskStatus(enum.StrEnum):
@@ -29,33 +26,3 @@ class StopReason(enum.StrEnum):
     STUCK = "stuck"  # repeated failures / no progress
     CANCELLED = "cancelled"
     ERROR = "error"
-
-
-@dataclass(slots=True)
-class Limits:
-    """The hard boundary the agent must respect for a single task."""
-
-    max_steps: int
-    token_budget: int
-
-
-@dataclass(slots=True)
-class Task:
-    id: uuid.UUID
-    goal: str
-    status: TaskStatus
-    limits: Limits
-    rubric: list[str] = field(default_factory=list)
-    require_approval: bool = False  # pause non-allowlisted commands for approval
-    pending_question: str | None = None  # set while paused on ask_user / approval
-    summary: str | None = None  # the agent's final account of what it did
-    verification_score: int = 0  # the verifier's grade of the finished work (0-100)
-    verified_by: str | None = None  # "execution" (checks re-ran) | "judgment"
-    receipt_hash: str | None = None  # content address of the task's Receipt
-    steps_used: int = 0
-    tokens_used: int = 0
-    workspace_path: str | None = None
-    stop_reason: StopReason | None = None
-    error: str | None = None
-    created_at: datetime | None = None
-    updated_at: datetime | None = None
