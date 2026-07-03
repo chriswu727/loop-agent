@@ -147,6 +147,33 @@ _NETWORK: tuple[tuple[re.Pattern[str], str], ...] = tuple(
 )
 
 
+# Network access inside a *file* the agent runs (e.g. `python fetch.py` where
+# fetch.py imports urllib). The command string alone looks innocent, so with
+# default-deny egress on the inline path we also scan the referenced script.
+_NET_IN_CODE = re.compile(
+    r"(urllib|requests|httpx|http\.client|aiohttp|urlopen|socket\.|ftplib|smtplib|"
+    r"net/http|open-uri|file_get_contents|fetch\s*\(|https?://|/dev/tcp/)",
+    re.IGNORECASE,
+)
+_SCRIPT_ARG = re.compile(r"(?:^|/)[\w.\-]+\.(py|js|mjs|cjs|ts|rb|pl|php|sh|bash)$")
+
+
+def code_network_reason(code: str) -> str | None:
+    """If a script's contents reach the network, why; else None."""
+    return "network code in script" if _NET_IN_CODE.search(code) else None
+
+
+def script_paths_in(command: str) -> list[str]:
+    """File-looking script arguments in a command (`python x.py` -> ['x.py'])."""
+    import shlex
+
+    try:
+        tokens = shlex.split(command)
+    except ValueError:
+        tokens = command.split()
+    return [t for t in tokens if _SCRIPT_ARG.search(t)]
+
+
 def network_command_reason(command: str) -> str | None:
     """If the command reaches the network, why; else None."""
     for pattern, reason in _NETWORK:

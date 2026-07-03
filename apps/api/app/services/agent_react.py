@@ -186,7 +186,7 @@ class AgentReactService:
             command_timeout=settings.agent_command_timeout_seconds,
             output_limit=settings.agent_command_output_limit,
             envelope=envelope,
-            before_tool=make_egress_guard(envelope),
+            before_tool=make_egress_guard(envelope, workspace),
             sandbox_image=sandbox_image,
             sandbox_memory=settings.agent_sandbox_memory,
             sandbox_cpus=settings.agent_sandbox_cpus,

@@ -51,7 +51,11 @@ the decisions so they aren't silently "tuned back out" later.
   command can't exhaust host memory; commands run in their own **process group** so
   a timeout kills the whole tree.
 - The default-deny **egress denylist** gained the bash `/dev/tcp` socket trick,
-  extra fetchers/text-browsers, and network probes. This is best-effort on the
+  extra fetchers/text-browsers, and network probes. It also now **scans the
+  contents of a script a command runs** (`python fetch.py` where `fetch.py`
+  imports `urllib`) — found live: a no-egress task wrote a urllib script, ran it
+  via an allowlisted `python` command, and actually reached the internet, because
+  the guard only inspected the command string. This is still best-effort on the
   inline path; container mode's `--network none` remains the hard enforcement.
 
 **A critical correctness fix worth remembering:** recording a human answer/approval

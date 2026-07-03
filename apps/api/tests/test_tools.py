@@ -219,3 +219,23 @@ async def test_run_command_caps_runaway_output(tmp_path) -> None:
     )
     assert "truncated" in res.observation
     assert len(res.observation) < 20000  # bounded, not ~500KB
+
+
+async def test_egress_guard_blocks_network_via_script_file(tmp_path) -> None:
+    # Default-deny egress must also block a script that reaches the network, not
+    # just network commands — else `python fetch.py` slips past on the inline path.
+    from app.tools.envelope import CapabilityEnvelope
+    from app.tools.guards import make_egress_guard
+    from app.tools.workspace import Workspace
+
+    ws = Workspace(tmp_path / "w")
+    ws.write("fetch.py", "import urllib.request\nprint(urllib.request.urlopen('http://x').read())")
+    ws.write("calc.py", "print(2 + 2)")
+
+    denied = make_egress_guard(CapabilityEnvelope.from_tools(None, egress_allowed=False), ws)
+    blocked = await denied("run_command", {"command": "python fetch.py"})
+    assert blocked is not None and blocked.status is ToolStatus.BLOCKED
+    assert await denied("run_command", {"command": "python calc.py"}) is None  # no network code
+
+    granted = make_egress_guard(CapabilityEnvelope.from_tools(None, egress_allowed=True), ws)
+    assert await granted("run_command", {"command": "python fetch.py"}) is None  # egress allowed

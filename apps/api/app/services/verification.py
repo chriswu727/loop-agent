@@ -73,7 +73,7 @@ async def run_checks(
             command_timeout=command_timeout,
             output_limit=output_limit,
             envelope=envelope,
-            before_tool=make_egress_guard(envelope),
+            before_tool=make_egress_guard(envelope, workspace),
             sandbox_image=sandbox_image,
             sandbox_memory=sandbox_memory,
             sandbox_cpus=sandbox_cpus,
