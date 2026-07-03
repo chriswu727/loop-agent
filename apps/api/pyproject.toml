@@ -49,6 +49,7 @@ office = [
 # Calendar access over CalDAV (iCloud / Fastmail / Nextcloud / etc.).
 calendar = [
     "caldav>=1.3",
+    "icalendar>=5.0",  # imported directly (Calendar/Event); don't rely on caldav's transitive pin
 ]
 
 [project.scripts]

@@ -22,7 +22,9 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
-      - run: pip install -e ".[dev]"
+      # Install every extra so mypy type-checks the whole codebase (the calendar/
+      # office libs are untyped; without them mypy's per-line ignores read as unused).
+      - run: pip install -e ".[dev,office,calendar]"
       - name: Lint (ruff)
         run: |
           ruff check .
@@ -38,9 +40,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      # No version here: it's read from the root package.json "packageManager"
+      # field. Specifying both errors (ERR_PNPM_BAD_PM_VERSION).
       - uses: pnpm/action-setup@v4
-        with:
-          version: 10
       - uses: actions/setup-node@v4
         with:
           node-version: 22
