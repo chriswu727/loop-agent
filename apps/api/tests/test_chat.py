@@ -37,3 +37,45 @@ async def test_chat_endpoint_replies(client: AsyncClient, monkeypatch: pytest.Mo
 async def test_chat_requires_message(client: AsyncClient) -> None:
     resp = await client.post("/api/v1/chat", json={"chat_id": "s1", "message": ""})
     assert resp.status_code == 422
+
+
+async def test_run_chat_turn_routes_new_vs_resume(engine: object) -> None:
+    """The shared chat seam: a fresh message publishes a task tagged with the
+    conversation; a message while a task awaits input resumes that same task."""
+    from sqlalchemy.ext.asyncio import async_sessionmaker
+
+    from app.repositories.step import StepRepository
+    from app.repositories.task import TaskRepository
+    from app.schemas.task import TaskCreate
+    from app.services import chat as chat_svc
+    from app.services.task import TaskService
+
+    sm = async_sessionmaker(engine, expire_on_commit=False, autoflush=False)
+
+    async def fake_execute(task_id: object) -> None:
+        async with sm() as s:
+            t = await TaskRepository(s).get(task_id)  # type: ignore[arg-type]
+            t.status = "completed"
+            t.stop_reason = "goal_achieved"
+            t.summary = "done"
+            await s.commit()
+
+    # New conversation -> a task is published with the chat_id and then run.
+    fresh = await chat_svc.run_chat_turn(
+        "conv-1", "write a hello script", sessionmaker=sm, execute=fake_execute
+    )
+    assert fresh is not None and fresh.chat_id == "conv-1" and fresh.status == "completed"
+
+    # A task awaiting input in another conversation...
+    async with sm() as s:
+        svc = TaskService(TaskRepository(s), StepRepository(s))
+        awaiting = await svc.publish(TaskCreate(goal="do the thing here", chat_id="conv-2"))
+        awaiting.status = "awaiting_input"
+        awaiting.pending_question = "what colour?"
+        await s.commit()
+        awaiting_id = awaiting.id
+
+    # ...a follow-up resumes THAT task (respond), it is not a new publish.
+    resumed = await chat_svc.run_chat_turn("conv-2", "blue", sessionmaker=sm, execute=fake_execute)
+    assert resumed is not None and resumed.id == awaiting_id
+    assert resumed.pending_question is None  # the question was answered

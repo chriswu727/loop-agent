@@ -8,6 +8,10 @@ so a new channel (Discord, Slack, a webhook) is just another caller.
 
 from __future__ import annotations
 
+import uuid
+from collections.abc import Awaitable, Callable
+from typing import Any
+
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -45,10 +49,20 @@ async def find_awaiting(session: AsyncSession, chat_id: str) -> TaskModel | None
     return result.scalar_one_or_none()
 
 
-async def run_chat_turn(chat_id: str, message: str) -> TaskModel | None:
+async def run_chat_turn(
+    chat_id: str,
+    message: str,
+    *,
+    sessionmaker: Any = None,
+    execute: Callable[[uuid.UUID], Awaitable[None]] | None = None,
+) -> TaskModel | None:
     """Answer an open question or start a new task for this conversation, run it
-    to completion/pause, and return the resulting task (with reply_for state)."""
-    sessionmaker = get_sessionmaker()
+    to completion/pause, and return the resulting task (with reply_for state).
+
+    ``sessionmaker`` / ``execute`` are injectable for tests; production uses the
+    process sessionmaker and the real runner."""
+    sessionmaker = sessionmaker or get_sessionmaker()
+    execute = execute or execute_task
     async with sessionmaker() as session:
         awaiting = await find_awaiting(session, chat_id)
         service = TaskService(TaskRepository(session), StepRepository(session))
@@ -59,7 +73,7 @@ async def run_chat_turn(chat_id: str, message: str) -> TaskModel | None:
             task = await service.publish(TaskCreate(goal=message.strip(), chat_id=chat_id))
             task_id = task.id
 
-    await execute_task(task_id)  # runs to completion or the next pause (own session)
+    await execute(task_id)  # runs to completion or the next pause (own session)
 
     async with sessionmaker() as session:
         return await TaskRepository(session).get(task_id)
