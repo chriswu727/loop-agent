@@ -713,3 +713,21 @@ async def test_secrets_redacted_in_recorded_step(session: AsyncSession) -> None:
     steps = await StepRepository(session).list_for_task(task.id)
     step = next(s for s in steps if s.tool == "run_command")
     assert secret not in step.observation and "[REDACTED]" in step.observation
+
+
+async def test_ledger_valid_after_approval_respond(session: AsyncSession) -> None:
+    # The ledger re-seal must also hold on the approval branch of respond()
+    # (a non-allowlisted command pauses for approval, then is approved).
+    from app.services.task import TaskService
+
+    plans = [{"thought": "run it", "tool": "run_command", "args": {"command": "chmod 644 x.txt"}}]
+    task = await _make_task(session, max_steps=6, token_budget=1_000_000, require_approval=True)
+    await _service(session, ScriptedLLM(plans)).run(task.id)
+    await session.refresh(task)
+    assert task.status == TaskStatus.AWAITING_INPUT.value  # paused for approval
+    assert task.pending_action is not None
+
+    svc = TaskService(TaskRepository(session), StepRepository(session))
+    assert (await svc.verify_ledger(task.id))["verified"] is True  # valid while paused
+    await svc.respond(task.id, "yes")  # approve -> observation edited + re-sealed
+    assert (await svc.verify_ledger(task.id))["verified"] is True  # still valid
