@@ -2,7 +2,7 @@
 
 import type { FileEntry, LedgerStatus, Step, Task } from '@repo/api-contract';
 import Link from 'next/link';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { AskUserBox } from '@/components/ask-user-box';
 import { BudgetMeter } from '@/components/budget-meter';
@@ -19,6 +19,7 @@ const POLL_MS = 1200;
 export default function TaskDetail() {
   const params = useParams<{ id: string }>();
   const id = params.id;
+  const router = useRouter();
 
   const [task, setTask] = useState<Task | null>(null);
   const [steps, setSteps] = useState<Step[]>([]);
@@ -115,6 +116,15 @@ export default function TaskDetail() {
       setTask(t);
     } catch {
       /* a finished task can't be cancelled; the next poll reconciles state */
+    }
+  }
+
+  async function retry() {
+    try {
+      const fresh = await tasksApi.retry(id); // a new task with the same goal + settings
+      router.push(`/tasks/${fresh.id}`);
+    } catch {
+      /* only a finished task can be retried; ignore */
     }
   }
 
@@ -261,12 +271,19 @@ export default function TaskDetail() {
         </p>
       )}
 
-      {active && (
+      {active ? (
         <button
           onClick={cancel}
           className="mt-4 rounded-lg border border-red-500/40 px-3 py-1.5 text-sm text-red-600 transition hover:bg-red-500/10 dark:text-red-400"
         >
           Cancel run
+        </button>
+      ) : (
+        <button
+          onClick={retry}
+          className="mt-4 rounded-lg border border-black/15 px-3 py-1.5 text-sm transition hover:bg-black/5 dark:border-white/20 dark:hover:bg-white/10"
+        >
+          Retry with same settings
         </button>
       )}
 

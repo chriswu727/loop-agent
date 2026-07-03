@@ -93,6 +93,39 @@ class TaskService:
         await self.tasks.session.commit()
         return task
 
+    async def retry(self, task_id: uuid.UUID) -> TaskModel:
+        """Re-run a finished task's goal as a fresh task with the same settings.
+        The original stays as-is, so its Receipt/ledger remain an audit record."""
+        original = await self.get(task_id)
+        if original.status not in {
+            TaskStatus.COMPLETED.value,
+            TaskStatus.FAILED.value,
+            TaskStatus.CANCELLED.value,
+        }:
+            raise ConflictError(f"Task is {original.status}; only a finished task can be retried.")
+        task = await self.tasks.create(
+            goal=original.goal,
+            status=TaskStatus.PENDING.value,
+            rubric=[],
+            allowed_tools=original.allowed_tools,
+            allow_egress=original.allow_egress,
+            require_approval=original.require_approval,
+            use_browser=original.use_browser,
+            use_email=original.use_email,
+            use_calendar=original.use_calendar,
+            chat_id=original.chat_id,
+            skill=original.skill,
+            max_steps=original.max_steps,
+            token_budget=original.token_budget,
+            summary=None,
+            verification_score=0,
+            steps_used=0,
+            tokens_used=0,
+            workspace_path=None,
+        )
+        await self.tasks.session.commit()
+        return task
+
     async def list_tasks(
         self, *, limit: int, offset: int, root_only: bool = True
     ) -> tuple[list[TaskModel], int]:

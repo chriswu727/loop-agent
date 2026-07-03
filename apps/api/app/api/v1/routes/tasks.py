@@ -104,6 +104,20 @@ async def start_task(
     return TaskRead.from_model(task)
 
 
+@router.post(
+    "/{task_id}/retry",
+    response_model=TaskRead,
+    status_code=status.HTTP_201_CREATED,
+    summary="Re-run a finished task as a fresh task with the same settings",
+)
+async def retry_task(
+    task_id: uuid.UUID, service: TaskServiceDep, background: BackgroundTasks
+) -> TaskRead:
+    task = await service.retry(task_id)
+    background.add_task(trigger_task, task.id)
+    return TaskRead.from_model(task)
+
+
 @router.get("/{task_id}", response_model=TaskRead, summary="Get a task")
 async def get_task(task_id: uuid.UUID, service: TaskServiceDep) -> TaskRead:
     task = await service.get(task_id)

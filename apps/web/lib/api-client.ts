@@ -127,6 +127,8 @@ export const tasksApi = {
     apiFetch<Task>('/api/v1/tasks', { method: 'POST', body: JSON.stringify(body) }),
   cancel: (id: string) =>
     apiFetch<Task>(`/api/v1/tasks/${id}/cancel`, { method: 'POST' }),
+  retry: (id: string) =>
+    apiFetch<Task>(`/api/v1/tasks/${id}/retry`, { method: 'POST' }),
   upload: uploadFile,
   start: (id: string) => apiFetch<Task>(`/api/v1/tasks/${id}/start`, { method: 'POST' }),
   respond: (id: string, answer: string) =>
