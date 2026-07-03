@@ -13,3 +13,4 @@ a past ADR — supersede it with a new one.
 | [0005](./0005-layered-architecture.md) | Layered (ports & adapters) backend | Accepted |
 | [0006](./0006-kubernetes-kustomize.md) | Kubernetes + Kustomize for deployment | Accepted |
 | [0007](./0007-postgres-redis.md) | PostgreSQL + Redis as default datastores | Accepted |
+| [0008](./0008-agent-behavior-and-runtime-safety-tuning.md) | Empirically-tuned agent behaviour, reliability & runtime safety | Accepted |
