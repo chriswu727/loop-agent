@@ -18,6 +18,13 @@ from app.tools.base import ToolError
 MAX_FILE_BYTES = 1_000_000  # refuse to write absurdly large files
 
 
+def _preview(content: str, *, max_lines: int = 20, max_chars: int = 1000) -> str:
+    """A bounded echo of written content — enough to confirm the write."""
+    snippet = "\n".join(content.splitlines()[:max_lines])
+    truncated = len(snippet) > max_chars or snippet != content.rstrip("\n")
+    return snippet[:max_chars] + ("\n… (truncated)" if truncated else "")
+
+
 class Workspace:
     def __init__(self, root: Path) -> None:
         self.root = root.resolve()
@@ -43,7 +50,9 @@ class Workspace:
         target = self.resolve(relative)
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(content, encoding="utf-8")
-        return f"Wrote {len(content)} chars to {relative}"
+        # Echo a bounded preview so the agent can confirm the write without a
+        # follow-up read_file (which just wastes a step on the file it authored).
+        return f"Wrote {len(content)} chars to {relative}. Contents:\n{_preview(content)}"
 
     def edit(self, relative: str, old: str, new: str) -> str:
         """Replace an exact, unique snippet in a file — the agent edits instead
