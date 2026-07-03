@@ -93,6 +93,7 @@ async def test_fallback_cascades_to_next_provider(monkeypatch: pytest.MonkeyPatc
     monkeypatch.setattr(settings, "deepseek_api_key", "d")
     monkeypatch.setattr(settings, "gemini_api_key", None)
     monkeypatch.setattr(settings, "glm_api_key", None)
+    monkeypatch.setattr(settings, "llm_max_retries", 0)  # test pure cascade, not retry
 
     def handler(request: httpx.Request) -> httpx.Response:
         if request.url.host == "api.anthropic.com":
@@ -120,3 +121,29 @@ async def test_no_provider_configured_raises(monkeypatch: pytest.MonkeyPatch) ->
         await FallbackLLMClient(client=_client(lambda r: httpx.Response(200))).complete("s", "u")
     # The message points to the zero-key escape hatches, not just API keys.
     assert "DEMO_MODE" in str(err.value) and "OLLAMA_BASE_URL" in str(err.value)
+
+
+async def test_retries_same_provider_on_transient_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    # A transient 5xx should be retried on the same provider, not fail the task.
+    monkeypatch.setattr(settings, "deepseek_api_key", "d")
+    for attr in ("anthropic_api_key", "gemini_api_key", "glm_api_key"):
+        monkeypatch.setattr(settings, attr, None)
+    monkeypatch.setattr(settings, "llm_retry_backoff_seconds", 0.0)  # no sleep in test
+    monkeypatch.setattr(settings, "llm_max_retries", 2)
+
+    calls = {"n": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls["n"] += 1
+        if calls["n"] < 3:
+            return httpx.Response(503, text="overloaded")  # transient, retryable
+        return httpx.Response(
+            200,
+            json={"choices": [{"message": {"content": "ok"}}], "usage": {"total_tokens": 2}},
+        )
+
+    llm = FallbackLLMClient(primary="deepseek", client=_client(handler))
+    result = await llm.complete("s", "u")
+    assert result.content == "ok"
+    assert calls["n"] == 3  # two retries, then success
+    assert result.fallbacks == []  # same provider, no cascade

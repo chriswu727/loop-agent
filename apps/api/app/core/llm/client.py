@@ -7,6 +7,7 @@ fail the task cleanly rather than hang.
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import asdict
 
 import httpx
@@ -65,28 +66,34 @@ class FallbackLLMClient:
                 fallbacks.append(event)
                 log.warning("llm.fallback", **asdict(event))
 
-            try:
-                content, tokens = await adapter(
-                    self._client,
-                    api_key,
-                    system,
-                    user,
-                    max_tokens=max_tokens,
-                    temperature=temperature,
-                )
-                if not content.strip():
-                    raise LLMError(f"{provider} returned empty content", retryable=True)
-                return LLMResult(
-                    content=content, provider=provider, tokens=tokens, fallbacks=fallbacks
-                )
-            except LLMError as exc:
-                last_error = exc
-                if not exc.retryable:
-                    raise
-            except Exception as exc:  # unexpected shape -> normalise, maybe cascade
-                last_error = wrap_parse_error(provider, exc)
-                if not last_error.retryable:
-                    raise last_error from exc
+            # Retry this provider on a transient error before cascading, so one
+            # blip (timeout/5xx/empty) doesn't fail the task on a single-provider setup.
+            for attempt in range(settings.llm_max_retries + 1):
+                try:
+                    content, tokens = await adapter(
+                        self._client,
+                        api_key,
+                        system,
+                        user,
+                        max_tokens=max_tokens,
+                        temperature=temperature,
+                    )
+                    if not content.strip():
+                        raise LLMError(f"{provider} returned empty content", retryable=True)
+                    return LLMResult(
+                        content=content, provider=provider, tokens=tokens, fallbacks=fallbacks
+                    )
+                except LLMError as exc:
+                    last_error = exc
+                    if not exc.retryable:
+                        raise
+                except Exception as exc:  # unexpected shape -> normalise, maybe cascade
+                    last_error = wrap_parse_error(provider, exc)
+                    if not last_error.retryable:
+                        raise last_error from exc
+                if attempt < settings.llm_max_retries:
+                    log.info("llm.retry", provider=provider, attempt=attempt + 1)
+                    await asyncio.sleep(settings.llm_retry_backoff_seconds * (attempt + 1))
 
         assert last_error is not None
         raise last_error

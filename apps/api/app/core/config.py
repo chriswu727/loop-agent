@@ -94,6 +94,10 @@ class Settings(BaseSettings):
         "deepseek"
     )
     llm_timeout_seconds: int = 120
+    # Retry a retryable failure (timeout, 5xx, empty) on the same provider before
+    # cascading — one transient blip shouldn't fail a whole task.
+    llm_max_retries: int = 2
+    llm_retry_backoff_seconds: float = 0.5
 
     # ---- Agent loop limits (the "within the limit" guardrails) ----
     # Defaults are what a new task starts with; caps are the hard ceilings a
