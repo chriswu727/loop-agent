@@ -30,6 +30,7 @@ from typing import Any
 from app.core.config import settings
 from app.core.llm import LLMClient
 from app.core.logging import get_logger
+from app.core.redaction import redact_secrets
 from app.db.models.task import TaskModel
 from app.domain.task import StopReason, TaskStatus
 from app.repositories.step import StepRepository
@@ -803,6 +804,10 @@ class AgentReactService:
         status: ToolStatus,
         tokens: int,
     ) -> None:
+        # Single choke point for observations: redact here so a secret never
+        # reaches the model history, the sealed ledger, or the API.
+        if settings.agent_redact_secrets:
+            observation = redact_secrets(observation)
         prev_hash = self._last_hash
         this_hash = step_hash(
             prev_hash,

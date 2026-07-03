@@ -104,6 +104,9 @@ class Settings(BaseSettings):
     agent_max_concurrent_runs: int = 8
     agent_max_steps_default: int = 12
     agent_max_steps_cap: int = 40
+    # Mask secret-shaped strings in tool observations before they reach the model,
+    # the ledger, or the API. On by default (Loop's "don't leak secrets" posture).
+    agent_redact_secrets: bool = True
     loop_token_budget_default: int = 60_000
     loop_token_budget_cap: int = 200_000
 

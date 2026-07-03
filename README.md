@@ -69,7 +69,7 @@ a fact you can replay, not a claim in a chat log.
 | **Shell / tools**     | main session runs on the **host**                 | jailed in an **ephemeral container**, default-deny egress |
 | **Skills**            | thousands, **unsigned**, injected into the prompt | **ed25519-signed**, capability-scoped, refused if tampered |
 | **Inbound email/DMs** | injection has exfiltrated real private keys       | quarantined as `[DATA]`; sending/acting needs your approval |
-| **Secrets**           | plaintext credential leaks reported               | never returned by the API; scrubbed from the shell env     |
+| **Secrets**           | plaintext credential leaks reported               | scrubbed from the shell env, masked in tool output, never returned by the API |
 | **Reach**             | 20+ chat channels, huge skill marketplace         | web chat, Telegram, browser, email, calendar today         |
 
 Loop concedes raw breadth for now and is closing that gap — but it wins outright on

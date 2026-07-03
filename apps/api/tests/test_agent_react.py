@@ -700,3 +700,16 @@ async def test_spawn_refused_when_budget_too_low(session: AsyncSession) -> None:
     assert spawn_steps and spawn_steps[0].status == "blocked"
     assert "not enough" in spawn_steps[0].observation.lower()
     assert await TaskRepository(session).list_children(task.id) == []  # ceiling preserved
+
+
+async def test_secrets_redacted_in_recorded_step(session: AsyncSession) -> None:
+    # A command that surfaces a credential must not seal it into the ledger/history.
+    secret = "sk-abcdefghij1234567890KLMN"
+    cmd = f"echo DEEPSEEK_API_KEY={secret}"
+    plans = [{"thought": "x", "tool": "run_command", "args": {"command": cmd}}]
+    task = await _make_task(session, max_steps=1, token_budget=1_000_000)
+    await _service(session, ScriptedLLM(plans)).run(task.id)
+
+    steps = await StepRepository(session).list_for_task(task.id)
+    step = next(s for s in steps if s.tool == "run_command")
+    assert secret not in step.observation and "[REDACTED]" in step.observation
