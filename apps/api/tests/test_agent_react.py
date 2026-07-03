@@ -686,3 +686,17 @@ async def test_rejected_finish_on_last_step_is_not_stuck_running(session: AsyncS
     await session.refresh(task)
     assert task.status == TaskStatus.COMPLETED.value  # reached a terminal state
     assert task.status != TaskStatus.RUNNING.value
+
+
+async def test_spawn_refused_when_budget_too_low(session: AsyncSession) -> None:
+    # Safety: flooring a child at 1000 when the parent has less left would let the
+    # sub-tree overshoot the global token ceiling. Refuse instead — no child made.
+    plans = [{"thought": "delegate", "tool": "spawn", "args": {"goal": "do a big subtask"}}]
+    task = await _make_task(session, max_steps=1, token_budget=500)
+    await _service(session, ScriptedLLM(plans, understand_tokens=0, plan_tokens=50)).run(task.id)
+
+    steps = await StepRepository(session).list_for_task(task.id)
+    spawn_steps = [s for s in steps if s.tool == "spawn"]
+    assert spawn_steps and spawn_steps[0].status == "blocked"
+    assert "not enough" in spawn_steps[0].observation.lower()
+    assert await TaskRepository(session).list_children(task.id) == []  # ceiling preserved

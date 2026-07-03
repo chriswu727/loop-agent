@@ -56,6 +56,10 @@ log = get_logger("agent")
 # How many recent steps the planner sees in full; older steps collapse to a count.
 _HISTORY_WINDOW = 12
 
+# Below this many tokens left, a spawn is refused rather than floored — flooring
+# would let the sub-tree overshoot the parent's (and the global) token ceiling.
+_MIN_SPAWN_BUDGET = 1_000
+
 
 def _extract_json(text: str) -> Any:
     """Best-effort: pull the first JSON object/array out of a model reply."""
@@ -565,7 +569,23 @@ class AgentReactService:
             return
 
         remaining = max(0, task.token_budget - task.tokens_used - plan_tokens)
-        child_budget = max(1_000, min(_as_int(args.get("token_budget"), remaining), remaining))
+        if remaining < _MIN_SPAWN_BUDGET:
+            # Flooring the child at 1000 here would let the sub-tree overshoot the
+            # parent's (and the global) token ceiling. Refuse instead.
+            await self._record_step(
+                task,
+                number,
+                thought,
+                "spawn",
+                args,
+                f"Blocked: only {remaining} tokens left — not enough to delegate. "
+                "Do this part yourself.",
+                ToolStatus.BLOCKED,
+                plan_tokens,
+            )
+            return
+        # Never exceed what the parent actually has left, so the ceiling holds.
+        child_budget = max(1, min(_as_int(args.get("token_budget"), remaining), remaining))
         child_steps = max(
             1,
             min(
