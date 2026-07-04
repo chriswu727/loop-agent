@@ -193,8 +193,14 @@ def test_interpreter_network_oneliners_are_flagged_for_egress() -> None:
     )
     assert network_command_reason("node -e \"require('http').get('http://x')\"") is not None
     assert network_command_reason('python3 -c "import socket; socket.socket()"') is not None
+    # A heredoc has no -c flag and no script file, but the inline code still reaches
+    # the network — must be caught too.
+    heredoc = "python3 <<'PY'\nimport urllib.request\nurllib.request.urlopen('http://x')\nPY"
+    assert network_command_reason(heredoc) is not None
     # A pure-compute one-liner is NOT flagged (no over-blocking of offline work).
     assert network_command_reason('python3 -c "print(2 + 2)"') is None
+    # A filename that merely looks library-ish is NOT flagged.
+    assert network_command_reason("python train.py --data socket.csv") is None
 
 
 async def test_run_command_scrubs_host_env(tmp_path, monkeypatch) -> None:

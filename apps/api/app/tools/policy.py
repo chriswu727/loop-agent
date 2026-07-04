@@ -134,13 +134,17 @@ _NETWORK: tuple[tuple[re.Pattern[str], str], ...] = tuple(
         (r"\b(aria2c|axel|wget2|httpie)\b", "downloader"),
         (r"\b(lynx|w3m|links|elinks)\b", "text browser"),
         (r"\b(dig|nslookup|ping|traceroute|tracepath)\b", "network probe"),
-        # Interpreter one-liners that reach the network — the obvious way to slip
-        # past the token denylist (`python3 -c "import urllib; urlopen(...)"`).
+        # Inline interpreter code that reaches the network — via `-c`, a heredoc
+        # (`python3 <<'EOF' ... urllib ... EOF`), or stdin. [\s\S] spans the newlines
+        # a heredoc body has; -c is NOT required. Precise network tokens (actual
+        # imports/calls) so a filename like `socket.csv` isn't a false positive.
         # Best-effort on the inline path; container mode enforces --network none.
         (
-            r"\b(python3?|node|deno|bun|ruby|perl|php)\b.*-[ce]\b.*"
-            r"(urllib|requests|httpx|http\.client|socket|urlopen|ftplib|smtplib|"
-            r"net/http|open-uri|file_get_contents|fetch\s*\(|https?://)",
+            r"\b(python3?|node|deno|bun|ruby|perl|php)\b[\s\S]*"
+            r"(import\s+(urllib|requests|httpx|socket|http|aiohttp|ftplib|smtplib)|"
+            r"urllib\.|requests\.(get|post|put|delete|patch|head|request|Session)|"
+            r"urlopen|socket\.socket|http\.client|aiohttp\.|"
+            r"fetch\s*\(|require\(\s*['\"](https?|node:http|http)|open-uri|file_get_contents)",
             "interpreter network access",
         ),
     ]
