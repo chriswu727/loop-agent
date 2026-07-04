@@ -60,6 +60,37 @@ async def test_receipt_roundtrip_produces_and_verifies(
     assert verify_receipt(receipt)[0] is False
 
 
+def test_verify_receipt_script_stays_in_sync_with_library(tmp_path: Path) -> None:
+    # scripts/verify_receipt.py duplicates the canonical-hash algorithm so it can
+    # verify a Receipt with zero app dependencies. Guard the two staying in sync:
+    # run the actual script on a genuine (unverified) Receipt — it must pass — and
+    # on a tampered one — it must fail. Otherwise a change to _canonical_hash would
+    # silently break the advertised `make verify-receipt`.
+    import json
+    import subprocess
+    import sys
+    from unittest.mock import MagicMock
+
+    from app.services.receipt import build_receipt
+    from app.tools import Workspace
+
+    ws = Workspace(tmp_path / "ws")
+    ws.write("out.txt", "hello")
+    task = MagicMock(
+        id="t1", goal="do a thing", rubric=[], sandbox="inline", steps_used=3, tokens_used=99
+    )
+    build_receipt(task, [], score=0, verified_by="unverified", workspace=ws, ledger_head="abc")
+    rp = tmp_path / "ws" / "receipt.json"
+    script = Path(__file__).resolve().parents[1] / "scripts" / "verify_receipt.py"
+
+    assert subprocess.run([sys.executable, str(script), str(rp)]).returncode == 0
+
+    d = json.loads(rp.read_text())
+    d["goal"] = "tampered after signing"
+    rp.write_text(json.dumps(d))
+    assert subprocess.run([sys.executable, str(script), str(rp)]).returncode == 1
+
+
 async def test_receipt_endpoint_404_without_receipt(client: AsyncClient) -> None:
     created = (await client.post("/api/v1/tasks", json={"goal": "no receipt yet"})).json()
     resp = await client.get(f"/api/v1/tasks/{created['id']}/receipt")
