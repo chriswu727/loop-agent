@@ -108,6 +108,10 @@ class Settings(BaseSettings):
     # Cap concurrent inline runs: each pins a DB connection for its whole run, so
     # without a bound a burst of publishes exhausts the pool. Excess runs queue.
     agent_max_concurrent_runs: int = 8
+    # A task RUNNING with no update for longer than this is treated as stranded by a
+    # crash and failed on reconcile. Must exceed the longest gap between step commits
+    # (one LLM call + one command + retries), so a live run is never wrongly failed.
+    worker_stale_task_seconds: int = Field(default=900, ge=60)
     agent_max_steps_default: int = 12
     agent_max_steps_cap: int = 40
     # Mask secret-shaped strings in tool observations before they reach the model,

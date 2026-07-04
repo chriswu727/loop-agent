@@ -72,3 +72,47 @@ async def test_trigger_task_enqueues_in_worker_mode(monkeypatch: pytest.MonkeyPa
     tid = uuid4()
     await runner.trigger_task(tid)
     assert enqueued == [(runner.RUN_TASK_JOB, {"task_id": str(tid)})]
+
+
+async def test_reconcile_only_fails_stale_running_tasks(session) -> None:
+    # Staleness-bounded reconcile: a task actively running (recent updated_at) is
+    # left alone; one stranded by a crash (old updated_at) is failed. This is what
+    # makes reconcile safe to run while sibling workers are live.
+    from datetime import UTC, datetime, timedelta
+
+    from sqlalchemy import update
+
+    from app.db.models.task import TaskModel
+    from app.repositories.task import TaskRepository
+    from app.services.runner import reconcile_interrupted_tasks
+
+    repo = TaskRepository(session)
+    common: dict[str, object] = {
+        "rubric": [],
+        "max_steps": 8,
+        "token_budget": 1000,
+        "summary": None,
+        "verification_score": 0,
+        "steps_used": 0,
+        "tokens_used": 0,
+        "workspace_path": None,
+    }
+    fresh = await repo.create(goal="fresh", status="running", **common)
+    stale = await repo.create(goal="stale", status="running", **common)
+    await session.commit()
+    old = datetime.now(UTC) - timedelta(seconds=3600)
+    await session.execute(update(TaskModel).where(TaskModel.id == stale.id).values(updated_at=old))
+    await session.commit()
+
+    failed = await reconcile_interrupted_tasks(session, stale_seconds=900)
+    assert failed == 1  # only the genuinely-stranded one
+
+    await session.refresh(fresh)
+    await session.refresh(stale)
+    assert fresh.status == "running"  # a recent/live run is untouched
+    assert stale.status == "failed"
+
+    # stale_seconds=0 (inline restart) fails every RUNNING task.
+    assert await reconcile_interrupted_tasks(session, stale_seconds=0) == 1
+    await session.refresh(fresh)
+    assert fresh.status == "failed"

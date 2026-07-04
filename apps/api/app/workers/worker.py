@@ -9,7 +9,9 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import signal
+import socket
 from collections.abc import Awaitable, Callable
 from typing import Any
 
@@ -20,6 +22,12 @@ from app.core.logging import configure_logging, get_logger
 from app.workers.queue import QUEUE_KEY
 
 log = get_logger("worker")
+
+# Stable-ish id so a restarted worker can reclaim its own in-flight jobs. Set
+# WORKER_ID (e.g. a StatefulSet pod name) for reliable recovery across restarts.
+WORKER_ID = os.environ.get("WORKER_ID") or socket.gethostname()
+PROCESSING_KEY = f"{QUEUE_KEY}:processing:{WORKER_ID}"
+DEAD_KEY = f"{QUEUE_KEY}:dead"
 
 # Map job types to async handlers. Register real handlers as you add them.
 HANDLERS: dict[str, Callable[[dict[str, Any]], Awaitable[None]]] = {}
@@ -54,6 +62,25 @@ async def _run_task(payload: dict[str, Any]) -> None:
     await execute_task(task_id)
 
 
+async def _recover_on_startup(client: aioredis.Redis) -> None:
+    """Clean up after this worker's previous incarnation crashed. (1) Fail any task
+    it left stranded RUNNING (staleness-bounded, so a live sibling worker's tasks
+    are untouched). (2) Move any job it was mid-processing to a dead-letter list —
+    preserved for inspection, not silently lost and not auto-requeued (a job that
+    crashed the process could be poison)."""
+    from app.db.session import get_sessionmaker
+    from app.services.runner import reconcile_interrupted_tasks
+
+    async with get_sessionmaker()() as session:
+        await reconcile_interrupted_tasks(session, stale_seconds=settings.worker_stale_task_seconds)
+
+    dead = 0
+    while await client.lmove(PROCESSING_KEY, DEAD_KEY, "LEFT", "RIGHT"):
+        dead += 1
+    if dead:
+        log.warning("worker.dead_lettered_inflight", count=dead, key=DEAD_KEY)
+
+
 async def _run() -> None:
     configure_logging()
     client = aioredis.from_url(str(settings.redis_url), decode_responses=True)
@@ -63,23 +90,28 @@ async def _run() -> None:
     for sig in (signal.SIGINT, signal.SIGTERM):
         loop.add_signal_handler(sig, stop.set)
 
-    log.info("worker.started", queue=QUEUE_KEY, handlers=sorted(HANDLERS))
+    await _recover_on_startup(client)
+    log.info("worker.started", queue=QUEUE_KEY, worker_id=WORKER_ID, handlers=sorted(HANDLERS))
     try:
         while not stop.is_set():
-            # Block up to 5s for a job so SIGTERM is handled promptly.
-            result = await client.blpop([QUEUE_KEY], timeout=5)
-            if result is None:
+            # Atomically move a job to our processing list so a crash mid-job doesn't
+            # lose it (blpop would). Block up to 5s so SIGTERM is handled promptly.
+            moved = await client.blmove(QUEUE_KEY, PROCESSING_KEY, 5, "LEFT", "LEFT")
+            if moved is None:
                 continue
-            _, raw = result
+            raw = moved if isinstance(moved, str) else moved.decode()  # decode_responses=True
             try:
                 job = json.loads(raw)
                 handler_fn = HANDLERS.get(job["type"])
                 if handler_fn is None:
                     log.warning("job.unknown_type", type=job.get("type"))
-                    continue
-                await handler_fn(job.get("payload", {}))
+                else:
+                    await handler_fn(job.get("payload", {}))
             except Exception:  # never let one bad job kill the loop
                 log.exception("job.failed", raw=raw)
+            finally:
+                # Done (or handled-failed): drop it from the in-flight list.
+                await client.lrem(PROCESSING_KEY, 1, raw)
     finally:
         await client.aclose()
         log.info("worker.stopped")

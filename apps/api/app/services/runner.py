@@ -16,7 +16,6 @@ from __future__ import annotations
 import asyncio
 import uuid
 
-from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -47,26 +46,47 @@ def _run_gate() -> asyncio.Semaphore:
     return gate
 
 
-async def reconcile_interrupted_tasks(session: AsyncSession) -> int:
-    """Fail any task left RUNNING by a crash/restart. Inline runs are in-process
-    background tasks, so a restart strands them in RUNNING forever otherwise —
-    breaking the 'leave it running unattended' promise. Paused (awaiting_input)
-    tasks are untouched; they resume correctly when answered."""
+async def reconcile_interrupted_tasks(session: AsyncSession, *, stale_seconds: int = 0) -> int:
+    """Fail tasks left RUNNING by a crash/restart, so they don't sit stranded RUNNING
+    forever (breaking the 'leave it running unattended' promise). Paused
+    (awaiting_input) tasks are untouched; they resume when answered.
+
+    With ``stale_seconds > 0`` only tasks whose last update is older than that window
+    are failed — a live run keeps bumping ``updated_at`` every step, so this is safe
+    to run while OTHER workers are actively processing (worker mode). With 0 (inline
+    restart, where the API is the only executor) every RUNNING task is stranded."""
+    from sqlalchemy import func, text, update
+
+    from app.db.models.task import TaskModel
+
+    conditions = [TaskModel.status == TaskStatus.RUNNING.value]
+    if stale_seconds > 0:
+        # Compute the cutoff with the DB's own clock so it matches how updated_at was
+        # stored (naive-UTC on SQLite, aware-UTC on Postgres) — mixing a Python-side
+        # tz with the column's storage raises "can't compare naive and aware". secs is
+        # a validated int, so the interpolation is safe.
+        secs = int(stale_seconds)
+        bind = session.get_bind()
+        cutoff = (
+            func.datetime("now", f"-{secs} seconds")
+            if bind.dialect.name == "sqlite"
+            else func.now() - text(f"interval '{secs} seconds'")
+        )
+        conditions.append(TaskModel.updated_at < cutoff)
     result = await session.execute(
-        text(
-            "UPDATE tasks SET status=:failed, stop_reason=:reason, error=:msg WHERE status=:running"
-        ),
-        {
-            "failed": TaskStatus.FAILED.value,
-            "reason": StopReason.ERROR.value,
-            "msg": "Interrupted by a server restart.",
-            "running": TaskStatus.RUNNING.value,
-        },
+        update(TaskModel)
+        .where(*conditions)
+        .values(
+            status=TaskStatus.FAILED.value,
+            stop_reason=StopReason.ERROR.value,
+            error="Interrupted — the runner crashed or restarted mid-run.",
+        )
+        .execution_options(synchronize_session=False)
     )
     await session.commit()
     count = result.rowcount or 0  # type: ignore[attr-defined]
     if count:
-        log.warning("runner.reconciled_interrupted", count=count)
+        log.warning("runner.reconciled_interrupted", count=count, stale_seconds=stale_seconds)
     return count
 
 

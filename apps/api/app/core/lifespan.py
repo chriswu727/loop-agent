@@ -44,15 +44,16 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     cache = create_cache()
     app.state.cache = cache
 
-    # Fail any task this node left RUNNING by a previous crash/restart. Only in
-    # inline mode — in worker mode a separate process owns runs, so the API
-    # restarting must not fail tasks a live worker is still executing.
-    if settings.execution_mode == "inline":
-        from app.db.session import get_sessionmaker
-        from app.services.runner import reconcile_interrupted_tasks
+    # Fail any task left RUNNING by a crash/restart. In inline mode the API is the
+    # only executor, so on restart every RUNNING task is stranded (stale_seconds=0).
+    # In worker mode separate processes own runs, so only fail genuinely-stuck tasks
+    # (no update within the stale window) — never one a live worker is executing.
+    from app.db.session import get_sessionmaker
+    from app.services.runner import reconcile_interrupted_tasks
 
-        async with get_sessionmaker()() as session:
-            await reconcile_interrupted_tasks(session)
+    _stale = 0 if settings.execution_mode == "inline" else settings.worker_stale_task_seconds
+    async with get_sessionmaker()() as session:
+        await reconcile_interrupted_tasks(session, stale_seconds=_stale)
 
     # Start the trigger heartbeat (fires due interval triggers). Inline-mode only
     # so we don't run two schedulers when a separate worker is deployed.
