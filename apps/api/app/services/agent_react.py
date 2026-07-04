@@ -157,6 +157,8 @@ class AgentReactService:
                     f"Skill '{task.skill}' could not be loaded (unsigned, tampered, or "
                     "not found). Refusing to run."
                 )
+                task.workspace_path = str(workspace.root)  # so the refusal is auditable
+                self._ensure_unverified_receipt(task)
                 await self._commit()
                 log.warning("agent.skill_refused", task_id=str(task.id), skill=task.skill)
                 return

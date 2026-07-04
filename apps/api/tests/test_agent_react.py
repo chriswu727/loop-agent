@@ -363,6 +363,9 @@ async def test_unverified_skill_is_refused(
     assert task.status == TaskStatus.FAILED.value
     assert "could not be loaded" in (task.error or "")
     assert task.steps_used == 0  # nothing ran
+    assert task.receipt_hash  # ...but the refusal is still auditable via a Receipt
+    receipt = json.loads(Workspace(Path(task.workspace_path)).read("receipt.json"))
+    assert receipt["verified_by"] == "unverified"
 
 
 async def test_remember_persists_across_tasks(session: AsyncSession) -> None:
