@@ -772,3 +772,5 @@ async def test_unparseable_plan_output_is_handled_not_crashing(session: AsyncSes
     assert task.stop_reason in {StopReason.STUCK.value, StopReason.MAX_STEPS.value}
     steps = await StepRepository(session).list_for_task(task.id)
     assert any("parse a valid action" in s.observation for s in steps)
+    # A non-accepted stop still gets a plain-language summary (not a bare score-0 row).
+    assert task.summary and "Stopped" in task.summary

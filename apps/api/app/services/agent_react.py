@@ -892,9 +892,37 @@ class AgentReactService:
         recent = self._history[-_HISTORY_WINDOW:]
         return f"[... {omitted} earlier steps omitted ...]\n" + "\n".join(recent)
 
+    @staticmethod
+    def _stop_summary(task: TaskModel, reason: StopReason) -> str:
+        """A plain-language account for a stop the agent didn't summarize itself, so
+        a non-accepted task isn't just a bare score-0 row with a one-word reason."""
+        if reason is StopReason.MAX_STEPS:
+            return (
+                f"Stopped at the step limit ({task.steps_used}/{task.max_steps}) without a "
+                "verified result. Any partial work is in the output files — retry with a "
+                "higher step limit if the goal needs more room."
+            )
+        if reason is StopReason.BUDGET_EXHAUSTED:
+            return (
+                f"Stopped at the token budget ({task.tokens_used}/{task.token_budget}) without "
+                "a verified result. Retry with a higher token budget if the goal needs more."
+            )
+        if reason is StopReason.STUCK:
+            return (
+                "Stopped after repeated failed or blocked actions without progress. Check the "
+                "steps for the recurring error before retrying."
+            )
+        if reason is StopReason.CANCELLED:
+            return "Cancelled before reaching a verified result."
+        return "Stopped without a verified result."
+
     async def _finish(self, task: TaskModel, reason: StopReason) -> None:
         task.status = TaskStatus.COMPLETED.value
         task.stop_reason = reason.value
+        # The accepted path sets its own summary; for the other stops the agent
+        # never wrote one, so give the user a reason-specific explanation.
+        if not task.summary and reason is not StopReason.GOAL_ACHIEVED:
+            task.summary = self._stop_summary(task, reason)
         await self._commit()
         log.info(
             "agent.finish",
