@@ -10,6 +10,7 @@ container is removed on exit (``--rm``) and force-removed if it overruns.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import subprocess
 import uuid
 from pathlib import Path
@@ -132,6 +133,8 @@ async def run_command_in_container(
 
 
 async def _force_remove(name: str) -> None:
+    # Runs in the finally of every sandbox command. Bound the wait so a hung Docker
+    # daemon can't wedge the agent coroutine (and leak its DB session) forever.
     try:
         rm = await asyncio.create_subprocess_exec(
             "docker",
@@ -141,6 +144,11 @@ async def _force_remove(name: str) -> None:
             stdout=asyncio.subprocess.DEVNULL,
             stderr=asyncio.subprocess.DEVNULL,
         )
-        await rm.wait()
+        try:
+            await asyncio.wait_for(rm.wait(), timeout=15)
+        except TimeoutError:
+            with contextlib.suppress(ProcessLookupError):
+                rm.kill()
+            log.warning("sandbox.force_remove_timeout", name=name)
     except Exception:
         log.warning("sandbox.force_remove_failed", name=name)

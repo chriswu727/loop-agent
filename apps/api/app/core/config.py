@@ -95,9 +95,11 @@ class Settings(BaseSettings):
     )
     llm_timeout_seconds: int = 120
     # Retry a retryable failure (timeout, 5xx, empty) on the same provider before
-    # cascading — one transient blip shouldn't fail a whole task.
-    llm_max_retries: int = 2
-    llm_retry_backoff_seconds: float = 0.5
+    # cascading — one transient blip shouldn't fail a whole task. Bounded so a
+    # negative value can't make complete() skip every provider (client asserts >=1
+    # attempt), and backoff can't be negative.
+    llm_max_retries: int = Field(default=2, ge=0)
+    llm_retry_backoff_seconds: float = Field(default=0.5, ge=0.0)
 
     # ---- Agent loop limits (the "within the limit" guardrails) ----
     # Defaults are what a new task starts with; caps are the hard ceilings a

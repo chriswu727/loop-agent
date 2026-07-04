@@ -103,6 +103,11 @@ class TaskService:
             TaskStatus.CANCELLED.value,
         }:
             raise ConflictError(f"Task is {original.status}; only a finished task can be retried.")
+        # Re-clamp to the caps in force at retry time — the only creation path that
+        # would otherwise skip _resolve_limits and could exceed a lowered ceiling.
+        max_steps, token_budget = self._resolve_limits(
+            LimitsIn(max_steps=original.max_steps, token_budget=original.token_budget)
+        )
         task = await self.tasks.create(
             goal=original.goal,
             status=TaskStatus.PENDING.value,
@@ -115,8 +120,8 @@ class TaskService:
             use_calendar=original.use_calendar,
             chat_id=original.chat_id,
             skill=original.skill,
-            max_steps=original.max_steps,
-            token_budget=original.token_budget,
+            max_steps=max_steps,
+            token_budget=token_budget,
             summary=None,
             verification_score=0,
             steps_used=0,
