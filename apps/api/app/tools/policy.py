@@ -48,9 +48,20 @@ _DENY: tuple[tuple[re.Pattern[str], str], ...] = tuple(
         (r"\bmkfs\b|\bdd\s+if=", "raw disk write"),
         (r">\s*/dev/(sd|nvme|disk)", "writing to a raw device"),
         (r"\bshutdown\b|\breboot\b|\bhalt\b|\bpoweroff\b", "power control"),
-        (r":\s*\(\s*\)\s*\{", "fork bomb"),
-        (r"\b(curl|wget)\b[^|]*\|\s*(sudo\s+)?(sh|bash|zsh)\b", "piping the network into a shell"),
-        (r"\bchmod\s+-R\s+777\s+/", "world-writable on a broad path"),
+        # A function whose body pipes to itself and backgrounds — `:(){ :|:& };:`
+        # and named variants like `bomb(){ bomb|bomb & };bomb`.
+        (r"(?:\b\w+|:)\s*\(\s*\)\s*\{[^}]*\|[^}]*&", "fork bomb"),
+        # Piping the network into ANY interpreter, not just sh/bash/zsh.
+        (
+            r"\b(curl|wget|fetch|aria2c|axel)\b[^|]*\|\s*(sudo\s+)?"
+            r"(sh|bash|zsh|dash|python3?|perl|ruby|node|php)\b",
+            "piping the network into an interpreter",
+        ),
+        # chmod 777 (or 0777) on a broad path, in any flag order/spelling.
+        (
+            r"\bchmod\b(?=[^;|&\n]*\b0?777\b)(?=[^;|&\n]*\s(?:/|~))",
+            "world-writable on a broad path",
+        ),
         (r"/etc/(passwd|shadow|sudoers)", "touching system credential files"),
         (r"\bnc\b\s+-[a-z]*e|\bncat\b.*-e", "netcat reverse shell"),
     ]
