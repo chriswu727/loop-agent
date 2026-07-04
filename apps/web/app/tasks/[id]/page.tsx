@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { AskUserBox } from '@/components/ask-user-box';
+import { AuthorityPanel } from '@/components/authority-panel';
 import { BudgetMeter } from '@/components/budget-meter';
 import { ReceiptPanel } from '@/components/receipt-panel';
 import { StepItem } from '@/components/step-item';
@@ -202,6 +203,8 @@ export default function TaskDetail() {
         <BudgetMeter label="Steps" used={task.steps_used} limit={task.limits.max_steps} />
         <BudgetMeter label="Token budget" used={task.tokens_used} limit={task.limits.token_budget} />
       </section>
+
+      <AuthorityPanel task={task} />
 
       {task.rubric.length > 0 && (
         <section className="mt-6">
