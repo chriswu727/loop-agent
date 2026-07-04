@@ -84,6 +84,21 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             "to try it without a key, or OLLAMA_BASE_URL for a local model.",
         )
 
+    # Container isolation is the hard safety boundary; if it's wanted but Docker or
+    # the image is missing, shell commands run on the host (reduced isolation) —
+    # tell the operator their posture at boot, not just per-task.
+    if settings.agent_sandbox != "inline":
+        from app.tools.sandbox import docker_available, image_present
+
+        if not (docker_available() and image_present(settings.agent_sandbox_image)):
+            log.warning(
+                "startup.sandbox_unavailable",
+                wanted=settings.agent_sandbox,
+                hint="Docker or the sandbox image is unavailable — shell commands run "
+                "INLINE (reduced isolation, best-effort policy). Start Docker and build "
+                "the image (`make sandbox-image`) for the container jail.",
+            )
+
     log.info("startup.complete")
     try:
         yield
