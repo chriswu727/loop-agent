@@ -44,7 +44,7 @@ _DENY: tuple[tuple[re.Pattern[str], str], ...] = tuple(
             r"\brm\b(?=[^;|&\n]*(?:-[a-z]*r|--recursive))[^;|&\n]*\s(/|~|\*)",
             "recursive delete of a broad path",
         ),
-        (r"\bsudo\b|\bsu\s+-", "privilege escalation"),
+        (r"\b(sudo|doas|pkexec)\b|\bsu\s+-", "privilege escalation"),
         (r"\bmkfs(\.\w+)?\b", "format a filesystem"),
         # WRITING to a raw block device (of=, redirect, tee, cp) — destroys the
         # disk. Reads (dd if=/dev/sda of=backup.img) and /dev/null|stdout are fine,
@@ -54,7 +54,7 @@ _DENY: tuple[tuple[re.Pattern[str], str], ...] = tuple(
             r"(sd|nvme|disk|hd|vd|mmcblk|loop)",
             "writing to a raw block device",
         ),
-        (r"\bshutdown\b|\breboot\b|\bhalt\b|\bpoweroff\b", "power control"),
+        (r"\b(shutdown|reboot|halt|poweroff)\b|\b(init|telinit)\s+[06]\b", "power control"),
         # A function whose body pipes to itself and backgrounds — `:(){ :|:& };:`
         # and named variants like `bomb(){ bomb|bomb & };bomb`.
         (r"(?:\b\w+|:)\s*\(\s*\)\s*\{[^}]*\|[^}]*&", "fork bomb"),
@@ -69,8 +69,12 @@ _DENY: tuple[tuple[re.Pattern[str], str], ...] = tuple(
             r"\bchmod\b(?=[^;|&\n]*\b0?777\b)(?=[^;|&\n]*\s(?:/|~))",
             "world-writable on a broad path",
         ),
-        (r"/etc/(passwd|shadow|sudoers)", "touching system credential files"),
-        (r"\bnc\b\s+-[a-z]*e|\bncat\b.*-e", "netcat reverse shell"),
+        (r"/etc/(passwd|shadow|gshadow|sudoers)", "touching system credential files"),
+        # Reverse shells: netcat -e, socat EXEC/SYSTEM, or a shell wired to /dev/tcp.
+        (
+            r"\bnc\b\s+-[a-z]*e|\bncat\b.*-e|\bsocat\b[^;|&\n]*(exec|system):|>&\s*/dev/tcp",
+            "reverse shell",
+        ),
     ]
 )
 
@@ -146,7 +150,7 @@ _NETWORK: tuple[tuple[re.Pattern[str], str], ...] = tuple(
     for p, reason in [
         (r"\bcurl\b", "curl"),
         (r"\bwget\b", "wget"),
-        (r"\b(nc|ncat|telnet)\b", "raw socket"),
+        (r"\b(nc|ncat|telnet|socat)\b", "raw socket"),
         (r"\b(ssh|scp|sftp|rsync)\b", "remote shell/copy"),
         (r"\bftp\b", "ftp"),
         (r"\bgit\s+(clone|pull|push|fetch|ls-remote)\b", "git network op"),

