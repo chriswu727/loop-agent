@@ -70,7 +70,7 @@ a fact you can replay, not a claim in a chat log.
 | **Skills**            | thousands, **unsigned**, injected into the prompt | **ed25519-signed**, capability-scoped, refused if tampered |
 | **Inbound email/DMs** | injection has exfiltrated real private keys       | quarantined as `[DATA]`; sending/acting needs your approval |
 | **Secrets**           | plaintext credential leaks reported               | scrubbed from the shell env, masked in tool output, never returned by the API |
-| **Reach**             | 20+ chat channels, huge skill marketplace         | web chat, Telegram, browser, email, calendar today         |
+| **Reach**             | 20+ chat channels, huge skill marketplace         | web chat, Telegram, Slack, browser, email, calendar today  |
 
 Loop concedes raw breadth for now and is closing that gap — but it wins outright on
 the two axes a chat-log agent can't retrofit:
@@ -128,8 +128,10 @@ the two axes a chat-log agent can't retrofit:
 - **Converse** — group turns into a session (`chat_id`) and follow-ups keep the
   context ("now add tests to it" resolves *it*). A web `/chat` page and a
   channel-agnostic `POST /chat` are the seam any platform plugs into.
-- **Chat from Telegram** — set a bot token and command Loop from chat; it runs the
-  task, replies, and asks back when it needs input (gated by a chat allowlist).
+- **Chat from Telegram or Slack** — command Loop from chat; it runs the task,
+  replies, and asks back when it needs input. Both gate who can use it (an allowlist,
+  fail-closed since the bot runs code); Slack is a signature-verified `POST /slack/events`
+  webhook, Telegram a poller — both over the same channel-agnostic seam.
 - **Triggers** — save a task template and fire it from any external event
   (`POST /triggers/{id}/fire`) or on a schedule (interval heartbeat).
 - **Human-in-the-loop** — `ask_user` pauses for your input and resumes exactly where
@@ -192,7 +194,8 @@ See [`.env.example`](./.env.example). Key knobs:
 | `LLM_DEFAULT_PROVIDER` | which provider to try first. |
 | `OLLAMA_BASE_URL` | run on a fully-local model via Ollama (no API key). |
 | `API_TOKEN` | optional bearer-token gate on the whole API. |
-| `TELEGRAM_BOT_TOKEN` / `TELEGRAM_ALLOWED_CHAT_IDS` | enable the chat inlet + restrict who can use it. |
+| `TELEGRAM_BOT_TOKEN` / `TELEGRAM_ALLOWED_CHAT_IDS` | enable the Telegram inlet + restrict who can use it. |
+| `SLACK_BOT_TOKEN` / `SLACK_SIGNING_SECRET` / `SLACK_ALLOWED_CHANNELS` | enable the Slack `/slack/events` inlet + its channel allowlist. |
 | `SMTP_*` / `IMAP_HOST` / `CALDAV_*` | email send/read + calendar (use a Gmail app password). |
 | `EXECUTION_MODE` | `inline` (run in the API process) or `worker` (enqueue to Redis). |
 | `DATABASE_URL` | `postgresql+asyncpg://…` or `sqlite+aiosqlite:///./loop.db`. |
@@ -221,7 +224,7 @@ apps/api/app/
 │   ├── verification.py# re-execution of finish checks on a workspace copy
 │   ├── receipt.py     # content-addressed Receipt; ledger.py = hash-chained steps
 │   ├── skills.py      # signed, capability-scoped skills
-│   ├── chat.py        # shared "message → task → reply" seam (Telegram + HTTP /chat)
+│   ├── chat.py        # shared "message → task → reply" seam (Telegram + Slack + /chat)
 │   ├── memory.py      # cross-task memory; trigger.py + scheduler.py = triggers/heartbeat
 │   └── task.py        # publish / limits / files / approval-resume
 └── api/v1/routes/     # tasks (incl. SSE /events), skills, memory, triggers, chat
@@ -250,10 +253,11 @@ skills, document editing, image understanding, cross-task memory, triggers +
 scheduler, SSE live view, provider registry, a **local Ollama provider**, an **MCP
 client with a headless browser**, **container isolation**, **multi-agent delegation**
 (`spawn` → a tree of verified sub-agents), **email + calendar**, **conversational
-sessions** with a web chat page, and a **channel-agnostic `/chat` API**.
+sessions** with a web chat page, **Telegram + Slack chat inlets**, and a
+**channel-agnostic `/chat` API**.
 
-**Next:** more chat channels (Discord, Slack, WhatsApp), a skill marketplace, and
-voice — same agent core and safety model.
+**Next:** more chat channels (Discord, WhatsApp), a skill marketplace, and voice —
+same agent core and safety model.
 
 ## License
 
