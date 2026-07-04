@@ -786,3 +786,22 @@ async def test_unparseable_plan_output_is_handled_not_crashing(session: AsyncSes
 
     ok, _ = verify_receipt(receipt)
     assert ok  # the unverified receipt's own content hash checks out
+
+
+async def test_crash_mid_run_fails_cleanly_with_unverified_receipt(session: AsyncSession) -> None:
+    # An unexpected exception must fail the task (not strand it RUNNING) AND still
+    # leave an auditable Receipt of whatever happened before the crash.
+    class _BoomLLM(ScriptedLLM):
+        async def complete(self, system: str, user: str, **kw: object) -> LLMResult:
+            raise RuntimeError("boom in the model call")
+
+    task = await _make_task(session, max_steps=8, token_budget=1_000_000)
+    await _service(session, _BoomLLM([])).run(task.id)
+
+    await session.refresh(task)
+    assert task.status == TaskStatus.FAILED.value
+    assert task.stop_reason == StopReason.ERROR.value
+    assert "boom" in (task.error or "")
+    assert task.receipt_hash  # a crash is auditable too
+    receipt = json.loads(Workspace(Path(task.workspace_path)).read("receipt.json"))
+    assert receipt["verified_by"] == "unverified"

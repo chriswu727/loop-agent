@@ -243,6 +243,7 @@ class AgentReactService:
             task.status = TaskStatus.FAILED.value
             task.stop_reason = StopReason.ERROR.value
             task.error = str(exc)[:1000]
+            self._ensure_unverified_receipt(task)  # a crash is auditable too
             await self._commit()
         finally:
             if browser is not None:
@@ -923,24 +924,8 @@ class AgentReactService:
         # never wrote one, so give the user a reason-specific explanation.
         if not task.summary and reason is not StopReason.GOAL_ACHIEVED:
             task.summary = self._stop_summary(task, reason)
-        # Even an unfinished task gets a Receipt (the accepted path builds its own):
-        # the tamper-evident record + file manifest of the partial work should exist
-        # regardless of outcome, so a failure is auditable too. Marked "unverified".
-        if (
-            not task.receipt_hash
-            and reason is not StopReason.GOAL_ACHIEVED
-            and task.workspace_path
-            and Path(task.workspace_path).is_dir()  # noqa: ASYNC240
-        ):
-            receipt_hash, _ = build_receipt(
-                task,
-                [],
-                score=task.verification_score,
-                verified_by="unverified",
-                workspace=Workspace(Path(task.workspace_path)),
-                ledger_head=self._last_hash,
-            )
-            task.receipt_hash = receipt_hash
+        if reason is not StopReason.GOAL_ACHIEVED:
+            self._ensure_unverified_receipt(task)
         await self._commit()
         log.info(
             "agent.finish",
@@ -950,6 +935,28 @@ class AgentReactService:
             tokens=task.tokens_used,
             score=task.verification_score,
         )
+
+    def _ensure_unverified_receipt(self, task: TaskModel) -> None:
+        """Build a Receipt for a task that ended without acceptance (a limit stop or
+        a crash), so the tamper-evident record + file manifest of the partial work
+        exists regardless of outcome — a failure is auditable too. Best-effort: a
+        receipt-build error must not mask the real outcome."""
+        if task.receipt_hash or not task.workspace_path:
+            return
+        try:
+            if not Path(task.workspace_path).is_dir():
+                return
+            receipt_hash, _ = build_receipt(
+                task,
+                [],
+                score=task.verification_score,
+                verified_by="unverified",
+                workspace=Workspace(Path(task.workspace_path)),
+                ledger_head=self._last_hash,
+            )
+            task.receipt_hash = receipt_hash
+        except Exception:
+            log.warning("agent.receipt_build_failed", task_id=str(task.id))
 
     async def _commit(self) -> None:
         await self.session.commit()
