@@ -28,7 +28,7 @@ from pathlib import Path
 from typing import Any
 
 from app.core.config import settings
-from app.core.llm import LLMClient
+from app.core.llm import LLMClient, LLMError
 from app.core.logging import get_logger
 from app.core.redaction import redact_secrets
 from app.db.models.task import TaskModel
@@ -276,7 +276,14 @@ class AgentReactService:
         self, task: TaskModel, workspace: Workspace, executor: ToolExecutor, *, start: int
     ) -> None:
         if not task.rubric:  # only on a fresh run, not a resume
-            rubric, tokens = await self._understand(task.goal)
+            try:
+                rubric, tokens = await self._understand(task.goal)
+            except LLMError as exc:
+                # A transient blip on the very first call shouldn't kill the task —
+                # fall back to a generic rubric; the plan phase (with retry) does the
+                # real work and the verifier still grades against the goal.
+                log.warning("agent.understand_failed", task_id=str(task.id), error=str(exc)[:200])
+                rubric, tokens = ["Fully and correctly satisfies the task"], 0
             task.rubric = rubric
             task.tokens_used += tokens
             await self._commit()

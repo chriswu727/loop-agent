@@ -731,3 +731,23 @@ async def test_ledger_valid_after_approval_respond(session: AsyncSession) -> Non
     assert (await svc.verify_ledger(task.id))["verified"] is True  # valid while paused
     await svc.respond(task.id, "yes")  # approve -> observation edited + re-sealed
     assert (await svc.verify_ledger(task.id))["verified"] is True  # still valid
+
+
+async def test_understand_failure_is_not_fatal(session: AsyncSession) -> None:
+    # A transient blip on the first (understand) call must not kill the task at
+    # 0 steps — fall back to a generic rubric and let the plan phase run.
+    from app.core.llm import LLMError
+
+    class _UnderstandFails(ScriptedLLM):
+        async def complete(self, system: str, user: str, **kw: object) -> object:
+            if "JSON array of 3 to 6" in user:  # the understand call
+                raise LLMError("transient understand failure", retryable=True)
+            return await super().complete(system, user, **kw)  # type: ignore[arg-type]
+
+    plans = [{"thought": "done", "tool": "finish", "args": {"summary": "ok"}}]
+    task = await _make_task(session, max_steps=3, token_budget=1_000_000)
+    await _service(session, _UnderstandFails(plans, verify={"score": 90, "met": True})).run(task.id)
+
+    await session.refresh(task)
+    assert task.status == TaskStatus.COMPLETED.value  # proceeded despite understand failing
+    assert task.rubric == ["Fully and correctly satisfies the task"]  # default fallback
