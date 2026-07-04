@@ -30,3 +30,28 @@ def test_masks_pem_private_key_block() -> None:
 def test_leaves_ordinary_text_alone() -> None:
     text = "The file config.txt has 42 lines; the build passed at commit a1b2c3d."
     assert redact_secrets(text) == text
+
+
+def test_masks_quoted_and_json_secret_values() -> None:
+    # The common .env / JSON / YAML form: quoted values must be masked, quotes kept.
+    assert "hunter2000secret" not in redact_secrets("PASSWORD='hunter2000secret'")
+    assert "abcdef123456" not in redact_secrets('API_KEY="abcdef123456"')
+    assert "abcdef123456" not in redact_secrets('"api_key": "abcdef123456"')
+    # Underscore-compound keys still redact (a \b would have broken these).
+    assert "REDACTED" in redact_secrets("GITHUB_TOKEN=plainvalue123456")
+    assert "REDACTED" in redact_secrets("DB_PASSWORD=supersecretvalue")
+
+
+def test_does_not_over_redact_benign_key_values() -> None:
+    # A secret keyword as a substring of an ordinary word must NOT trigger redaction.
+    for benign in ("author: Shakespeare", "tokenizer: sentencepiece", "the authority approved"):
+        assert redact_secrets(benign) == benign
+
+
+def test_assignment_redaction_is_not_redos() -> None:
+    # A long class-run with no delimiter used to backtrack ~28s; must be fast now.
+    import time
+
+    start = time.time()
+    redact_secrets("a" * 60000 + " no delimiter here")
+    assert time.time() - start < 1.0

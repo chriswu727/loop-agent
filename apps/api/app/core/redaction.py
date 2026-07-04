@@ -33,12 +33,31 @@ _TOKENS = [
 ]
 
 # KEY = value / KEY: value where the key name reads like a secret — mask the value,
-# keep the name so the agent still knows the setting exists.
+# keep the name so the agent still knows the setting exists. The secret word is
+# bounded by non-letters so `author:`/`tokenizer:` don't match (but underscore
+# compounds like GITHUB_TOKEN / DB_PASSWORD do); the key runs are LENGTH-BOUNDED to
+# avoid O(n^2) backtracking; and the value may be bare OR quoted (the common
+# .env / JSON / YAML form) — the inner value is masked, the quotes kept.
 _ASSIGN = re.compile(
-    r"(?i)([A-Za-z0-9_.\-]*"
-    r"(?:secret|token|password|passwd|api[_-]?key|access[_-]?key|private[_-]?key|auth)"
-    r"[A-Za-z0-9_.\-]*)(\s*[=:]\s*)([^\s'\"]{6,})"
+    r"""(?ix)
+    ( ['"]? [\w.\-]{0,60}
+      (?<![A-Za-z])
+      (?: secret | token | password | passwd | api[_-]?key
+        | access[_-]?key | private[_-]?key | auth )
+      (?![A-Za-z])
+      [\w.\-]{0,60} ['"]? )          # group 1: the key (with any surrounding quotes)
+    ( \s* [=:] \s* )                 # group 2: the = or : delimiter
+    (?: (['"]) [^'"]{4,} ['"]        # groups 3: quoted value
+      | [^\s'"]{6,} )                # or a bare value
+    """
 )
+_MAX_REDACT = 200_000  # skip the assignment pass on very large blobs (belt-and-suspenders)
+
+
+def _mask_assignment(m: re.Match[str]) -> str:
+    quote = m.group(3)
+    value = f"{quote}{_REDACTED}{quote}" if quote else _REDACTED
+    return f"{m.group(1)}{m.group(2)}{value}"
 
 
 def redact_secrets(text: str) -> str:
@@ -47,5 +66,6 @@ def redact_secrets(text: str) -> str:
     out = _PEM.sub("[REDACTED PRIVATE KEY]", text)
     for pattern in _TOKENS:
         out = pattern.sub(_REDACTED, out)
-    out = _ASSIGN.sub(lambda m: f"{m.group(1)}{m.group(2)}{_REDACTED}", out)
+    if len(out) <= _MAX_REDACT:
+        out = _ASSIGN.sub(_mask_assignment, out)
     return out
