@@ -881,3 +881,22 @@ async def test_nonsubstantiating_checks_degrade_execution_to_judgment(
     receipt = json.loads(Workspace(Path(task.workspace_path)).read("receipt.json"))
     assert receipt["coverage"]["execution_backed"] is False
     assert receipt["coverage"]["checks"] == 1
+
+
+async def test_email_activation_warns_it_is_out_of_sandbox(
+    session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Email reaches the network outside the container; the planner must be told so
+    # explicitly (it's an out-of-sandbox path), not silently.
+    from app.core.config import settings as _settings
+
+    monkeypatch.setattr(_settings, "smtp_host", "smtp.example.com")
+    monkeypatch.setattr(_settings, "smtp_user", "me@example.com")
+    monkeypatch.setattr(_settings, "smtp_password", "pw")
+    task = await _make_task(session, max_steps=2, token_budget=1_000_000)
+    task.use_email = True
+    await session.commit()
+
+    svc = _service(session, ScriptedLLM([{"tool": "finish", "args": {"summary": "x"}}]))
+    await svc.run(task.id)
+    assert "OUTSIDE the container sandbox" in svc._notices

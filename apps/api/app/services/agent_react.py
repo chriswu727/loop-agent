@@ -229,6 +229,20 @@ class AgentReactService:
             self._mcp_tools |= CalendarTools.tool_names
             self._calendar_specs = CALENDAR_SPEC
 
+        # Email/calendar talk to the network on the host, OUTSIDE the container's
+        # --network none jail — an out-of-sandbox path. Make it explicit rather than
+        # silent: every send/create still pauses for your approval, so don't route
+        # secrets out this way. Recorded on the task so an auditor sees the exception.
+        out_of_sandbox = [
+            n for n, on in (("email", executor.email), ("calendar", executor.calendar)) if on
+        ]
+        if out_of_sandbox:
+            self._notices += (
+                f"Note: your {' and '.join(out_of_sandbox)} tool(s) reach the network on the "
+                "host, OUTSIDE the container sandbox. Every send/create pauses for the user's "
+                "approval; never email or export secrets or workspace credentials.\n"
+            )
+
         # Vision (see_image) is available whenever a multimodal provider is set.
         if settings.gemini_api_key:
             executor.vision = VisionTools(workspace)
