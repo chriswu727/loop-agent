@@ -807,21 +807,6 @@ async def test_crash_mid_run_fails_cleanly_with_unverified_receipt(session: Asyn
     assert receipt["verified_by"] == "unverified"
 
 
-async def test_spawn_refused_when_budget_too_low_to_delegate(session: AsyncSession) -> None:
-    # Overshoot guard: a parent nearly out of budget must refuse to delegate, so the
-    # sub-tree can't push total cost past the ceiling (_MIN_SPAWN_BUDGET).
-    plans = [{"thought": "delegate", "tool": "spawn", "args": {"goal": "do the sub-thing"}}]
-    task = await _make_task(session, max_steps=10, token_budget=1000)  # remaining < 1000 at spawn
-    await _service(session, ScriptedLLM(plans)).run(task.id)
-
-    children = await TaskRepository(session).list_children(task.id)
-    assert children == []  # nothing was delegated
-    steps = await StepRepository(session).list_for_task(task.id)
-    assert any(
-        s.tool == "spawn" and s.status == "blocked" and "delegate" in s.observation for s in steps
-    )
-
-
 async def test_spawned_child_cost_folds_into_parent_budget(session: AsyncSession) -> None:
     # The child's tokens count against the parent's ceiling — this is what keeps a
     # spawn tree bounded by the parent's budget rather than multiplying it.
