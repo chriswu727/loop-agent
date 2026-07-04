@@ -55,6 +55,16 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     async with get_sessionmaker()() as session:
         await reconcile_interrupted_tasks(session, stale_seconds=_stale)
 
+    # Same crash-recovery hygiene for the filesystem: drop any verify-<uuid> workspace
+    # copies a mid-verification crash left behind (none are in flight at startup).
+    from pathlib import Path
+
+    from app.services.verification import sweep_orphaned_verify_dirs
+
+    swept = sweep_orphaned_verify_dirs(Path(settings.agent_workspaces_root))
+    if swept:
+        log.info("startup.swept_verify_dirs", count=swept)
+
     # Start the trigger heartbeat (fires due interval triggers). Inline-mode only
     # so we don't run two schedulers when a separate worker is deployed.
     scheduler_stop: asyncio.Event | None = None

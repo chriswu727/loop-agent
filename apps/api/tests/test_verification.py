@@ -47,3 +47,21 @@ async def test_checks_run_on_a_copy_not_the_original(tmp_path: Path) -> None:
     ws = Workspace(tmp_path / "ws")
     await run_checks([{"kind": "command", "command": "touch sentinel.txt"}], ws)
     assert ("sentinel.txt", 0) not in ws.list_files()
+
+
+def test_sweep_orphaned_verify_dirs(tmp_path: Path) -> None:
+    from app.services.verification import sweep_orphaned_verify_dirs
+
+    root = tmp_path / "ws"
+    root.mkdir()
+    (root / "verify-abc123").mkdir()  # orphaned crash residue
+    (root / "verify-def456" / "ws").mkdir(parents=True)
+    (root / "some-task-id").mkdir()  # a real task workspace — must be kept
+    (root / "verify-note.txt").write_text("x")  # a file, not a dir — kept
+
+    assert sweep_orphaned_verify_dirs(root) == 2
+    assert not (root / "verify-abc123").exists()
+    assert not (root / "verify-def456").exists()
+    assert (root / "some-task-id").exists()  # untouched
+    assert (root / "verify-note.txt").exists()
+    assert sweep_orphaned_verify_dirs(tmp_path / "nonexistent") == 0  # no dir -> 0, no raise

@@ -19,6 +19,7 @@ import re
 import shutil
 import uuid
 from dataclasses import asdict, dataclass
+from pathlib import Path
 from typing import Any
 
 from app.tools import CapabilityEnvelope, ToolExecutor, ToolStatus, Workspace
@@ -37,6 +38,24 @@ class CheckResult:
     target: str  # the command or path the check is about
     passed: bool
     evidence: str  # short proof: exit code + output snippet, or why it failed
+
+
+VERIFY_DIR_PREFIX = "verify-"
+
+
+def sweep_orphaned_verify_dirs(workspaces_root: Path) -> int:
+    """Remove ``verify-<uuid>`` workspace copies orphaned by a crash mid-check.
+    run_checks removes its copy in a finally, so a leftover means the process died
+    during verification. Called at startup, when no verification is in flight — so
+    every ``verify-*`` present is a safe-to-delete orphan."""
+    swept = 0
+    if not workspaces_root.is_dir():
+        return 0
+    for d in workspaces_root.glob(f"{VERIFY_DIR_PREFIX}*"):
+        if d.is_dir():
+            shutil.rmtree(d, ignore_errors=True)
+            swept += 1
+    return swept
 
 
 async def run_checks(
@@ -58,7 +77,7 @@ async def run_checks(
 
     # Copy under the workspaces root (a path the container can bind-mount) rather
     # than system temp, so re-verification runs in the same sandbox as the agent.
-    tmp_root = source.root.parent / f"verify-{uuid.uuid4().hex[:12]}"
+    tmp_root = source.root.parent / f"{VERIFY_DIR_PREFIX}{uuid.uuid4().hex[:12]}"
     try:
         copy_dir = tmp_root / "ws"
         await asyncio.to_thread(shutil.copytree, source.root, copy_dir)
