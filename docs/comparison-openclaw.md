@@ -2,6 +2,28 @@
 
 # Loop vs OpenClaw: The Honest Comparison
 
+> **Update (2026-07-04, after this comparison):** several concrete weaknesses this
+> analysis found were then fixed (and adversarially re-audited — the fixes had their
+> own bugs, since fixed). No longer accurate as written:
+> - "The Receipt isn't signed" → optional **ed25519 signing** now exists
+>   (`AGENT_RECEIPT_SIGNING_KEY`); `verify_receipt` also re-hashes output files vs the
+>   manifest and cross-checks the DB anchor, and the offline script verifies the
+>   signature with `--pubkey`. Tamper-*proof*, not just evident, when a key is set.
+> - "Egress is all-or-nothing" → a per-task **`egress_hosts`** allowlist now exists,
+>   settable from the publish form.
+> - "A tautological check earns execution-verified" → the verifier now judges whether
+>   checks substantiate the goal; if not, the run degrades to judgment.
+> - "Receipts aren't literally on every terminal outcome" / "a crashed worker strands
+>   its task" → both closed (skill-refusal + cancel now get Receipts; staleness-bounded
+>   reconcile runs in both modes).
+>
+> Still accurate and unchanged: the **maturity/reach/ecosystem/adoption** gaps
+> (one chat surface, one bundled skill, zero users) — those are not code-fixable.
+
+---
+
+_Original point-in-time analysis (unedited) follows._
+
 ## Bottom line
 
 Loop is a two-week-old, single-author, high-assurance agent runtime with real shipped machinery for *proving a task is done* and *running with least authority* — an independent re-execution verifier, content-addressed Receipts, a hash-chained ledger, ed25519-signed skills, and an ephemeral `--network none` Docker sandbox, all funneled through one enforced tool choke point. OpenClaw (as characterized in Loop's own `docs/STRATEGY.md`, an unaudited partisan source) is a mature, adopted, reach-first assistant that lives on 20+ chat surfaces with a ~5,400-skill ecosystem and a 48h unattended loop, but with no completion semantics and its busiest path running on the host. **The real trade-off: Loop can mechanically re-prove and tightly contain a narrow, check-expressible slice of work that nobody has adopted yet; OpenClaw actually reaches users and covers the long tail, but you have to trust that "done" means "the model stopped talking."**
