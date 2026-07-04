@@ -14,8 +14,11 @@ a question or for approval, the bot relays that, and the next message from that
 chat is treated as the answer (looked up via the most-recent awaiting task for
 that `chat_id`) and resumes the same task. A chat allowlist
 (`TELEGRAM_ALLOWED_CHAT_IDS`) gates who may command the bot — important, since it
-can run code and send email. Other channels (WhatsApp, etc.) are the same shape:
-a poller that calls `handle_chat_message`. Tested: the client wire calls, the
+can run code and send email. The seam is channel-agnostic: `run_chat_turn(chat_id,
+message)` takes a plain conversation id + text and knows nothing of the transport,
+so a new channel is just an inlet over it — a poller (Telegram) OR a webhook (the
+HTTP `POST /chat` route already is one). Adding one means: receive a message, call
+`run_chat_turn`, reply with `reply_for(task)`. Tested: the client wire calls, the
 reply formatting per task state, and the awaiting-task lookup; the full round
 trip reuses already-tested publish/respond/execute and needs a bot token to run
 live.
