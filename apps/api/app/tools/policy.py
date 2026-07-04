@@ -249,7 +249,9 @@ def _deny_scan_text(command: str) -> str:
     unquoted, so ``bash -c "rm -rf /"`` is still caught."""
     inners = [m.group(2) for m in re.finditer(r"-[a-z]*[ce]\s+(['\"])(.*?)\1", command, re.DOTALL)]
     blanked = re.sub(r"(['\"]).*?\1", " ", command, flags=re.DOTALL)
-    return blanked + (" " + " ".join(inners) if inners else "")
+    # Join the inners with `; ` (and prepend one) so each starts at a command
+    # position — the command-anchored patterns (mkfs, power) match `bash -c "mkfs …"`.
+    return blanked + ("; " + "; ".join(inners) if inners else "")
 
 
 def evaluate_command(command: str) -> tuple[Verdict, str]:
