@@ -900,3 +900,28 @@ async def test_email_activation_warns_it_is_out_of_sandbox(
     svc = _service(session, ScriptedLLM([{"tool": "finish", "args": {"summary": "x"}}]))
     await svc.run(task.id)
     assert "OUTSIDE the container sandbox" in svc._notices
+
+
+async def test_checks_substantiate_string_false_degrades_to_judgment(
+    session: AsyncSession,
+) -> None:
+    # A stringified "false" from the verifier must NOT slip through bool() as truthy;
+    # the run degrades to judgment just like a real False (fail-open bug fixed).
+    plans = [
+        {"thought": "w", "tool": "write_file", "args": {"path": "a.txt", "content": "x"}},
+        {
+            "thought": "done",
+            "tool": "finish",
+            "args": {
+                "summary": "did it",
+                "checks": [{"kind": "command", "command": "echo hi", "expect_exit": 0}],
+            },
+        },
+    ]
+    llm = ScriptedLLM(plans, verify={"score": 90, "met": True, "checks_substantiate": "false"})
+    task = await _make_task(session, max_steps=10, token_budget=1_000_000)
+    await _service(session, llm).run(task.id)
+
+    await session.refresh(task)
+    assert task.stop_reason == StopReason.GOAL_ACHIEVED.value
+    assert task.verified_by == "judgment"

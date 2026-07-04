@@ -177,14 +177,10 @@ class AgentReactService:
                 or task.use_email
                 or task.use_calendar
             ),
-            # A browser/email/calendar task reaches many hosts, so the allowlist only
-            # applies when egress was granted via allow_egress alone.
-            egress_hosts=(
-                task.egress_hosts
-                if task.allow_egress
-                and not (task.use_browser or task.use_email or task.use_calendar)
-                else None
-            ),
+            # The allowlist governs run_command (shell) egress. Browser/email/calendar
+            # don't go through that guard, so enabling them must NOT drop the shell
+            # allowlist — apply it whenever egress was granted via allow_egress.
+            egress_hosts=(task.egress_hosts if task.allow_egress else None),
         )
         self._egress_allowed = envelope.egress_allowed
         sandbox_image, sandbox_label = self._resolve_sandbox()
@@ -345,6 +341,11 @@ class AgentReactService:
             await self.session.refresh(task)
             if task.status == TaskStatus.CANCELLED.value:
                 task.stop_reason = StopReason.CANCELLED.value
+                # A cancel is a terminal outcome — leave the same auditable artifacts
+                # (summary + unverified Receipt of the partial work) as any other stop.
+                if not task.summary:
+                    task.summary = self._stop_summary(task, StopReason.CANCELLED)
+                self._ensure_unverified_receipt(task)
                 await self._commit()
                 return
             if task.tokens_used >= task.token_budget:
@@ -779,7 +780,13 @@ class AgentReactService:
             score = _clamp_score(parsed.get("score"))
             missing = parsed.get("missing") or []
             llm_met = bool(parsed.get("met"))
-            substantiate = bool(parsed.get("checks_substantiate", True))
+            # Strict parse: omit -> True (prior behavior), but the stronger label
+            # must be EARNED, so a string "false"/"no" or a null doesn't slip through
+            # bool() as truthy. Only an explicit true earns it.
+            _sub = parsed.get("checks_substantiate", True)
+            substantiate = _sub is True or (
+                isinstance(_sub, str) and _sub.strip().lower() in {"true", "yes", "1"}
+            )
         else:
             score, missing, llm_met, substantiate = 0, ["verifier returned no verdict"], False, True
 

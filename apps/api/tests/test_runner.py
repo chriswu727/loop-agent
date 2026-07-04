@@ -116,3 +116,46 @@ async def test_reconcile_only_fails_stale_running_tasks(session) -> None:
     assert await reconcile_interrupted_tasks(session, stale_seconds=0) == 1
     await session.refresh(fresh)
     assert fresh.status == "failed"
+
+
+async def test_reconcile_spares_a_parent_with_a_live_child(session) -> None:
+    # A parent's updated_at freezes while its sub-agent runs (spawn is synchronous),
+    # so staleness alone would wrongly fail a live parent. It's spared while a child
+    # is non-terminal, then failed once the child finishes.
+    from datetime import UTC, datetime, timedelta
+
+    from sqlalchemy import update
+
+    from app.db.models.task import TaskModel
+    from app.repositories.task import TaskRepository
+    from app.services.runner import reconcile_interrupted_tasks
+
+    repo = TaskRepository(session)
+    common = {
+        "rubric": [],
+        "max_steps": 8,
+        "token_budget": 1000,
+        "summary": None,
+        "verification_score": 0,
+        "steps_used": 0,
+        "tokens_used": 0,
+        "workspace_path": None,
+    }
+    parent = await repo.create(goal="parent", status="running", **common)
+    child = await repo.create(
+        goal="child", status="running", parent_id=parent.id, depth=1, **common
+    )
+    await session.commit()
+    old = datetime.now(UTC) - timedelta(seconds=3600)
+    await session.execute(update(TaskModel).where(TaskModel.id == parent.id).values(updated_at=old))
+    await session.commit()
+
+    assert await reconcile_interrupted_tasks(session, stale_seconds=900) == 0  # child is live
+    await session.refresh(parent)
+    assert parent.status == "running"
+
+    child.status = "completed"
+    await session.commit()
+    assert await reconcile_interrupted_tasks(session, stale_seconds=900) == 1  # now orphaned
+    await session.refresh(parent)
+    assert parent.status == "failed"

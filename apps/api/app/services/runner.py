@@ -55,12 +55,30 @@ async def reconcile_interrupted_tasks(session: AsyncSession, *, stale_seconds: i
     are failed — a live run keeps bumping ``updated_at`` every step, so this is safe
     to run while OTHER workers are actively processing (worker mode). With 0 (inline
     restart, where the API is the only executor) every RUNNING task is stranded."""
-    from sqlalchemy import func, text, update
+    from sqlalchemy import exists, func, text, update
+    from sqlalchemy.orm import aliased
 
     from app.db.models.task import TaskModel
 
     conditions = [TaskModel.status == TaskStatus.RUNNING.value]
     if stale_seconds > 0:
+        # A parent whose sub-agent is still going is ALIVE even though its own
+        # updated_at is frozen (the spawn runs the child synchronously, as one parent
+        # step). Never fail a task that has a non-terminal child — the child's own
+        # staleness reconciles it first, then the parent on a later pass.
+        child = aliased(TaskModel)
+        conditions.append(
+            ~exists().where(
+                child.parent_id == TaskModel.id,
+                child.status.in_(
+                    (
+                        TaskStatus.RUNNING.value,
+                        TaskStatus.PENDING.value,
+                        TaskStatus.AWAITING_INPUT.value,
+                    )
+                ),
+            )
+        )
         # Compute the cutoff with the DB's own clock so it matches how updated_at was
         # stored (naive-UTC on SQLite, aware-UTC on Postgres) — mixing a Python-side
         # tz with the column's storage raises "can't compare naive and aware". secs is

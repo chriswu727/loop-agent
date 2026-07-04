@@ -217,7 +217,7 @@ def test_offline_verifier_checks_signature_with_pubkey(tmp_path: Path) -> None:
     pub = (
         priv.public_key().public_bytes(s.Encoding.PEM, s.PublicFormat.SubjectPublicKeyInfo).decode()
     )
-    ws, _h, receipt = _build(tmp_path)  # unsigned
+    _ws, _h, receipt = _build(tmp_path)  # unsigned
     receipt["signature"] = "00" * 64  # forged signature
     rp = tmp_path / "ws" / "receipt.json"
     rp.write_text(json.dumps(receipt))

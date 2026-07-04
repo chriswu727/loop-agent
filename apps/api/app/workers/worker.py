@@ -8,6 +8,7 @@ Run with ``python -m app.workers.worker`` (or the ``worker`` console script).
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import os
 import signal
@@ -81,6 +82,28 @@ async def _recover_on_startup(client: aioredis.Redis) -> None:
         log.warning("worker.dead_lettered_inflight", count=dead, key=DEAD_KEY)
 
 
+async def _reconcile_loop(stop: asyncio.Event) -> None:
+    """Periodically fail tasks stranded RUNNING by a crash — not only at startup, so a
+    worker that dies mid-job (its in-flight task's updated_at is still recent) gets
+    cleaned up once it crosses the stale window, instead of hanging until a restart."""
+    from app.db.session import get_sessionmaker
+    from app.services.runner import reconcile_interrupted_tasks
+
+    interval = max(30, settings.worker_stale_task_seconds // 2)
+    while not stop.is_set():
+        with contextlib.suppress(TimeoutError):
+            await asyncio.wait_for(stop.wait(), timeout=interval)
+        if stop.is_set():
+            return
+        try:
+            async with get_sessionmaker()() as session:
+                await reconcile_interrupted_tasks(
+                    session, stale_seconds=settings.worker_stale_task_seconds
+                )
+        except Exception:  # a reconcile hiccup must not kill the worker
+            log.exception("worker.reconcile_failed")
+
+
 async def _run() -> None:
     configure_logging()
     client = aioredis.from_url(str(settings.redis_url), decode_responses=True)
@@ -91,6 +114,7 @@ async def _run() -> None:
         loop.add_signal_handler(sig, stop.set)
 
     await _recover_on_startup(client)
+    reconciler = asyncio.create_task(_reconcile_loop(stop))
     log.info("worker.started", queue=QUEUE_KEY, worker_id=WORKER_ID, handlers=sorted(HANDLERS))
     try:
         while not stop.is_set():
@@ -113,6 +137,9 @@ async def _run() -> None:
                 # Done (or handled-failed): drop it from the in-flight list.
                 await client.lrem(PROCESSING_KEY, 1, raw)
     finally:
+        reconciler.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await reconciler
         await client.aclose()
         log.info("worker.stopped")
 
