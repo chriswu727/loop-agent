@@ -32,8 +32,18 @@ class Verdict(enum.StrEnum):
 _DENY: tuple[tuple[re.Pattern[str], str], ...] = tuple(
     (re.compile(p, re.IGNORECASE), reason)
     for p, reason in [
-        (r"\brm\s+-[a-z]*r[a-z]*f|\brm\s+-[a-z]*f[a-z]*r", "recursive force-delete"),
-        (r"\brm\s+-[a-z]*r[a-z]*\s+(/|~|\*)", "recursive delete of a broad path"),
+        # rm with BOTH a recursive and a force flag, in any order/spelling: -rf, -fr,
+        # -r -f, --recursive --force, -r --force, ... Two lookaheads scoped to this
+        # command's args (stop at ; | & newline) so we don't match across commands.
+        (
+            r"\brm\b(?=[^;|&\n]*(?:-[a-z]*r|--recursive))(?=[^;|&\n]*(?:-[a-z]*f|--force))",
+            "recursive force-delete",
+        ),
+        # rm -r / (recursive delete of a broad path, even without a force flag)
+        (
+            r"\brm\b(?=[^;|&\n]*(?:-[a-z]*r|--recursive))[^;|&\n]*\s(/|~|\*)",
+            "recursive delete of a broad path",
+        ),
         (r"\bsudo\b|\bsu\s+-", "privilege escalation"),
         (r"\bmkfs\b|\bdd\s+if=", "raw disk write"),
         (r">\s*/dev/(sd|nvme|disk)", "writing to a raw device"),
