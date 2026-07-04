@@ -107,7 +107,13 @@ async def run_command_in_container(
     ]
     try:
         proc = await asyncio.create_subprocess_exec(
-            *argv, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT
+            *argv,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT,
+            # Own session/process group: collect_output kills the group on overflow
+            # or timeout, and without this the docker client shares the API's group,
+            # so the kill would SIGKILL uvicorn and every concurrent task.
+            start_new_session=True,
         )
     except Exception as exc:
         return ToolResult(f"Failed to start sandbox: {exc}", ToolStatus.ERROR)
