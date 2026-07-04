@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import enum
 import re
+from itertools import pairwise
 from urllib.parse import urlsplit
 
 
@@ -311,7 +312,7 @@ def destination_hosts(text: str) -> set[str]:
         toks = segment.split()
         # Host-valued flags: the value IS a host (`--url evil.com`, `-x proxy`), so
         # extract it — separate from the positional pass, which skips flag values.
-        for prev, tok in zip(toks, toks[1:]):
+        for prev, tok in pairwise(toks):
             if prev.split("=", 1)[0] in _HOST_FLAGS:
                 h = _host_of(tok.split(":", 1)[0] if ":" in tok and "//" not in tok else tok)
                 if h:
