@@ -805,3 +805,62 @@ async def test_crash_mid_run_fails_cleanly_with_unverified_receipt(session: Asyn
     assert task.receipt_hash  # a crash is auditable too
     receipt = json.loads(Workspace(Path(task.workspace_path)).read("receipt.json"))
     assert receipt["verified_by"] == "unverified"
+
+
+async def test_spawn_refused_when_budget_too_low_to_delegate(session: AsyncSession) -> None:
+    # Overshoot guard: a parent nearly out of budget must refuse to delegate, so the
+    # sub-tree can't push total cost past the ceiling (_MIN_SPAWN_BUDGET).
+    plans = [{"thought": "delegate", "tool": "spawn", "args": {"goal": "do the sub-thing"}}]
+    task = await _make_task(session, max_steps=10, token_budget=1000)  # remaining < 1000 at spawn
+    await _service(session, ScriptedLLM(plans)).run(task.id)
+
+    children = await TaskRepository(session).list_children(task.id)
+    assert children == []  # nothing was delegated
+    steps = await StepRepository(session).list_for_task(task.id)
+    assert any(
+        s.tool == "spawn" and s.status == "blocked" and "delegate" in s.observation for s in steps
+    )
+
+
+async def test_spawned_child_cost_folds_into_parent_budget(session: AsyncSession) -> None:
+    # The child's tokens count against the parent's ceiling — this is what keeps a
+    # spawn tree bounded by the parent's budget rather than multiplying it.
+    class _SpawnLLM(ScriptedLLM):
+        async def complete(self, system: str, user: str, **kw: object) -> LLMResult:
+            if "JSON array of 3 to 6" in user:  # understand (parent + child)
+                return LLMResult('["produce a result"]', "fake", 10)
+            if '"met"' in user:  # verify -> accept
+                return LLMResult(json.dumps({"score": 95, "met": True, "missing": []}), "fake", 20)
+            if "Sub-agent for" in user:  # parent, AFTER the spawn -> finish
+                return LLMResult(
+                    json.dumps(
+                        {"thought": "compose", "tool": "finish", "args": {"summary": "done"}}
+                    ),
+                    "fake",
+                    30,
+                )
+            if "the sub-thing" in user:  # the child's own plan -> finish immediately
+                return LLMResult(
+                    json.dumps(
+                        {"thought": "child done", "tool": "finish", "args": {"summary": "sub done"}}
+                    ),
+                    "fake",
+                    500,
+                )
+            return LLMResult(  # parent, first plan -> delegate
+                json.dumps(
+                    {"thought": "delegate", "tool": "spawn", "args": {"goal": "do the sub-thing"}}
+                ),
+                "fake",
+                100,
+            )
+
+    task = await _make_task(session, max_steps=10, token_budget=1_000_000)
+    await _service(session, _SpawnLLM([])).run(task.id)
+
+    children = await TaskRepository(session).list_children(task.id)
+    assert len(children) == 1
+    child = children[0]
+    assert child.tokens_used > 0
+    await session.refresh(task)
+    assert task.tokens_used >= child.tokens_used  # child cost folded into the parent's ceiling
