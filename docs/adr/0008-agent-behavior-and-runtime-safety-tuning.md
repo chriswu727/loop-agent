@@ -57,6 +57,14 @@ the decisions so they aren't silently "tuned back out" later.
   via an allowlisted `python` command, and actually reached the internet, because
   the guard only inspected the command string. This is still best-effort on the
   inline path; container mode's `--network none` remains the hard enforcement.
+- The command **policy regexes had a systematic weakness — they matched only the
+  obvious spelling**, so equivalents slipped through. Hardened across the board:
+  egress (heredoc/stdin inline code, not just `-c`); the "never run" deny list —
+  `rm` recursive-force in any flag form (`--recursive --force`, `-r -f`), named
+  fork bombs, `curl | <any interpreter>`, `chmod 777` in any flag order, and
+  raw-device writes via `dd of=` / `tee` / `cp` (which also fixed a false positive
+  that denied a plain file-to-file `dd`). Each has no-false-positive tests. Same
+  caveat: the shell surface is best-effort; container mode is the real jail.
 
 **A critical correctness fix worth remembering:** recording a human answer/approval
 used to rewrite the last step's observation *after* its ledger hash was set, so
