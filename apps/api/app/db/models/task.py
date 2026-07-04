@@ -30,6 +30,10 @@ class TaskModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     allowed_tools: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
     # Network egress is default-deny; True lets the task reach the network.
     allow_egress: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    # If egress is allowed, an optional allowlist of destination hosts. Empty/None =
+    # any host; a non-empty list restricts egress to just those hosts (best-effort
+    # at the policy layer; container mode is all-or-nothing).
+    egress_hosts: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
     # When True, non-allowlisted commands pause for the user to approve.
     require_approval: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     # When True, a headless browser (MCP) is available to the agent; implies egress.

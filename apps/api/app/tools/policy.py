@@ -242,6 +242,24 @@ def network_command_reason(command: str) -> str | None:
     return None
 
 
+# Destination hosts a command targets — for a per-host egress allowlist. A URL host
+# is a reliable signal; the first positional arg to a raw network binary is a host.
+_URL_HOST = re.compile(r"https?://([A-Za-z0-9._\-]+)", re.IGNORECASE)
+_RAW_HOST = re.compile(
+    r"\b(?:nc|ncat|telnet|ssh|scp|sftp)\b\s+(?:-\S+\s+)*([A-Za-z0-9][A-Za-z0-9.\-]*)",
+    re.IGNORECASE,
+)
+
+
+def destination_hosts(text: str) -> set[str]:
+    """Best-effort set of destination hostnames a command (or script) reaches, for
+    checking against an egress allowlist. Ports/paths stripped, lowercased."""
+    hosts = {m.group(1).lower().split(":")[0] for m in _URL_HOST.finditer(text)}
+    for m in _RAW_HOST.finditer(text):
+        hosts.add(m.group(1).lower().split(":")[0])
+    return {h for h in hosts if h}
+
+
 def _deny_scan_text(command: str) -> str:
     """The text the deny patterns match against: quoted string literals blanked so
     a keyword inside a git message or grep argument isn't read as a command — but

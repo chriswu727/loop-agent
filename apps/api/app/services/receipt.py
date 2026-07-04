@@ -198,9 +198,11 @@ def _render_markdown(receipt: dict[str, Any]) -> str:
         ),
         f"- **Score:** {receipt['score']}/100",
         (
-            lambda c: f"- **Coverage:** {c.get('checks', 0)} machine check(s) for "
-            f"{c.get('rubric_criteria', 0)} criteria — "
-            f"{'execution-backed' if c.get('execution_backed') else 'judgment'}"
+            lambda c: (
+                f"- **Coverage:** {c.get('checks', 0)} machine check(s) for "
+                f"{c.get('rubric_criteria', 0)} criteria — "
+                f"{'execution-backed' if c.get('execution_backed') else 'judgment'}"
+            )
         )(receipt.get("coverage") or {}),
         f"- **Steps:** {receipt['steps_used']} · **Tokens:** {receipt['tokens_used']}",
         f"- **Ledger head:** `{receipt['ledger_head']}`",

@@ -177,6 +177,14 @@ class AgentReactService:
                 or task.use_email
                 or task.use_calendar
             ),
+            # A browser/email/calendar task reaches many hosts, so the allowlist only
+            # applies when egress was granted via allow_egress alone.
+            egress_hosts=(
+                task.egress_hosts
+                if task.allow_egress
+                and not (task.use_browser or task.use_email or task.use_calendar)
+                else None
+            ),
         )
         self._egress_allowed = envelope.egress_allowed
         sandbox_image, sandbox_label = self._resolve_sandbox()

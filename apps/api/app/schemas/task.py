@@ -35,6 +35,9 @@ class TaskCreate(BaseModel):
     allowed_tools: list[str] | None = None
     # Network egress is default-deny; set true only if the task needs the network.
     allow_egress: bool = False
+    # Optional egress allowlist: if set (and allow_egress is true), only these hosts
+    # are reachable (e.g. ["api.github.com", "pypi.org"]); empty/None = any host.
+    egress_hosts: list[str] | None = None
     # When true, non-allowlisted commands pause for the user to approve before running.
     require_approval: bool = False
     # When true, give the agent a headless browser (MCP). Implies network egress.
@@ -70,6 +73,7 @@ class TaskRead(BaseModel):
     pending_question: str | None
     allowed_tools: list[str] | None
     allow_egress: bool
+    egress_hosts: list[str] | None
     require_approval: bool
     use_browser: bool
     use_email: bool
@@ -104,6 +108,7 @@ class TaskRead(BaseModel):
             pending_question=m.pending_question,  # type: ignore[attr-defined]
             allowed_tools=m.allowed_tools,  # type: ignore[attr-defined]
             allow_egress=m.allow_egress,  # type: ignore[attr-defined]
+            egress_hosts=m.egress_hosts,  # type: ignore[attr-defined]
             require_approval=m.require_approval,  # type: ignore[attr-defined]
             use_browser=m.use_browser,  # type: ignore[attr-defined]
             use_email=m.use_email,  # type: ignore[attr-defined]

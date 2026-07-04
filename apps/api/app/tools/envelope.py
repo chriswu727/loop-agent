@@ -20,8 +20,10 @@ EXECUTOR_TOOLS = frozenset({"write_file", "edit_file", "read_file", "run_command
 @dataclass(slots=True, frozen=True)
 class CapabilityEnvelope:
     allowed_tools: frozenset[str]
-    # Declared now, enforced in a later phase (egress firewall / subpath jail):
     egress_allowed: bool = False
+    # If egress is allowed, an optional allowlist of destination hosts. Empty = any
+    # host; non-empty restricts egress to just these (best-effort at the policy layer).
+    egress_hosts: frozenset[str] = frozenset()
 
     @classmethod
     def full(cls) -> CapabilityEnvelope:
@@ -30,7 +32,11 @@ class CapabilityEnvelope:
 
     @classmethod
     def from_tools(
-        cls, tools: list[str] | None, *, egress_allowed: bool = False
+        cls,
+        tools: list[str] | None,
+        *,
+        egress_allowed: bool = False,
+        egress_hosts: list[str] | None = None,
     ) -> CapabilityEnvelope:
         """Build from a user/skill-supplied tool list. ``None`` means full tool
         access; an empty or invalid list is narrowed to whatever valid tools were
@@ -38,11 +44,24 @@ class CapabilityEnvelope:
         allowed = (
             EXECUTOR_TOOLS if tools is None else frozenset(t for t in tools if t in EXECUTOR_TOOLS)
         )
-        return cls(allowed_tools=allowed, egress_allowed=egress_allowed)
+        return cls(
+            allowed_tools=allowed,
+            egress_allowed=egress_allowed,
+            egress_hosts=frozenset(h.strip().lower() for h in (egress_hosts or []) if h.strip()),
+        )
 
     def permits(self, tool: str) -> bool:
         # Only executor tools are gated; control-flow tools are always allowed.
         return tool not in EXECUTOR_TOOLS or tool in self.allowed_tools
+
+    def egress_host_allowed(self, host: str) -> bool:
+        """Whether egress to ``host`` is permitted. An empty allowlist means any
+        host (once egress itself is granted); otherwise the host — or a subdomain
+        of a listed host — must be present (``api.github.com`` matches ``github.com``)."""
+        if not self.egress_hosts:
+            return True
+        h = host.strip().lower().rstrip(".")
+        return any(h == a or h.endswith("." + a) for a in self.egress_hosts)
 
     def restricted_executor_tools(self) -> list[str] | None:
         """Sorted allowed executor tools if this envelope is narrower than full,
