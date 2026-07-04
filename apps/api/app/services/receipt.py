@@ -141,9 +141,13 @@ def verify_receipt_full(
     hash_ok, recomputed = verify_receipt(receipt)
     result: dict[str, Any] = {"hash_ok": hash_ok, "recomputed_hash": recomputed}
 
+    # receipt.json is workspace-writable, so every field is untrusted — a malformed
+    # shape must return "invalid", never raise (which would 500 the endpoint).
     sig = receipt.get("signature")
     if not sig:
         result["signature"] = "unsigned"
+    elif not isinstance(sig, str):
+        result["signature"] = "invalid"
     else:
         vk = _verify_key()
         if vk is None:
@@ -152,7 +156,7 @@ def verify_receipt_full(
             try:
                 vk.verify(bytes.fromhex(sig), str(receipt.get("receipt_hash", "")).encode())
                 result["signature"] = "valid"
-            except (InvalidSignature, ValueError):
+            except (InvalidSignature, ValueError, TypeError):
                 result["signature"] = "invalid"
 
     if db_anchor is not None:
@@ -160,14 +164,22 @@ def verify_receipt_full(
 
     if workspace is not None:
         mismatches: list[dict[str, str]] = []
-        for f in receipt.get("files", []):
+        files = receipt.get("files")
+        for f in files if isinstance(files, list) else []:
+            if not isinstance(f, dict):
+                mismatches.append({"path": str(f), "reason": "malformed"})
+                continue
+            path = f.get("path")
+            if not isinstance(path, str):
+                mismatches.append({"path": str(path), "reason": "malformed"})
+                continue
             try:
-                actual = hashlib.sha256(workspace.resolve(f["path"]).read_bytes()).hexdigest()
+                actual = hashlib.sha256(workspace.resolve(path).read_bytes()).hexdigest()
             except Exception:
-                mismatches.append({"path": f["path"], "reason": "missing"})
+                mismatches.append({"path": path, "reason": "missing"})
                 continue
             if actual != f.get("sha256"):
-                mismatches.append({"path": f["path"], "reason": "modified"})
+                mismatches.append({"path": path, "reason": "modified"})
         result["files_ok"] = not mismatches
         result["file_mismatches"] = mismatches
 

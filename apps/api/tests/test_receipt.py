@@ -3,6 +3,7 @@ tampering with a recorded fact is detected."""
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -171,3 +172,61 @@ async def test_receipt_endpoint_404_without_receipt(client: AsyncClient) -> None
     created = (await client.post("/api/v1/tasks", json={"goal": "no receipt yet"})).json()
     resp = await client.get(f"/api/v1/tasks/{created['id']}/receipt")
     assert resp.status_code == 404
+
+
+def test_verify_receipt_full_never_raises_on_malformed_receipt(tmp_path: Path) -> None:
+    # receipt.json is workspace-writable; a malformed shape must return invalid, not 500.
+    from app.services.receipt import verify_receipt_full
+    from app.tools import Workspace
+
+    ws = Workspace(tmp_path / "ws")
+    for bad in (
+        {"receipt_hash": "ab", "signature": 123, "files": []},
+        {"receipt_hash": "ab", "files": [{"sha256": "x"}]},  # missing path
+        {"receipt_hash": "ab", "files": ["oops"]},  # non-dict entry
+    ):
+        report = verify_receipt_full(bad, workspace=ws)  # must not raise
+        assert report["valid"] is False
+
+
+def test_offline_verifier_confines_manifest_paths(tmp_path: Path) -> None:
+    # A crafted manifest path must not make the script read outside the receipt dir.
+    import subprocess
+    import sys
+
+    rp = tmp_path / "receipt.json"
+    body = {"goal": "x", "files": [{"path": "/etc/hosts", "sha256": "0" * 64}]}
+    from app.services.receipt import _canonical_hash
+
+    rp.write_text(json.dumps({"receipt_hash": _canonical_hash(body), **body}))
+    script = Path(__file__).resolve().parents[1] / "scripts" / "verify_receipt.py"
+    out = subprocess.run([sys.executable, str(script), str(rp)], capture_output=True, text=True)
+    assert out.returncode == 1
+    assert "escapes receipt dir" in out.stdout
+
+
+def test_offline_verifier_checks_signature_with_pubkey(tmp_path: Path) -> None:
+    # A forged receipt with a junk signature must fail when --pubkey is supplied.
+    import subprocess
+    import sys
+
+    from cryptography.hazmat.primitives import serialization as s
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
+    priv = Ed25519PrivateKey.generate()
+    pub = (
+        priv.public_key().public_bytes(s.Encoding.PEM, s.PublicFormat.SubjectPublicKeyInfo).decode()
+    )
+    ws, _h, receipt = _build(tmp_path)  # unsigned
+    receipt["signature"] = "00" * 64  # forged signature
+    rp = tmp_path / "ws" / "receipt.json"
+    rp.write_text(json.dumps(receipt))
+    pk = tmp_path / "pub.pem"
+    pk.write_text(pub)
+    script = Path(__file__).resolve().parents[1] / "scripts" / "verify_receipt.py"
+
+    out = subprocess.run(
+        [sys.executable, str(script), str(rp), "--pubkey", str(pk)], capture_output=True, text=True
+    )
+    assert out.returncode == 1  # signature INVALID
+    assert "INVALID" in out.stdout
