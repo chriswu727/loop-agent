@@ -45,8 +45,15 @@ _DENY: tuple[tuple[re.Pattern[str], str], ...] = tuple(
             "recursive delete of a broad path",
         ),
         (r"\bsudo\b|\bsu\s+-", "privilege escalation"),
-        (r"\bmkfs\b|\bdd\s+if=", "raw disk write"),
-        (r">\s*/dev/(sd|nvme|disk)", "writing to a raw device"),
+        (r"\bmkfs(\.\w+)?\b", "format a filesystem"),
+        # WRITING to a raw block device (of=, redirect, tee, cp) — destroys the
+        # disk. Reads (dd if=/dev/sda of=backup.img) and /dev/null|stdout are fine,
+        # and a plain file-to-file dd is no longer over-blocked.
+        (
+            r"(\bof=/dev/|>\s*/dev/|\btee\b[^;|&\n]*/dev/|\bcp\b[^;|&\n]*\s/dev/)"
+            r"(sd|nvme|disk|hd|vd|mmcblk|loop)",
+            "writing to a raw block device",
+        ),
         (r"\bshutdown\b|\breboot\b|\bhalt\b|\bpoweroff\b", "power control"),
         # A function whose body pipes to itself and backgrounds — `:(){ :|:& };:`
         # and named variants like `bomb(){ bomb|bomb & };bomb`.

@@ -61,6 +61,11 @@ def test_workspace_edit_refuses_missing_or_ambiguous(tmp_path: Path) -> None:
         ("chmod 777 -R /", Verdict.DENY),  # flag-order evasion
         ("chmod -R 0777 /etc", Verdict.DENY),
         ("bomb(){ bomb|bomb & };bomb", Verdict.DENY),  # named fork bomb
+        ("dd of=/dev/sda", Verdict.DENY),  # raw-device write without if=
+        ("tee /dev/sda < img", Verdict.DENY),
+        ("cp file /dev/nvme0n1", Verdict.DENY),
+        ("mkfs.ext4 /dev/sdb", Verdict.DENY),
+        ("dd if=input.bin of=output.bin", Verdict.NEEDS_APPROVAL),  # file-to-file, not a device
         ("chmod 777 mydir", Verdict.NEEDS_APPROVAL),  # 777 but not a broad path
         (":(){ :|:& };:", Verdict.DENY),
         ("python solution.py", Verdict.ALLOW),
