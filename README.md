@@ -12,7 +12,7 @@ foundation. Runs on a laptop with one LLM API key and no other infrastructure.
 [![CI](https://github.com/chriswu727/loop-agent/actions/workflows/ci.yml/badge.svg)](https://github.com/chriswu727/loop-agent/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 [![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/)
-[![Tests](https://img.shields.io/badge/tests-137%20offline-brightgreen.svg)](./apps/api/tests)
+[![Tests](https://img.shields.io/badge/tests-162%20offline-brightgreen.svg)](./apps/api/tests)
 
 `Next.js 16` · `FastAPI` · `Python 3.12` · `Postgres or SQLite` · `MIT`
 
@@ -127,7 +127,8 @@ the two axes a chat-log agent can't retrofit:
 - **Triggers** — save a task template and fire it from any external event
   (`POST /triggers/{id}/fire`) or on a schedule (interval heartbeat).
 - **Human-in-the-loop** — `ask_user` pauses for your input and resumes exactly where
-  it left off, surviving a process restart.
+  it left off, surviving a process restart. A finished task can be **retried** with
+  the same goal and settings (the original stays as an audit record).
 - **Live view** — the task page streams updates over SSE (with a polling fallback):
   step timeline, budget meters, output files, and ledger status.
 
@@ -181,7 +182,7 @@ See [`.env.example`](./.env.example). Key knobs:
 
 | Variable | Purpose |
 |----------|---------|
-| `ANTHROPIC_API_KEY` / `DEEPSEEK_API_KEY` / `GEMINI_API_KEY` / `GLM_API_KEY` | LLM providers (at least one). The loop cascades on a retryable failure. |
+| `ANTHROPIC_API_KEY` / `DEEPSEEK_API_KEY` / `GEMINI_API_KEY` / `GLM_API_KEY` | LLM providers (at least one). A retryable failure is retried, then cascades to the next provider. |
 | `LLM_DEFAULT_PROVIDER` | which provider to try first. |
 | `OLLAMA_BASE_URL` | run on a fully-local model via Ollama (no API key). |
 | `API_TOKEN` | optional bearer-token gate on the whole API. |
@@ -224,7 +225,7 @@ differentiator roadmap: [`docs/STRATEGY.md`](./docs/STRATEGY.md).
 ## Tests
 
 ```bash
-cd apps/api && . .venv/bin/activate && pytest    # 137 tests, all offline
+cd apps/api && . .venv/bin/activate && pytest    # 162 tests, all offline
 ```
 
 Drives every stop condition with a scripted fake model; proves the sandbox refuses
