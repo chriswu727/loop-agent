@@ -137,3 +137,95 @@ async def test_handle_event_respects_channel_allowlist(monkeypatch: pytest.Monke
     # A message from a channel not on the allowlist is dropped before run_chat_turn.
     await handle_slack_event({"type": "message", "channel": "C-OTHER", "text": "hi"})
     assert posted == []
+
+
+async def test_handle_event_fails_closed_without_allowlist(monkeypatch: pytest.MonkeyPatch) -> None:
+    # No allowlist and no explicit public opt-in -> a code-running bot must REFUSE.
+    monkeypatch.setattr(settings, "slack_bot_token", "xoxb-token")
+    monkeypatch.setattr(settings, "slack_signing_secret", SECRET)
+    monkeypatch.setattr(settings, "slack_allowed_channels", None)
+    monkeypatch.setattr(settings, "slack_allow_public", False)
+    called: list[str] = []
+
+    async def fake_run(chat_id: str, message: str) -> None:
+        called.append(chat_id)
+
+    monkeypatch.setattr("app.services.slack.run_chat_turn", fake_run)
+    await handle_slack_event({"type": "message", "channel": "C1", "text": "run id"})
+    assert called == []  # refused (fail closed)
+
+
+async def test_handle_event_allows_public_when_opted_in(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(settings, "slack_bot_token", "xoxb-token")
+    monkeypatch.setattr(settings, "slack_signing_secret", SECRET)
+    monkeypatch.setattr(settings, "slack_allowed_channels", None)
+    monkeypatch.setattr(settings, "slack_allow_public", True)
+    called: list[str] = []
+
+    async def fake_run(chat_id: str, message: str) -> None:
+        called.append(chat_id)
+
+    monkeypatch.setattr("app.services.slack.run_chat_turn", fake_run)
+    await handle_slack_event({"type": "message", "channel": "C1", "text": "do it"})
+    assert called == ["C1"]  # processed once public is opted in
+
+
+async def test_handle_event_posts_failure_on_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(settings, "slack_bot_token", "xoxb-token")
+    monkeypatch.setattr(settings, "slack_signing_secret", SECRET)
+    monkeypatch.setattr(settings, "slack_allow_public", True)
+
+    async def boom(chat_id: str, message: str) -> None:
+        raise RuntimeError("llm down")
+
+    posted: list[tuple[str, str]] = []
+
+    async def fake_post(self: object, channel: str, text: str) -> None:
+        posted.append((channel, text))
+
+    monkeypatch.setattr("app.services.slack.run_chat_turn", boom)
+    monkeypatch.setattr("app.services.slack.SlackClient.post_message", fake_post)
+    await handle_slack_event({"type": "message", "channel": "C1", "text": "x"})
+    assert posted and "went wrong" in posted[0][1]  # a failure isn't swallowed silently
+
+
+async def test_endpoint_rejects_non_object_json(
+    client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(settings, "slack_bot_token", "xoxb-token")
+    monkeypatch.setattr(settings, "slack_signing_secret", SECRET)
+    ts = str(int(time.time()))
+    resp = await client.post(
+        "/slack/events",
+        content=b"123",  # valid JSON, not an object
+        headers={"X-Slack-Request-Timestamp": ts, "X-Slack-Signature": _sign(SECRET, ts, "123")},
+    )
+    assert resp.status_code == 401  # rejected, not a 500 crash
+
+
+async def test_endpoint_dedups_by_event_id(
+    client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(settings, "slack_bot_token", "xoxb-token")
+    monkeypatch.setattr(settings, "slack_signing_secret", SECRET)
+    scheduled: list[dict[str, Any]] = []
+
+    async def fake_handle(event: dict[str, Any]) -> None:
+        scheduled.append(event)
+
+    monkeypatch.setattr("app.api.v1.routes.slack.handle_slack_event", fake_handle)
+    body = json.dumps(
+        {
+            "type": "event_callback",
+            "event_id": "Ev0PV52K21",
+            "event": {"type": "message", "channel": "C1", "text": "hi"},
+        }
+    )
+    for _ in range(2):  # same event_id twice (a replay) -> processed at most once
+        ts = str(int(time.time()))
+        await client.post(
+            "/slack/events",
+            content=body.encode(),
+            headers={"X-Slack-Request-Timestamp": ts, "X-Slack-Signature": _sign(SECRET, ts, body)},
+        )
+    assert len(scheduled) == 1

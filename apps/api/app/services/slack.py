@@ -71,18 +71,30 @@ def _is_actionable(event: dict[str, Any]) -> bool:
 async def handle_slack_event(event: dict[str, Any]) -> None:
     """Run one Slack message as a chat turn and post the reply back. Runs in the
     background (Slack needs a sub-3s ack), so it opens its own HTTP client."""
-    if not _is_actionable(event):
+    if not _is_actionable(event) or not settings.slack_configured:
         return
     channel = str(event["channel"])
-    if settings.slack_configured is False:
-        return
+    # Fail CLOSED, like the Telegram inlet: this bot runs shell code, so with no
+    # channel allowlist it refuses unless you explicitly opt into a public bot.
     allowlist = settings.slack_allowlist()
+    if not allowlist and not settings.slack_allow_public:
+        log.error("slack.refused_no_allowlist", channel=channel)
+        return
     if allowlist and channel not in allowlist:
         log.warning("slack.channel_not_allowed", channel=channel)
         return
-    task = await run_chat_turn(channel, str(event["text"]))
-    if task is None:
-        return
+
     assert settings.slack_bot_token is not None
-    async with httpx.AsyncClient(timeout=30) as http:
-        await SlackClient(settings.slack_bot_token, http).post_message(channel, reply_for(task))
+    reply = "Sorry — something went wrong running that. Please try again."
+    try:
+        task = await run_chat_turn(channel, str(event["text"]))
+        reply = reply_for(task) if task is not None else ""
+    except Exception:  # a run failure must not vanish silently in a background task
+        log.exception("slack.turn_failed", channel=channel)
+    if not reply:
+        return
+    try:
+        async with httpx.AsyncClient(timeout=30) as http:
+            await SlackClient(settings.slack_bot_token, http).post_message(channel, reply)
+    except Exception:
+        log.exception("slack.post_failed", channel=channel)

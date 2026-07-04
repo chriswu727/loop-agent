@@ -197,6 +197,7 @@ class Settings(BaseSettings):
     slack_bot_token: str | None = None
     slack_signing_secret: str | None = None
     slack_allowed_channels: str | None = None
+    slack_allow_public: bool = False
 
     @property
     def slack_configured(self) -> bool:
