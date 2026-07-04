@@ -6,7 +6,7 @@ Kubernetes uses these: ``/healthz`` to decide whether to restart a wedged pod,
 
 from __future__ import annotations
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Response, status
 from sqlalchemy import text
 
 from app.api.v1.deps import CacheDep, SessionDep
@@ -22,7 +22,7 @@ async def healthz() -> dict[str, str]:
 
 
 @router.get("/readyz", summary="Readiness probe")
-async def readyz(session: SessionDep, cache: CacheDep) -> dict[str, object]:
+async def readyz(session: SessionDep, cache: CacheDep, response: Response) -> dict[str, object]:
     """Can the process serve traffic? Verifies database and cache connectivity."""
     checks: dict[str, str] = {}
 
@@ -39,4 +39,8 @@ async def readyz(session: SessionDep, cache: CacheDep) -> dict[str, object]:
         checks["cache"] = "error"
 
     ready = all(v == "ok" for v in checks.values())
+    # k8s decides readiness from the status code, not the body — so a dead
+    # dependency must return 503, or the pod stays in rotation serving errors.
+    if not ready:
+        response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
     return {"status": "ready" if ready else "not_ready", "checks": checks}
