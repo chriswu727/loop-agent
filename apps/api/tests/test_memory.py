@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from app.services.memory import MemoryStore
+from app.services.memory import _MAX_FILE_BYTES, _MAX_NOTE, MemoryStore
 
 
 def test_remember_appears_in_snapshot(tmp_path: Path) -> None:
@@ -35,3 +35,20 @@ def test_snapshot_is_bounded(tmp_path: Path) -> None:
     snap = store.snapshot(limit=500)
     assert len(snap) <= 500
     assert "fact number 999" in snap  # keeps the most recent
+
+
+def test_a_single_note_is_length_capped(tmp_path: Path) -> None:
+    store = MemoryStore(tmp_path / "mem")
+    result = store.remember("x" * 5000)
+    assert "truncated" in result
+    assert store.main.stat().st_size <= _MAX_NOTE + 20  # not the full 5000
+
+
+def test_memory_file_is_bounded_so_startup_reads_stay_cheap(tmp_path: Path) -> None:
+    # A task can't grow the shared store without limit; the file is trimmed tail-most.
+    store = MemoryStore(tmp_path / "mem")
+    for i in range(3000):
+        store.remember(f"note {i} " + "pad " * 10)
+    assert store.main.stat().st_size <= _MAX_FILE_BYTES
+    assert store.main.read_text().startswith("- ")  # no partial leading line
+    assert "note 2999" in store.snapshot()  # most-recent entries survive the trim
