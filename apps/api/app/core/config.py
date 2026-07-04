@@ -141,6 +141,25 @@ class Settings(BaseSettings):
                 return None
         return None
 
+    # Optional ed25519 key the server signs Receipts with. Unset = Receipts are
+    # tamper-EVIDENT (content hash) but not tamper-PROOF; set it for high-assurance
+    # deployments so a workspace-writer without the private key can't forge one.
+    # `make receipt-keygen` writes a key here.
+    agent_receipt_signing_key: str | None = None
+    agent_receipt_signing_key_file: str | None = None
+
+    def receipt_signing_key_pem(self) -> str | None:
+        if self.agent_receipt_signing_key:
+            return self.agent_receipt_signing_key
+        if self.agent_receipt_signing_key_file:
+            try:
+                from pathlib import Path
+
+                return Path(self.agent_receipt_signing_key_file).read_text()
+            except OSError:
+                return None
+        return None
+
     agent_command_timeout_seconds: int = 60
     agent_command_output_limit: int = 4_000  # chars of command output kept
     # auto  = run allowlisted/unknown commands, hard-block dangerous ones

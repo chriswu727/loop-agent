@@ -15,12 +15,37 @@ import hashlib
 import json
 from typing import Any
 
+from cryptography.exceptions import InvalidSignature
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey, Ed25519PublicKey
+from cryptography.hazmat.primitives.serialization import load_pem_private_key
+
+from app.core.config import settings
 from app.db.models.task import TaskModel
 from app.services.verification import CheckResult, as_dicts
 from app.tools import Workspace
 
 RECEIPT_JSON = "receipt.json"
 RECEIPT_MD = "RECEIPT.md"
+# Added AFTER the content hash is computed, so they're excluded when recomputing it.
+_NON_BODY_KEYS = ("receipt_hash", "signature")
+
+
+def _signing_key() -> Ed25519PrivateKey | None:
+    pem = settings.receipt_signing_key_pem()
+    if not pem:
+        return None
+    try:
+        key = load_pem_private_key(pem.encode(), password=None)
+    except (ValueError, TypeError):
+        return None
+    return key if isinstance(key, Ed25519PrivateKey) else None
+
+
+def _verify_key() -> Ed25519PublicKey | None:
+    """The public key Receipt signatures verify against — derived from the server's
+    signing key. (Independent verifiers use the published public key out-of-band.)"""
+    priv = _signing_key()
+    return priv.public_key() if priv is not None else None
 
 
 def _file_manifest(workspace: Workspace) -> list[dict[str, Any]]:
@@ -65,6 +90,11 @@ def build_receipt(
     # drift), then store the hash alongside it.
     receipt_hash = _canonical_hash(body)
     receipt = {"receipt_hash": receipt_hash, **body}
+    # Optionally sign the hash: with a signing key, forging a consistent Receipt
+    # needs the private key, not just workspace write access (tamper-PROOF).
+    signer = _signing_key()
+    if signer is not None:
+        receipt["signature"] = signer.sign(receipt_hash.encode()).hex()
 
     workspace.write(RECEIPT_JSON, json.dumps(receipt, indent=2, ensure_ascii=False))
     workspace.write(RECEIPT_MD, _render_markdown(receipt))
@@ -80,9 +110,67 @@ def verify_receipt(receipt: dict[str, Any]) -> tuple[bool, str]:
     """Recompute a receipt's content hash from its body and compare to the stored
     one. Returns (ok, recomputed_hash). Any tampering with a recorded fact — the
     goal, a check verdict, a file's sha256, the ledger head — changes the hash."""
-    body = {k: v for k, v in receipt.items() if k != "receipt_hash"}
+    body = {k: v for k, v in receipt.items() if k not in _NON_BODY_KEYS}
     recomputed = _canonical_hash(body)
     return recomputed == receipt.get("receipt_hash"), recomputed
+
+
+def verify_receipt_full(
+    receipt: dict[str, Any],
+    *,
+    workspace: Workspace | None = None,
+    db_anchor: str | None = None,
+) -> dict[str, Any]:
+    """A layered re-verification, not just the self-consistent content hash:
+
+    - ``hash_ok``    — the body still hashes to the stored ``receipt_hash``.
+    - ``signature``  — unsigned | valid | invalid | unverifiable (signed but no key).
+    - ``anchor_ok``  — the hash matches the one recorded independently in the DB at
+      completion time, so editing the file + recomputing its own hash is caught.
+    - ``files_ok``   — every output file still hashes to its recorded manifest sha256,
+      so an output altered after the fact is caught.
+    - ``valid``      — all performed checks passed (a bad signature or a mismatch fails).
+    """
+    hash_ok, recomputed = verify_receipt(receipt)
+    result: dict[str, Any] = {"hash_ok": hash_ok, "recomputed_hash": recomputed}
+
+    sig = receipt.get("signature")
+    if not sig:
+        result["signature"] = "unsigned"
+    else:
+        vk = _verify_key()
+        if vk is None:
+            result["signature"] = "unverifiable"  # signed, but this server has no key
+        else:
+            try:
+                vk.verify(bytes.fromhex(sig), str(receipt.get("receipt_hash", "")).encode())
+                result["signature"] = "valid"
+            except (InvalidSignature, ValueError):
+                result["signature"] = "invalid"
+
+    if db_anchor is not None:
+        result["anchor_ok"] = db_anchor == receipt.get("receipt_hash")
+
+    if workspace is not None:
+        mismatches: list[dict[str, str]] = []
+        for f in receipt.get("files", []):
+            try:
+                actual = hashlib.sha256(workspace.resolve(f["path"]).read_bytes()).hexdigest()
+            except Exception:
+                mismatches.append({"path": f["path"], "reason": "missing"})
+                continue
+            if actual != f.get("sha256"):
+                mismatches.append({"path": f["path"], "reason": "modified"})
+        result["files_ok"] = not mismatches
+        result["file_mismatches"] = mismatches
+
+    result["valid"] = bool(
+        hash_ok
+        and result["signature"] != "invalid"
+        and result.get("anchor_ok", True)
+        and result.get("files_ok", True)
+    )
+    return result
 
 
 def _render_markdown(receipt: dict[str, Any]) -> str:
@@ -104,7 +192,12 @@ def _render_markdown(receipt: dict[str, Any]) -> str:
         f"- **Score:** {receipt['score']}/100",
         f"- **Steps:** {receipt['steps_used']} · **Tokens:** {receipt['tokens_used']}",
         f"- **Ledger head:** `{receipt['ledger_head']}`",
-        f"- **Receipt hash:** `{receipt['receipt_hash']}`",
+        f"- **Receipt hash:** `{receipt['receipt_hash']}`"
+        + (
+            " — _ed25519-signed_"
+            if receipt.get("signature")
+            else " — _unsigned (tamper-evident, not tamper-proof)_"
+        ),
         "",
         "## Goal",
         receipt["goal"],

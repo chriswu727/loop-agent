@@ -25,14 +25,37 @@ interface Receipt {
   files?: ReceiptFile[];
 }
 
+function IntegrityRow({ ok, label }: { ok: boolean; label: string }) {
+  return (
+    <li className="flex items-center gap-1.5">
+      <span
+        className={`h-1.5 w-1.5 rounded-full ${ok ? 'bg-green-500' : 'bg-red-500'}`}
+        aria-hidden
+      />
+      <span className={ok ? 'opacity-70' : 'font-medium text-red-600 dark:text-red-400'}>
+        {label}
+      </span>
+    </li>
+  );
+}
+
+interface ReceiptReport {
+  receipt: Receipt;
+  valid: boolean;
+  signature?: string; // unsigned | valid | invalid | unverifiable
+  anchor_ok?: boolean;
+  files_ok?: boolean;
+  file_mismatches?: { path: string; reason: string }[];
+}
+
 export function ReceiptPanel({ taskId }: { taskId: string }) {
-  const [data, setData] = useState<{ receipt: Receipt; valid: boolean } | null>(null);
+  const [data, setData] = useState<ReceiptReport | null>(null);
   const [open, setOpen] = useState(false);
 
   useEffect(() => {
     tasksApi
       .receipt(taskId)
-      .then((d) => setData(d as unknown as { receipt: Receipt; valid: boolean }))
+      .then((d) => setData(d as unknown as ReceiptReport))
       .catch(() => {});
   }, [taskId]);
 
@@ -73,6 +96,33 @@ export function ReceiptPanel({ taskId }: { taskId: string }) {
             {' · score '}
             <b>{r.score}/100</b>
           </p>
+
+          {/* Layered integrity: content hash, ed25519 signature, DB anchor, file re-hash. */}
+          <ul className="space-y-0.5">
+            <IntegrityRow ok={data.valid} label="content hash" />
+            {data.signature && data.signature !== 'unsigned' && (
+              <IntegrityRow
+                ok={data.signature === 'valid'}
+                label={`signature ${data.signature}`}
+              />
+            )}
+            {data.signature === 'unsigned' && (
+              <li className="opacity-40">signature: unsigned (tamper-evident, not tamper-proof)</li>
+            )}
+            {data.anchor_ok !== undefined && (
+              <IntegrityRow ok={data.anchor_ok} label="matches independent DB anchor" />
+            )}
+            {data.files_ok !== undefined && (
+              <IntegrityRow
+                ok={data.files_ok}
+                label={
+                  data.files_ok
+                    ? 'output files match manifest'
+                    : `output files ALTERED: ${(data.file_mismatches ?? []).map((m) => m.path).join(', ')}`
+                }
+              />
+            )}
+          </ul>
 
           {r.checks && r.checks.length > 0 && (
             <div>

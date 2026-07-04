@@ -220,6 +220,21 @@ class TaskService:
         except (FileNotFoundError, ValueError, OSError):
             return None
 
+    async def get_receipt_report(self, task_id: uuid.UUID) -> dict[str, Any] | None:
+        """The Receipt plus a layered re-verification: content hash, signature, the
+        independent DB hash anchor, and a re-hash of every output file against the
+        manifest — so tampering with the file *or* the receipt is caught, not just
+        an internally-inconsistent edit."""
+        from app.services.receipt import verify_receipt_full
+
+        receipt = await self.get_receipt(task_id)
+        if receipt is None:
+            return None
+        task = await self.get(task_id)
+        ws = await self._workspace(task_id)
+        report = verify_receipt_full(receipt, workspace=ws, db_anchor=task.receipt_hash)
+        return {"receipt": receipt, **report}
+
     async def read_file(self, task_id: uuid.UUID, relpath: str) -> tuple[str, int, bool]:
         ws = await self._workspace(task_id)
         if ws is None:

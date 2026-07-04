@@ -24,7 +24,6 @@ from app.schemas.common import Page
 from app.schemas.file import FileContent, FileEntry
 from app.schemas.step import LedgerStatus, StepRead
 from app.schemas.task import LimitDefaults, RespondIn, TaskCreate, TaskRead, TaskSnapshot
-from app.services.receipt import verify_receipt
 from app.services.runner import trigger_task
 from app.services.task import TaskService
 
@@ -143,13 +142,12 @@ async def verify_ledger(task_id: uuid.UUID, service: TaskServiceDep) -> LedgerSt
     return LedgerStatus(**await service.verify_ledger(task_id))
 
 
-@router.get("/{task_id}/receipt", summary="The task's Receipt + content-hash re-verification")
+@router.get("/{task_id}/receipt", summary="The task's Receipt + layered re-verification")
 async def task_receipt(task_id: uuid.UUID, service: TaskServiceDep) -> dict[str, Any]:
-    receipt = await service.get_receipt(task_id)
-    if receipt is None:
-        raise NotFoundError("This task has no Receipt yet (only accepted tasks get one).")
-    ok, recomputed = verify_receipt(receipt)
-    return {"receipt": receipt, "valid": ok, "recomputed_hash": recomputed}
+    report = await service.get_receipt_report(task_id)
+    if report is None:
+        raise NotFoundError("This task has no Receipt yet (it hasn't reached a terminal state).")
+    return report
 
 
 async def _build_snapshot(service: TaskService, task_id: uuid.UUID) -> TaskSnapshot:

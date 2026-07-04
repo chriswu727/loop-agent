@@ -57,6 +57,10 @@ dev: ## Run web + api in watch mode locally (requires `make setup`)
 verify-receipt: ## Independently verify a Receipt: make verify-receipt f=path/to/receipt.json
 	cd apps/api && python scripts/verify_receipt.py $(f)
 
+.PHONY: receipt-keygen
+receipt-keygen: ## Generate a Receipt signing key -> receipt_signing_key.pem (set AGENT_RECEIPT_SIGNING_KEY_FILE)
+	cd apps/api && . .venv/bin/activate && python -c "from app.services.skills import generate_keypair; priv,pub=generate_keypair(); open('receipt_signing_key.pem','w').write(priv); print('wrote apps/api/receipt_signing_key.pem — set AGENT_RECEIPT_SIGNING_KEY_FILE=./receipt_signing_key.pem to sign Receipts')"
+
 .PHONY: skill-keygen
 skill-keygen: ## Generate a skill signing keypair: make skill-keygen out=.
 	cd apps/api && . .venv/bin/activate && python scripts/skill_tool.py keygen $(or $(out),.)

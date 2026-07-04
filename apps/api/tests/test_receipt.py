@@ -26,6 +26,82 @@ def test_verify_receipt_detects_tampering() -> None:
     assert verify_receipt(receipt)[0] is False
 
 
+def _build(tmp_path: Path, **overrides: object):
+    from unittest.mock import MagicMock
+
+    from app.services.receipt import build_receipt
+    from app.tools import Workspace
+
+    ws = Workspace(tmp_path / "ws")
+    ws.write("out.txt", "hello world")
+    task = MagicMock(
+        id="t1",
+        goal="do a thing",
+        rubric=["make out.txt"],
+        sandbox="inline",
+        steps_used=3,
+        tokens_used=99,
+    )
+    h, receipt = build_receipt(
+        task, [], score=90, verified_by="judgment", workspace=ws, ledger_head="abc"
+    )
+    return ws, h, receipt
+
+
+def test_verify_full_catches_a_modified_output_file(tmp_path: Path) -> None:
+    from app.services.receipt import verify_receipt_full
+
+    ws, h, receipt = _build(tmp_path)
+    assert verify_receipt_full(receipt, workspace=ws, db_anchor=h)["valid"] is True
+    (tmp_path / "ws" / "out.txt").write_text("HACKED")  # alter the output after the fact
+    report = verify_receipt_full(receipt, workspace=ws, db_anchor=h)
+    assert report["files_ok"] is False
+    assert report["valid"] is False
+    assert report["file_mismatches"][0]["path"] == "out.txt"
+
+
+def test_verify_full_catches_forged_fact_via_db_anchor(tmp_path: Path) -> None:
+    # Edit a fact AND recompute the embedded hash so it is self-consistent — the
+    # independent DB anchor still catches it.
+    from app.services.receipt import _NON_BODY_KEYS, verify_receipt_full
+
+    ws, h, receipt = _build(tmp_path)
+    forged = dict(receipt)
+    forged["goal"] = "something the agent never did"
+    forged["receipt_hash"] = _canonical_hash(
+        {k: v for k, v in forged.items() if k not in _NON_BODY_KEYS}
+    )
+    report = verify_receipt_full(forged, workspace=ws, db_anchor=h)  # h = original hash
+    assert report["hash_ok"] is True  # self-consistent...
+    assert report["anchor_ok"] is False  # ...but the anchor exposes the forgery
+    assert report["valid"] is False
+
+
+def test_signed_receipt_verifies_and_forgery_is_signature_invalid(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from cryptography.hazmat.primitives import serialization as s
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
+    from app.services.receipt import _NON_BODY_KEYS, verify_receipt_full
+
+    priv = Ed25519PrivateKey.generate()
+    pem = priv.private_bytes(s.Encoding.PEM, s.PrivateFormat.PKCS8, s.NoEncryption()).decode()
+    monkeypatch.setattr(settings, "agent_receipt_signing_key", pem)
+
+    ws, h, receipt = _build(tmp_path)
+    assert receipt.get("signature")  # it was signed
+    assert verify_receipt_full(receipt, workspace=ws, db_anchor=h)["signature"] == "valid"
+
+    forged = dict(receipt)
+    forged["score"] = 100
+    forged["receipt_hash"] = _canonical_hash(
+        {k: v for k, v in forged.items() if k not in _NON_BODY_KEYS}
+    )
+    # The forger recomputed the hash but can't re-sign it without the private key.
+    assert verify_receipt_full(forged, workspace=ws)["signature"] == "invalid"
+
+
 async def test_receipt_roundtrip_produces_and_verifies(
     session: AsyncSession, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
