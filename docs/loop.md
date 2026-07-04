@@ -138,11 +138,14 @@ carry machine-checkable `checks` (a command + expected exit/stdout, file-exists,
 file-contains). The verifier re-runs every check on a *fresh copy* of the
 workspace (`services/verification.py`) through the same command policy, and a run
 with checks is accepted only if its checks actually pass — a failed check
-overrides an LLM `met=true`. Every accepted task writes a content-addressed
+overrides an LLM `met=true`. Every *terminal* task writes a content-addressed
 **Receipt** (`receipt.json` + `RECEIPT.md`, `services/receipt.py`): goal, rubric,
 per-check verdict, score, `verified_by` (execution|judgment), run accounting, and
 a sha256 of every output file. Goals with no runnable check fall back to
-judgment, labelled `verified_by=judgment` so it's never mistaken for proof. This
+judgment, labelled `verified_by=judgment` so it's never mistaken for proof. A task
+that *didn't* reach an accepted result (a step/budget limit, a stuck loop, or a
+crash) still gets a Receipt — marked `verified_by=unverified` — so a failure is
+auditable too, not a blank. This
 is differentiator #1 — Loop's "done" is a replayable fact, and it closed Loop's
 own real weakness (the old verifier only glanced at the file tree + the summary).
 

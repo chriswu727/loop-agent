@@ -72,10 +72,36 @@ used to rewrite the last step's observation *after* its ledger hash was set, so
 re-seals that step's hash. The tamper-evident guarantee only means something if a
 legitimate answer keeps the chain valid while tampering still breaks it.
 
+### 2026-07-04 follow-up (auditability, resource bounds, test coverage)
+
+Driven by an R1 run that built correct code but stopped at the step limit (score 0,
+no summary, no Receipt) — the awkward case exposed several gaps:
+
+- **A Receipt for every terminal outcome, not only accepted ones.** A limit stop,
+  a stuck loop, or a crash now writes a Receipt too, marked
+  `verified_by=unverified` — so a failure is auditable (goal, ledger head, file
+  manifest of the partial work), not a blank. Built via one best-effort helper
+  shared by `_finish` and the crash handler, so a receipt-build error can't mask
+  the real outcome.
+- **A plain-language summary on non-accepted stops** (`max_steps`/`budget`/`stuck`/
+  `cancelled`) instead of a bare score-0 row, telling the user what happened and to
+  retry with a higher limit.
+- **Cross-task memory is bounded at the file, not just the snapshot.** A single
+  `remember` note is capped and each memory file is trimmed tail-most, so a task
+  can't bloat the shared store and tax every future task's startup read.
+- **Test coverage for load-bearing invariants that were unguarded:** the standalone
+  `verify-receipt` script's hash algorithm staying in sync with the library (else
+  the offline-verify feature silently breaks), the spawn cost fold-back (a child's
+  tokens count against the parent's ceiling), and the loop's resilience to
+  unparseable model output.
+- **A boot-time warning** when `AGENT_SANDBOX=container/auto` but Docker or the
+  image is missing, so an operator sees they're on reduced (inline) isolation.
+
 ## Consequences
 
 - Fewer wasted steps/tokens per task; cleaner finishes; honest degradation when a
   capability is missing.
+- Every terminal outcome — success *or* failure — is auditable via a Receipt.
 - More resilient to transient provider errors; bounded resource use under load.
 - A tighter shell/secret/egress surface, all covered by offline tests.
 - `mypy app` is clean and gated in CI, so these changes can't silently regress

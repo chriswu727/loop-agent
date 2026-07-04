@@ -75,11 +75,13 @@ a fact you can replay, not a claim in a chat log.
 Loop concedes raw breadth for now and is closing that gap — but it wins outright on
 the two axes a chat-log agent can't retrofit:
 
-- **Verifiable completion.** Every accepted task ships a content-addressed,
+- **Verifiable completion.** Every task ships a content-addressed,
   tamper-evident **Receipt** (`receipt.json` + `RECEIPT.md`): the goal, the rubric,
   every machine check the verifier **re-ran on a fresh copy of the workspace**, a
   sha256 of every output file, and the head of a hash-chained step ledger. "Done"
-  is a replayable fact — safe to drop into a CI gate.
+  is a replayable fact — safe to drop into a CI gate. A run that fell short (a
+  limit, a stuck loop, a crash) still ships a Receipt, marked `unverified`, so a
+  failure is auditable too.
 - **Least authority by construction.** Each task runs under a declared **capability
   envelope** enforced at one choke point: which tools it may use, default-deny
   network egress, and an optional human approval gate for risky commands. Shell
