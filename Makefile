@@ -74,6 +74,7 @@ demo: ## Zero-key demo API on :8000 (no API key needed; scripted model)
 	cd apps/api && . .venv/bin/activate && \
 	DEMO_MODE=1 LLM_DEFAULT_PROVIDER=mock EXECUTION_MODE=inline CACHE_BACKEND=memory \
 	AGENT_SANDBOX=inline DATABASE_URL="sqlite+aiosqlite:///./loop_demo.db" \
+	AGENT_WORKSPACES_ROOT="$(CURDIR)/.demo-workspaces" \
 	uvicorn app.main:app --port 8000
 
 # ---------- Database ----------

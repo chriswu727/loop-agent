@@ -121,7 +121,11 @@ class Settings(BaseSettings):
     loop_token_budget_cap: int = 200_000
 
     # ---- Agent tools & safety ----
-    # Each task works inside its own subdirectory under this root.
+    # Each task works inside its own subdirectory under this root. In inline mode
+    # (no container), point this OUTSIDE any project directory: tools the agent runs
+    # (pytest, ruff, mypy) walk up for a config file, so a workspace nested under a
+    # Python project would inherit that project's pyproject.toml and misbehave.
+    # Container mode is unaffected (the workspace is the mount root).
     agent_workspaces_root: str = "./workspaces"
     # Cross-task memory store (MEMORY.md + topics/), shared across tasks.
     agent_memory_root: str = "./agent_memory"

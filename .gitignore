@@ -42,6 +42,7 @@ tmp/
 # ---------- Agent task workspaces (per-task sandboxes) ----------
 workspaces/
 apps/api/workspaces/
+.demo-workspaces/
 
 # ---------- Agent cross-task memory store ----------
 agent_memory/
