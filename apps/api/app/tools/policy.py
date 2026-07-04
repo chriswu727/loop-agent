@@ -271,6 +271,9 @@ _BIN_RE = re.compile(
 _HOSTISH = re.compile(
     r"^(?:\[[0-9a-fA-F:]+\]|(?:[A-Za-z0-9\-]+\.)+[A-Za-z0-9\-]{2,}|\d{1,3}(?:\.\d{1,3}){3})"
 )
+# Flags whose VALUE is a destination host/URL even without a scheme (`curl --url evil.com`,
+# `-x proxy`) — so we extract those instead of skipping them as ordinary flag values.
+_HOST_FLAGS = {"--url", "--proxy", "-x", "--connect-to", "--resolve"}
 
 
 def _host_of(authority: str) -> str | None:
@@ -279,6 +282,8 @@ def _host_of(authority: str) -> str | None:
     a = authority.strip().strip("/")
     if not a:
         return None
+    if "://" in a:
+        a = a.split("://", 1)[1]
     try:
         h = urlsplit("//" + a).hostname
     except ValueError:
@@ -303,8 +308,16 @@ def destination_hosts(text: str) -> set[str]:
     for bm in _BIN_RE.finditer(stripped):
         binary = bm.group(1).lower()
         segment = re.split(r"[;\n|&]", stripped[bm.end() :], maxsplit=1)[0]
+        toks = segment.split()
+        # Host-valued flags: the value IS a host (`--url evil.com`, `-x proxy`), so
+        # extract it — separate from the positional pass, which skips flag values.
+        for prev, tok in zip(toks, toks[1:]):
+            if prev.split("=", 1)[0] in _HOST_FLAGS:
+                h = _host_of(tok.split(":", 1)[0] if ":" in tok and "//" not in tok else tok)
+                if h:
+                    hosts.add(h)
         prev_flag = False
-        for tok in segment.split():
+        for tok in toks:
             if tok.startswith("-"):
                 prev_flag = True
                 continue

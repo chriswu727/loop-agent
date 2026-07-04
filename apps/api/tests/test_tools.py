@@ -247,6 +247,11 @@ def test_destination_hosts_resists_bypasses_and_overblocks() -> None:
     assert dh("ssh git@github.com") == {"github.com"}  # user@ stripped
     assert dh("scp secret.txt deploy@github.com:/tmp/") == {"github.com"}  # host, not the file
     assert dh("curl https://ok.com/x # http://evil.com") == {"ok.com"}  # comment ignored
+    assert dh("curl --url evil.com") == {"evil.com"}  # scheme-less host in a --url flag value
+    assert dh("curl -x proxy.evil.com:3128 ok.com") == {
+        "proxy.evil.com",
+        "ok.com",
+    }  # proxy + target
 
 
 def test_interpreter_network_oneliners_are_flagged_for_egress() -> None:
