@@ -17,6 +17,7 @@ from app.domain.task import StopReason, TaskStatus
 from app.repositories.step import StepRepository
 from app.repositories.task import TaskRepository
 from app.services.agent_react import AgentReactService
+from app.tools import Workspace
 
 
 class ScriptedLLM:
@@ -300,8 +301,11 @@ async def test_failing_check_blocks_acceptance(session: AsyncSession) -> None:
     await session.refresh(task)
     # Even though the LLM said met=true, the failed check kept it from finishing.
     assert task.stop_reason == StopReason.STUCK.value
-    assert task.verified_by is None
-    assert task.receipt_hash is None
+    assert task.verified_by is None  # never verified — acceptance was blocked
+    # It still gets a Receipt, but marked "unverified" (a failure is auditable too).
+    assert task.receipt_hash is not None
+    receipt = json.loads(Workspace(Path(task.workspace_path)).read("receipt.json"))
+    assert receipt["verified_by"] == "unverified"
 
 
 def _install_signed_skill(tmp_path: Path, monkeypatch, *, name: str, manifest: dict) -> None:
@@ -774,3 +778,11 @@ async def test_unparseable_plan_output_is_handled_not_crashing(session: AsyncSes
     assert any("parse a valid action" in s.observation for s in steps)
     # A non-accepted stop still gets a plain-language summary (not a bare score-0 row).
     assert task.summary and "Stopped" in task.summary
+    # ...and a tamper-evident Receipt marked "unverified", so a failure is auditable too.
+    assert task.receipt_hash
+    receipt = json.loads(Workspace(Path(task.workspace_path)).read("receipt.json"))
+    assert receipt["verified_by"] == "unverified"
+    from app.services.receipt import verify_receipt
+
+    ok, _ = verify_receipt(receipt)
+    assert ok  # the unverified receipt's own content hash checks out

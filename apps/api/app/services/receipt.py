@@ -90,11 +90,11 @@ def _render_markdown(receipt: dict[str, Any]) -> str:
         "# Task Receipt",
         "",
         f"- **Verified by:** {receipt['verified_by']}"
-        + (
-            ""
-            if receipt["verified_by"] == "execution"
-            else " — _not re-executed; graded by judgment_"
-        ),
+        + {
+            "execution": "",
+            "judgment": " — _not re-executed; graded by judgment_",
+            "unverified": " — _not verified; the task stopped before an accepted result_",
+        }.get(receipt["verified_by"], ""),
         f"- **Isolation:** {receipt.get('isolation', 'inline')}"
         + (
             " — _commands jailed in an ephemeral container_"

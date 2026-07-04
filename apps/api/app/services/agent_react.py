@@ -923,6 +923,24 @@ class AgentReactService:
         # never wrote one, so give the user a reason-specific explanation.
         if not task.summary and reason is not StopReason.GOAL_ACHIEVED:
             task.summary = self._stop_summary(task, reason)
+        # Even an unfinished task gets a Receipt (the accepted path builds its own):
+        # the tamper-evident record + file manifest of the partial work should exist
+        # regardless of outcome, so a failure is auditable too. Marked "unverified".
+        if (
+            not task.receipt_hash
+            and reason is not StopReason.GOAL_ACHIEVED
+            and task.workspace_path
+            and Path(task.workspace_path).is_dir()  # noqa: ASYNC240
+        ):
+            receipt_hash, _ = build_receipt(
+                task,
+                [],
+                score=task.verification_score,
+                verified_by="unverified",
+                workspace=Workspace(Path(task.workspace_path)),
+                ledger_head=self._last_hash,
+            )
+            task.receipt_hash = receipt_hash
         await self._commit()
         log.info(
             "agent.finish",
