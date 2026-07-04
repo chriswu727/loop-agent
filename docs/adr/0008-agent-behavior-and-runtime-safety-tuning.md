@@ -97,11 +97,38 @@ no summary, no Receipt) — the awkward case exposed several gaps:
 - **A boot-time warning** when `AGENT_SANDBOX=container/auto` but Docker or the
   image is missing, so an operator sees they're on reduced (inline) isolation.
 
+### 2026-07-04 follow-up (closing the gaps an honest self-comparison found)
+
+A grounded Loop-vs-OpenClaw comparison (`docs/comparison-openclaw.md`) surfaced
+concrete weaknesses where the code lagged the pitch. Closed the code-fixable ones:
+
+- **Receipt was only tamper-EVIDENT.** Now: optional ed25519 signing
+  (`AGENT_RECEIPT_SIGNING_KEY`), `verify_receipt_full` re-hashes output files
+  against the manifest and cross-checks the file hash against the independent DB
+  anchor, so editing a fact + recomputing its embedded hash (which the old check
+  accepted) is caught. Unsigned Receipts are honestly labeled.
+- **"Every terminal task gets a Receipt" wasn't literal** — the skill-refusal path
+  now writes one too.
+- **A self-written tautological check earned `verified_by=execution`.** The verifier
+  now judges whether checks substantiate the goal; if not, the run degrades to
+  judgment. The Receipt records coverage (criteria vs checks vs execution-backed).
+- **Egress was all-or-nothing.** Tasks can declare `egress_hosts`; the guard blocks
+  named destinations off the allowlist (best-effort; container mode unchanged).
+- **Email/calendar bypass the container silently.** Now an explicit planner notice
+  (they reach the network on the host, sends are approval-gated).
+- **A crashed worker stranded its task RUNNING and lost the job.** Staleness-bounded
+  reconcile (safe across both modes) + a BLMOVE reliable-dequeue with dead-lettering.
+
+Not code-fixable, stated plainly in the comparison: reach (one chat surface),
+ecosystem (one bundled skill), and adoption (zero) — those are maturity, not bugs.
+
 ## Consequences
 
 - Fewer wasted steps/tokens per task; cleaner finishes; honest degradation when a
   capability is missing.
-- Every terminal outcome — success *or* failure — is auditable via a Receipt.
+- Every terminal outcome — success *or* failure — is auditable via a Receipt, and
+  the Receipt is now tamper-*resistant* (signed / anchored / file-hashed), not just
+  self-consistent.
 - More resilient to transient provider errors; bounded resource use under load.
 - A tighter shell/secret/egress surface, all covered by offline tests.
 - `mypy app` is clean and gated in CI, so these changes can't silently regress
