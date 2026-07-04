@@ -34,6 +34,7 @@ export function PublishForm({
   const [files, setFiles] = useState<File[]>([]);
   const [noShell, setNoShell] = useState(false);
   const [allowNetwork, setAllowNetwork] = useState(false);
+  const [egressHosts, setEgressHosts] = useState('');
   const [requireApproval, setRequireApproval] = useState(false);
   const [useBrowser, setUseBrowser] = useState(false);
   const [useEmail, setUseEmail] = useState(false);
@@ -56,6 +57,13 @@ export function PublishForm({
         limits,
         allowed_tools,
         allow_egress: allowNetwork,
+        egress_hosts:
+          allowNetwork && egressHosts.trim()
+            ? egressHosts
+                .split(',')
+                .map((h) => h.trim())
+                .filter(Boolean)
+            : null,
         require_approval: requireApproval,
         use_browser: useBrowser,
         use_email: useEmail,
@@ -189,6 +197,16 @@ export function PublishForm({
           </select>
         )}
       </div>
+
+      {allowNetwork && (
+        <input
+          type="text"
+          value={egressHosts}
+          onChange={(e) => setEgressHosts(e.target.value)}
+          placeholder="Restrict to hosts (comma-separated, e.g. api.github.com, pypi.org) — blank = any host"
+          className="mt-3 w-full rounded-lg border border-black/10 bg-transparent px-3 py-1.5 text-xs outline-none focus:border-blue-500/60 dark:border-white/15"
+        />
+      )}
 
       <div className="mt-5 grid gap-5 sm:grid-cols-2">
         <Slider

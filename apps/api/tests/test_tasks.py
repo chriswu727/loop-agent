@@ -135,9 +135,16 @@ async def test_draft_upload_and_start_flow(client: AsyncClient) -> None:
 async def test_retry_clones_a_finished_task(client: AsyncClient) -> None:
     created = await client.post(
         "/api/v1/tasks",
-        json={"goal": "do the thing here", "use_browser": True, "allow_egress": True},
+        json={
+            "goal": "do the thing here",
+            "use_browser": True,
+            "allow_egress": True,
+            "egress_hosts": ["api.github.com", "pypi.org"],
+        },
     )
-    orig_id = created.json()["id"]
+    orig = created.json()
+    assert orig["egress_hosts"] == ["api.github.com", "pypi.org"]  # round-trips publish -> read
+    orig_id = orig["id"]
     await client.post(f"/api/v1/tasks/{orig_id}/cancel")  # -> cancelled (a finished state)
 
     resp = await client.post(f"/api/v1/tasks/{orig_id}/retry")
@@ -146,6 +153,7 @@ async def test_retry_clones_a_finished_task(client: AsyncClient) -> None:
     assert body["id"] != orig_id  # a fresh task; the original stays as an audit record
     assert body["goal"] == "do the thing here"
     assert body["use_browser"] is True and body["allow_egress"] is True
+    assert body["egress_hosts"] == ["api.github.com", "pypi.org"]  # carried into the retry
     assert body["status"] == "pending"
 
 

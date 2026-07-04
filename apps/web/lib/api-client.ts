@@ -77,6 +77,7 @@ export interface PublishBody {
   autostart?: boolean;
   allowed_tools?: string[] | null;
   allow_egress?: boolean;
+  egress_hosts?: string[] | null;
   require_approval?: boolean;
   use_browser?: boolean;
   use_email?: boolean;
