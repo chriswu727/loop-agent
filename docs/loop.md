@@ -16,9 +16,10 @@ that `chat_id`) and resumes the same task. A chat allowlist
 (`TELEGRAM_ALLOWED_CHAT_IDS`) gates who may command the bot — important, since it
 can run code and send email. The seam is channel-agnostic: `run_chat_turn(chat_id,
 message)` takes a plain conversation id + text and knows nothing of the transport,
-so a new channel is just an inlet over it — a poller (Telegram) OR a webhook (the
-HTTP `POST /chat` route already is one). Adding one means: receive a message, call
-`run_chat_turn`, reply with `reply_for(task)`. Tested: the client wire calls, the
+so a channel is just an inlet over it — a poller (Telegram), or a webhook (`POST
+/chat`, and **Slack** via the signature-verified `POST /slack/events`,
+`services/slack.py`). Adding one means: receive a message, call `run_chat_turn`,
+reply with `reply_for(task)`. Tested: the client wire calls, the
 reply formatting per task state, and the awaiting-task lookup; the full round
 trip reuses already-tested publish/respond/execute and needs a bot token to run
 live.

@@ -190,6 +190,22 @@ class Settings(BaseSettings):
         raw = self.telegram_allowed_chat_ids or ""
         return {c.strip() for c in raw.split(",") if c.strip()}
 
+    # ---- Chat inlet (Slack Events API). Set both to enable POST /slack/events. ----
+    # The signing secret authenticates every request (only your Slack app can call
+    # in); the bot token posts replies. An optional channel allowlist adds defense
+    # in depth — the bot can run code, so restrict it in a shared workspace.
+    slack_bot_token: str | None = None
+    slack_signing_secret: str | None = None
+    slack_allowed_channels: str | None = None
+
+    @property
+    def slack_configured(self) -> bool:
+        return bool(self.slack_bot_token and self.slack_signing_secret)
+
+    def slack_allowlist(self) -> set[str]:
+        raw = self.slack_allowed_channels or ""
+        return {c.strip() for c in raw.split(",") if c.strip()}
+
     # ---- Email (a task opts in with use_email; needs SMTP/IMAP creds) ----
     # For Gmail: smtp.gmail.com:587 + imap.gmail.com, user = address, password =
     # an app password. Email is "configured" when host + user + password are set.
