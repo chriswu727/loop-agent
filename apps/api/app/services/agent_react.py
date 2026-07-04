@@ -757,8 +757,15 @@ class AgentReactService:
             score = _clamp_score(parsed.get("score"))
             missing = parsed.get("missing") or []
             llm_met = bool(parsed.get("met"))
+            substantiate = bool(parsed.get("checks_substantiate", True))
         else:
-            score, missing, llm_met = 0, ["verifier returned no verdict"], False
+            score, missing, llm_met, substantiate = 0, ["verifier returned no verdict"], False, True
+
+        # Passing checks that don't actually substantiate the goal (e.g. a tautological
+        # `echo hi`) don't earn the stronger "execution" label — degrade to judgment so
+        # execution-verified always means "checks that really prove the goal passed".
+        if check_results and not substantiate:
+            verified_by = "judgment"
 
         # A run with checks is accepted only if its checks actually pass; a run
         # without checks falls back to judgment (and is labelled as such).

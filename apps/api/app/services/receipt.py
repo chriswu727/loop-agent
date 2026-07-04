@@ -79,6 +79,13 @@ def build_receipt(
         "score": score,
         "checks": checks,
         "checks_passed": all(c["passed"] for c in checks) if checks else None,
+        # Honest coverage: how many success criteria vs how many machine checks,
+        # and whether "done" rests on re-execution or on LLM judgment.
+        "coverage": {
+            "rubric_criteria": len(task.rubric or []),
+            "checks": len(checks),
+            "execution_backed": verified_by == "execution",
+        },
         "steps_used": task.steps_used,
         "tokens_used": task.tokens_used,
         # Head of the tamper-evident step chain — this Receipt vouches for the
@@ -190,6 +197,11 @@ def _render_markdown(receipt: dict[str, Any]) -> str:
             else ""
         ),
         f"- **Score:** {receipt['score']}/100",
+        (
+            lambda c: f"- **Coverage:** {c.get('checks', 0)} machine check(s) for "
+            f"{c.get('rubric_criteria', 0)} criteria — "
+            f"{'execution-backed' if c.get('execution_backed') else 'judgment'}"
+        )(receipt.get("coverage") or {}),
         f"- **Steps:** {receipt['steps_used']} · **Tokens:** {receipt['tokens_used']}",
         f"- **Ledger head:** `{receipt['ledger_head']}`",
         f"- **Receipt hash:** `{receipt['receipt_hash']}`"

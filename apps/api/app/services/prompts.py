@@ -157,8 +157,14 @@ def verify_prompts(
         f"Workspace files:\n{workspace_tree}\n\n"
         f"Machine check results (re-run independently):\n{checks_summary}\n\n"
         f"The agent says it is done:\n{summary}\n\n"
+        "The agent WROTE ITS OWN checks, so judge whether they actually substantiate "
+        "the goal or are trivial/irrelevant: a check like `echo hi` (exit 0) passes "
+        "but proves nothing. Set checks_substantiate=false when the checks don't "
+        "meaningfully verify the criteria — the run is then judgment-quality, not "
+        "execution-proof.\n"
         "Return ONLY a JSON object: "
         '{"score": <0-100>, "met": <true|false>, '
+        '"checks_substantiate": <true|false>, '
         '"missing": [<short strings: what is not yet satisfied>]}. '
         "met=true only if every criterion is clearly satisfied and no check failed."
     )

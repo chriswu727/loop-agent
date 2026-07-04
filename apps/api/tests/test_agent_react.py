@@ -852,3 +852,32 @@ async def test_spawned_child_cost_folds_into_parent_budget(session: AsyncSession
     assert child.tokens_used > 0
     await session.refresh(task)
     assert task.tokens_used >= child.tokens_used  # child cost folded into the parent's ceiling
+
+
+async def test_nonsubstantiating_checks_degrade_execution_to_judgment(
+    session: AsyncSession,
+) -> None:
+    # The agent attaches a trivial passing check (echo hi). The verifier flags it as
+    # not substantiating the goal, so the run is accepted but labelled judgment, not
+    # execution — a tautological check can't earn the stronger proof label.
+    plans = [
+        {"thought": "w", "tool": "write_file", "args": {"path": "a.txt", "content": "x"}},
+        {
+            "thought": "done",
+            "tool": "finish",
+            "args": {
+                "summary": "did it",
+                "checks": [{"kind": "command", "command": "echo hi", "expect_exit": 0}],
+            },
+        },
+    ]
+    llm = ScriptedLLM(plans, verify={"score": 90, "met": True, "checks_substantiate": False})
+    task = await _make_task(session, max_steps=10, token_budget=1_000_000)
+    await _service(session, llm).run(task.id)
+
+    await session.refresh(task)
+    assert task.stop_reason == StopReason.GOAL_ACHIEVED.value  # still accepted
+    assert task.verified_by == "judgment"  # ...but NOT execution — the check was trivial
+    receipt = json.loads(Workspace(Path(task.workspace_path)).read("receipt.json"))
+    assert receipt["coverage"]["execution_backed"] is False
+    assert receipt["coverage"]["checks"] == 1
