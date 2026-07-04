@@ -79,7 +79,11 @@ the two axes a chat-log agent can't retrofit:
   tamper-evident **Receipt** (`receipt.json` + `RECEIPT.md`): the goal, the rubric,
   every machine check the verifier **re-ran on a fresh copy of the workspace**, a
   sha256 of every output file, and the head of a hash-chained step ledger. "Done"
-  is a replayable fact — safe to drop into a CI gate. A run that fell short (a
+  is a replayable fact — safe to drop into a CI gate (`make verify-receipt`, or
+  `scripts/verify_receipt.py` with zero app deps, exits 0/1 and re-hashes the output
+  files). Set `AGENT_RECEIPT_SIGNING_KEY` (`make receipt-keygen`) to **ed25519-sign**
+  Receipts — then a forger without the key can't recompute a valid one (tamper-*proof*,
+  not just evident); verify it offline with `--pubkey`. A run that fell short (a
   limit, a stuck loop, a crash) still ships a Receipt, marked `unverified`, so a
   failure is auditable too.
 - **Least authority by construction.** Each task runs under a declared **capability
@@ -194,10 +198,12 @@ See [`.env.example`](./.env.example). Key knobs:
 | `DATABASE_URL` | `postgresql+asyncpg://…` or `sqlite+aiosqlite:///./loop.db`. |
 | `AGENT_APPROVAL_MODE` | `auto` or `manual` (pause non-allowlisted commands). |
 | `AGENT_SKILLS_ROOT` / `AGENT_SKILL_TRUST_PUBLIC_KEY` | signed-skills folder + the ed25519 key signatures must verify against. |
+| `AGENT_RECEIPT_SIGNING_KEY` | optional ed25519 key to sign Receipts (`make receipt-keygen`); unset = hash-only (tamper-evident). |
 | `AGENT_MEMORY_ROOT` | cross-task memory store. |
 
 Per-task safety is set at publish time: `allowed_tools`, `allow_egress`,
-`require_approval`, `skill`. Defaults/caps live in `app/core/config.py`.
+`egress_hosts` (restrict egress to named hosts), `require_approval`, `skill`.
+Defaults/caps live in `app/core/config.py`.
 
 ## Architecture
 
