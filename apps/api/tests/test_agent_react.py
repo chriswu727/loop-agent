@@ -751,3 +751,24 @@ async def test_understand_failure_is_not_fatal(session: AsyncSession) -> None:
     await session.refresh(task)
     assert task.status == TaskStatus.COMPLETED.value  # proceeded despite understand failing
     assert task.rubric == ["Fully and correctly satisfies the task"]  # default fallback
+
+
+async def test_unparseable_plan_output_is_handled_not_crashing(session: AsyncSession) -> None:
+    # A model that returns prose instead of JSON must not crash the loop — it gets
+    # an error observation and the run terminates (stuck), still with a Receipt.
+    class _GarbageLLM(ScriptedLLM):
+        async def complete(self, system: str, user: str, **kw: object) -> LLMResult:
+            if "JSON array of 3 to 6" in user:  # understand
+                return LLMResult('["produce a result"]', "fake", 10)
+            if '"met"' in user:  # verify
+                return LLMResult(json.dumps({"score": 10, "met": False}), "fake", 20)
+            return LLMResult("sorry, I cannot help with that — just prose", "fake", 100)  # plan
+
+    task = await _make_task(session, max_steps=12, token_budget=1_000_000)
+    await _service(session, _GarbageLLM([])).run(task.id)
+
+    await session.refresh(task)
+    assert task.status == TaskStatus.COMPLETED.value  # terminated cleanly, no crash
+    assert task.stop_reason in {StopReason.STUCK.value, StopReason.MAX_STEPS.value}
+    steps = await StepRepository(session).list_for_task(task.id)
+    assert any("parse a valid action" in s.observation for s in steps)
