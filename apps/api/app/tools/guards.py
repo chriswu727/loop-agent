@@ -7,6 +7,7 @@ reach the network if its capability envelope grants egress.
 
 from __future__ import annotations
 
+import re
 from typing import TYPE_CHECKING, Any
 
 from app.tools.base import ToolResult, ToolStatus
@@ -29,9 +30,14 @@ def make_egress_guard(
             # runs reaches the network. Scan referenced scripts' contents too, so a
             # file can't be used to slip past default-deny egress on the inline path.
             if reason is None and workspace is not None:
+                # Honor a leading `cd <dir>` so we scan the file that actually runs
+                # (`cd sub && python fetch.py` runs sub/fetch.py, not ./fetch.py).
+                cd = re.match(r"\s*cd\s+([^\s;&|]+)\s*(?:&&|;)", command)
+                prefix = f"{cd.group(1).strip('/')}/" if cd else ""
                 for path in script_paths_in(command):
+                    candidate = path if path.startswith("/") else prefix + path
                     try:
-                        content = workspace.read(path, limit=200_000)
+                        content = workspace.read(candidate, limit=200_000)
                     except Exception:
                         continue
                     # A script reaches the network either via a library (urllib in

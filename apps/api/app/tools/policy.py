@@ -45,7 +45,12 @@ _DENY: tuple[tuple[re.Pattern[str], str], ...] = tuple(
             "recursive delete of a broad path",
         ),
         (r"\b(sudo|doas|pkexec)\b|\bsu\s+-", "privilege escalation"),
-        (r"\bmkfs(\.\w+)?\b", "format a filesystem"),
+        # mkfs at a command position (start / after a separator / after sudo), so
+        # `cat mkfs.md` (a filename) isn't flagged.
+        (
+            r"(?:^|[\n;|&(]\s*|\b(?:sudo|doas|nohup|env|time|exec)\s+)mkfs(\.\w+)?\b",
+            "format a filesystem",
+        ),
         # WRITING to a raw block device (of=, redirect, tee, cp) — destroys the
         # disk. Reads (dd if=/dev/sda of=backup.img) and /dev/null|stdout are fine,
         # and a plain file-to-file dd is no longer over-blocked.
@@ -57,10 +62,13 @@ _DENY: tuple[tuple[re.Pattern[str], str], ...] = tuple(
         (r"\b(shutdown|reboot|halt|poweroff)\b|\b(init|telinit)\s+[06]\b", "power control"),
         # A function whose body pipes to itself and backgrounds — `:(){ :|:& };:`
         # and named variants like `bomb(){ bomb|bomb & };bomb`.
-        (r"(?:\b\w+|:)\s*\(\s*\)\s*\{[^}]*\|[^}]*&", "fork bomb"),
-        # Piping the network into ANY interpreter, not just sh/bash/zsh.
+        # [^}&|] / [^}&] (not [^}]) so the two runs can't re-consume the | and & —
+        # avoids O(n^2) backtracking on a crafted `x(){ a|a|a|...`.
+        (r"(?:\b\w+|:)\s*\(\s*\)\s*\{[^}&|]*\|[^}&]*&", "fork bomb"),
+        # Piping the network into ANY interpreter, through any intermediate pipe
+        # stages (`curl x | tee f | bash`), not just sh/bash/zsh.
         (
-            r"\b(curl|wget|fetch|aria2c|axel)\b[^|]*\|\s*(sudo\s+)?"
+            r"\b(curl|wget|fetch|aria2c|axel)\b[^;&\n]*\|\s*(sudo\s+)?"
             r"(sh|bash|zsh|dash|python3?|perl|ruby|node|php)\b",
             "piping the network into an interpreter",
         ),
@@ -72,7 +80,7 @@ _DENY: tuple[tuple[re.Pattern[str], str], ...] = tuple(
         (r"/etc/(passwd|shadow|gshadow|sudoers)", "touching system credential files"),
         # Reverse shells: netcat -e, socat EXEC/SYSTEM, or a shell wired to /dev/tcp.
         (
-            r"\bnc\b\s+-[a-z]*e|\bncat\b.*-e|\bsocat\b[^;|&\n]*(exec|system):|>&\s*/dev/tcp",
+            r"\bn(c|cat)\b[^;|&\n]*\s-[a-z]*[ec]\b|\bsocat\b[^;|&\n]*(exec|system):|>&\s*/dev/tcp",
             "reverse shell",
         ),
     ]
@@ -167,16 +175,19 @@ _NETWORK: tuple[tuple[re.Pattern[str], str], ...] = tuple(
         (r"\b(lynx|w3m|links|elinks)\b", "text browser"),
         (r"\b(dig|nslookup|ping|traceroute|tracepath)\b", "network probe"),
         # Inline interpreter code that reaches the network — via `-c`, a heredoc
-        # (`python3 <<'EOF' ... urllib ... EOF`), or stdin. [\s\S] spans the newlines
-        # a heredoc body has; -c is NOT required. Precise network tokens (actual
-        # imports/calls) so a filename like `socket.csv` isn't a false positive.
-        # Best-effort on the inline path; container mode enforces --network none.
+        # (`python3 <<'EOF' ... urllib ... EOF`), or stdin; -c is NOT required. The
+        # gap is `[^;&|]*` so it spans a heredoc's newlines but NOT a shell separator
+        # (else `python app.py && grep "requests.get(" src` would over-block an
+        # offline grep). Precise tokens (actual imports/calls, ruby/perl idioms, or a
+        # QUOTED url) so `socket.csv` isn't a false positive. Container mode is the
+        # real enforcement (--network none).
         (
-            r"\b(python3?|node|deno|bun|ruby|perl|php)\b[\s\S]*"
+            r"\b(python3?|node|deno|bun|ruby|perl|php)\b[^;&|]*"
             r"(import\s+(urllib|requests|httpx|socket|http|aiohttp|ftplib|smtplib)|"
             r"urllib\.|requests\.(get|post|put|delete|patch|head|request|Session)|"
-            r"urlopen|socket\.socket|http\.client|aiohttp\.|"
-            r"fetch\s*\(|require\(\s*['\"](https?|node:http|http)|open-uri|file_get_contents)",
+            r"urlopen|socket\.socket|http\.client|aiohttp\.|net/http|Net::HTTP|\bLWP\b|IO::Socket|"
+            r"fetch\s*\(|require\(\s*['\"](https?|node:http|http)|open-uri|file_get_contents|"
+            r"['\"]https?://)",
             "interpreter network access",
         ),
     ]
@@ -191,7 +202,10 @@ _NET_IN_CODE = re.compile(
     r"net/http|open-uri|file_get_contents|fetch\s*\(|https?://|/dev/tcp/)",
     re.IGNORECASE,
 )
-_SCRIPT_ARG = re.compile(r"(?:^|/)[\w.\-]+\.(py|js|mjs|cjs|ts|rb|pl|php|sh|bash)$")
+_SCRIPT_ARG = re.compile(r"(?:^|/)[\w.\-]+\.(py|js|mjs|cjs|ts|rb|pl|php|sh|bash)$", re.IGNORECASE)
+_INTERPRETERS = frozenset(
+    {"python", "python3", "node", "deno", "bun", "ruby", "perl", "php", "sh", "bash"}
+)
 
 
 def code_network_reason(code: str) -> str | None:
@@ -200,14 +214,24 @@ def code_network_reason(code: str) -> str | None:
 
 
 def script_paths_in(command: str) -> list[str]:
-    """File-looking script arguments in a command (`python x.py` -> ['x.py'])."""
+    """Script arguments a command runs, to scan their contents for network code:
+    files with a known extension, plus — when the program is an interpreter — its
+    first non-flag argument even without an extension (`python3 grab`)."""
     import shlex
 
     try:
         tokens = shlex.split(command)
     except ValueError:
         tokens = command.split()
-    return [t for t in tokens if _SCRIPT_ARG.search(t)]
+    paths = [t for t in tokens if _SCRIPT_ARG.search(t)]
+    if tokens and tokens[0].rsplit("/", 1)[-1] in _INTERPRETERS:
+        for t in tokens[1:]:
+            if t.startswith("-"):
+                continue
+            if t not in paths:
+                paths.append(t)  # first real arg, scanned regardless of extension
+            break
+    return paths
 
 
 def network_command_reason(command: str) -> str | None:
@@ -218,12 +242,23 @@ def network_command_reason(command: str) -> str | None:
     return None
 
 
+def _deny_scan_text(command: str) -> str:
+    """The text the deny patterns match against: quoted string literals blanked so
+    a keyword inside a git message or grep argument isn't read as a command — but
+    the inner code of a shell/interpreter ``-c``/``-e`` argument re-appended
+    unquoted, so ``bash -c "rm -rf /"`` is still caught."""
+    inners = [m.group(2) for m in re.finditer(r"-[a-z]*[ce]\s+(['\"])(.*?)\1", command, re.DOTALL)]
+    blanked = re.sub(r"(['\"]).*?\1", " ", command, flags=re.DOTALL)
+    return blanked + (" " + " ".join(inners) if inners else "")
+
+
 def evaluate_command(command: str) -> tuple[Verdict, str]:
     cmd = command.strip()
     if not cmd:
         return Verdict.DENY, "empty command"
+    scan = _deny_scan_text(cmd)
     for pattern, reason in _DENY:
-        if pattern.search(cmd):
+        if pattern.search(scan):
             return Verdict.DENY, reason
     first = re.split(r"\s+", cmd, maxsplit=1)[0]
     first = first.rsplit("/", 1)[-1]  # normalise /usr/bin/python -> python
