@@ -17,8 +17,14 @@
 >   its task" → both closed (skill-refusal + cancel now get Receipts; staleness-bounded
 >   reconcile runs in both modes).
 >
-> Still accurate and unchanged: the **maturity/reach/ecosystem/adoption** gaps
-> (one chat surface, one bundled skill, zero users) — those are not code-fixable.
+> Reach has since improved too: a signature-verified **Slack** inlet
+> (`POST /slack/events`) now ships alongside Telegram and web `/chat`, over the same
+> channel-agnostic seam — so the body below ("one chat surface", "Slack is prose
+> intentions, not code", "~2 chat inlets") is stale: it's **three** chat surfaces
+> today, still far short of OpenClaw's 20+.
+>
+> Still accurate and unchanged: the **ecosystem** (one bundled skill) and **adoption**
+> (zero users) gaps — those are not code-fixable, only earned over time.
 
 ---
 
