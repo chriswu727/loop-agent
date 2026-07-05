@@ -701,7 +701,21 @@ class AgentReactService:
             if not src.exists():
                 return False
             dest.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copytree(src, dest, dirs_exist_ok=True)
+            # Cache cruft never belongs in the parent and its stale .pyc/.pytest_cache
+            # entries cause import mismatches when the parent re-runs tools.
+            shutil.copytree(
+                src,
+                dest,
+                dirs_exist_ok=True,
+                ignore=shutil.ignore_patterns("__pycache__", ".pytest_cache", "*.pyc"),
+            )
+            # subtasks/ is an ARCHIVE for the parent to compose from, not a place to
+            # re-run tests. Without this, a grafted test_foo.py collides with the
+            # parent's own test_foo.py (pytest "import file mismatch"), breaking the
+            # parent's entire test collection — a real spawn failure seen under R1.
+            conftest = dest.parent / "conftest.py"
+            if not conftest.exists():
+                conftest.write_text('collect_ignore_glob = ["*"]\n')
             return True
 
         try:

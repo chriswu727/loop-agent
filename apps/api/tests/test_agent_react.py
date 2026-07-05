@@ -504,6 +504,11 @@ async def test_spawn_delegates_to_a_verified_subagent(session: AsyncSession) -> 
     assert copied.read_text() == "hello"
     assert parent.tokens_used >= child.tokens_used > 0
 
+    # The archive carries a conftest so the parent's pytest never double-collects a
+    # grafted test file (which would break the parent's whole run with exit 2).
+    conftest = Path(parent.workspace_path) / "subtasks" / "conftest.py"
+    assert conftest.exists() and "collect_ignore_glob" in conftest.read_text()
+
     steps = await StepRepository(session).list_for_task(parent.id)
     spawn_step = next(s for s in steps if s.tool == "spawn")
     assert spawn_step.status == "ok"
