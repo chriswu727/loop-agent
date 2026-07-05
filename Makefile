@@ -30,10 +30,12 @@ sandbox-image: ## Build the container-isolation image (needs Docker running)
 # ---------- Local stack (Docker) ----------
 .PHONY: up
 up: ## Start the full stack (web, api, postgres, redis) via docker compose
+	@test -f .env || cp .env.example .env  # docker-only path needs no `make setup` first
 	$(COMPOSE) up --build
 
 .PHONY: up-d
 up-d: ## Start the stack in the background
+	@test -f .env || cp .env.example .env
 	$(COMPOSE) up --build -d
 
 .PHONY: down
