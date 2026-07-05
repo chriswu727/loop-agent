@@ -125,7 +125,7 @@ ecosystem (one bundled skill), and adoption (zero) — those are maturity, not b
 ## 2026-07-05 follow-up — a second deepseek-reasoner live-testing round
 
 Running real tasks against `deepseek-reasoner` and reading the traces (and the
-server tracebacks, not just the status) surfaced **eleven** defects that unit tests
+server tracebacks, not just the status) surfaced **twelve** defects that unit tests
 could not — each a case where the *real model on a real task* hit something the
 mocks never exercised. Two of them (spawn, container) were headline capabilities
 that were effectively unusable for the common case yet green in every test that
@@ -184,6 +184,14 @@ wasn't a real end-to-end model run:
   caps (plan 1200→2500, rubric/verify 500→1500). `max_tokens` is a ceiling not a
   target, so non-reasoning models are unaffected. A doc/README task that was `stuck`
   now completes `goal_achieved/100`.
+- **Step-waste sank hard tasks (step efficiency IS a capability lever).** A hard
+  LRU+TTL task hit `max_steps` (score 0): R1 kept re-inspecting a just-written file
+  with `cat`/`wc` via run_command — circumventing the "never read_file what you just
+  wrote" rule — burning ~7 of 22 steps on content it already had, so it never
+  converged. Extended that rule to shell re-inspection (advisory, no hard block).
+  Validated: the same task went from `max_steps/0` to **3/3 runs `goal_achieved/100`
+  with 0 inspections each**, converging even when R1 genuinely iterated (16 steps).
+  Pruning avoidable step-waste raises what the agent completes within a budget.
 
 Lesson reinforced: for an LLM agent, **live-test with the strongest real model and
 read the traces/tracebacks** — the highest-value defects (empty-content, verifier
