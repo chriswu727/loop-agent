@@ -12,7 +12,7 @@ foundation. Runs on a laptop with one LLM API key and no other infrastructure.
 [![CI](https://github.com/chriswu727/loop-agent/actions/workflows/ci.yml/badge.svg)](https://github.com/chriswu727/loop-agent/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 [![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/)
-[![Tests](https://img.shields.io/badge/tests-162%20offline-brightgreen.svg)](./apps/api/tests)
+[![Tests](https://img.shields.io/badge/tests-250%20offline-brightgreen.svg)](./apps/api/tests)
 
 `Next.js 16` · `FastAPI` · `Python 3.12` · `Postgres or SQLite` · `MIT`
 
@@ -236,7 +236,7 @@ differentiator roadmap: [`docs/STRATEGY.md`](./docs/STRATEGY.md).
 ## Tests
 
 ```bash
-cd apps/api && . .venv/bin/activate && pytest    # 162 tests, all offline
+cd apps/api && . .venv/bin/activate && pytest    # 250 tests, all offline
 ```
 
 Drives every stop condition with a scripted fake model; proves the sandbox refuses
