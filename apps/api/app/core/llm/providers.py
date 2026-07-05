@@ -59,7 +59,14 @@ async def call_deepseek(
 
     _raise_for_status(resp, "deepseek")
     data = resp.json()
-    content = data["choices"][0]["message"]["content"]
+    message = data["choices"][0]["message"]
+    content = message.get("content") or ""
+    if not content.strip():
+        # deepseek-reasoner (R1) intermittently returns empty `content` with its whole
+        # answer left in the chain-of-thought field. Fall back to it rather than treat
+        # the call as empty — the reasoning still carries the JSON the caller parses,
+        # and a persistent empty response would otherwise exhaust retries and kill the run.
+        content = message.get("reasoning_content") or ""
     tokens = int(data.get("usage", {}).get("total_tokens", 0))
     return content, tokens
 

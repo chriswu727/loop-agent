@@ -88,6 +88,27 @@ async def test_deepseek_adapter_parses() -> None:
     assert content == "hi" and tokens == 7
 
 
+async def test_deepseek_falls_back_to_reasoning_content_when_content_empty() -> None:
+    # deepseek-reasoner (R1) intermittently returns empty `content` with the answer
+    # left in `reasoning_content`. The adapter must use that rather than report empty
+    # (which would exhaust retries and fail an otherwise-fine run).
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {"message": {"content": "", "reasoning_content": '{"tool": "finish"}'}}
+                ],
+                "usage": {"total_tokens": 5},
+            },
+        )
+
+    content, _ = await call_deepseek(
+        _client(handler), "k", "s", "u", max_tokens=10, temperature=0.2
+    )
+    assert content == '{"tool": "finish"}'  # recovered from the reasoning field
+
+
 async def test_fallback_cascades_to_next_provider(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(settings, "anthropic_api_key", "a")
     monkeypatch.setattr(settings, "deepseek_api_key", "d")
