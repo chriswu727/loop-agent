@@ -125,9 +125,11 @@ ecosystem (one bundled skill), and adoption (zero) — those are maturity, not b
 ## 2026-07-05 follow-up — a second deepseek-reasoner live-testing round
 
 Running real tasks against `deepseek-reasoner` and reading the traces (and the
-server tracebacks, not just the status) surfaced five defects that unit tests could
-not — each a case where the *real model on a real task* hit something the mocks
-never exercised:
+server tracebacks, not just the status) surfaced **nine** defects that unit tests
+could not — each a case where the *real model on a real task* hit something the
+mocks never exercised. Two of them (spawn, container) were headline capabilities
+that were effectively unusable for the common case yet green in every test that
+wasn't a real end-to-end model run:
 
 - **Empty `content` from a reasoning model killed ~1/3 of runs.** R1 intermittently
   returns an empty `content` field with its answer left in `reasoning_content`. The
@@ -151,11 +153,32 @@ never exercised:
   above, which retries can't fix).
 - **Path-assumption wasted steps.** R1 guessed `cd /home/user` (a container path)
   inline; the prompt now states commands already run in the workspace (no `cd`).
+- **Over-asking left done work stuck.** R1 sometimes finished correctly then
+  `ask_user`'d a confirmation instead of `finish`, stranding the task in
+  `awaiting_input`. Tightened the `ask_user` spec to "pause only when genuinely
+  blocked"; validated it still asks on a truly ambiguous goal.
+- **Spawn broke the parent's test run (headline capability, common case).** A
+  sub-agent's grafted workspace put a second `test_foo.py` in the tree, so the
+  parent's pytest hit "import file mismatch" (exit 2) and went `stuck`. Fix: the
+  graft excludes cache cruft and drops `subtasks/conftest.py`
+  (`collect_ignore_glob=["*"]`) so the archive is compose-only. `stuck` →
+  `goal_achieved/100`.
+- **Container image lacked pytest (headline capability, common case).** In the real
+  isolation path (`--network none`), a task that wrote pytest tests couldn't run
+  them and couldn't `pip install` — dead end. Added `pytest` to `sandbox.Dockerfile`
+  (`make sandbox-image` to rebuild). `stuck` → `goal_achieved/100/execution`.
+- **Fragile JSON extraction wasted steps.** `_extract_json`'s greedy `\{.*\}` regex
+  broke on reasoning-model output (dict-braces in prose, multiple objects), yielding
+  "invalid action" steps — worsened by the `reasoning_content` fallback feeding it
+  raw CoT. Replaced with a brace-balancing scanner that returns the last parseable
+  object.
 
 Lesson reinforced: for an LLM agent, **live-test with the strongest real model and
 read the traces/tracebacks** — the highest-value defects (empty-content, verifier
-blindness, environment nesting) are invisible to unit tests and to "status=failed"
-alone.
+blindness, environment nesting, and whole broken capabilities like spawn-with-tests
+and container-with-pytest) are invisible to unit tests and to "status=failed" alone.
+Two headline features passed every mock-based test while being unusable for the
+common case; only a real end-to-end run surfaced them.
 
 ## Consequences
 
