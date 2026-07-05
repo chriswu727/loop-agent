@@ -30,7 +30,9 @@ TOOL_SPECS = """\
 - edit_file: replace an exact, unique snippet. args: {"path": "...", "old": "...", "new": "..."}
 - read_file: read a file you created. args: {"path": "relative/path"}
 - run_command: run a shell command in the workspace. args: {"command": "..."}
-- ask_user: pause to ask the user when you need input. args: {"question": "..."}
+- ask_user: pause ONLY when genuinely blocked by information you cannot obtain \
+yourself (an ambiguous goal, a missing value). Never to confirm work or ask \
+"anything else?" — if the goal is met, call finish instead. args: {"question": "..."}
 - remember: save a durable note for future tasks. args: {"note": "...", "topic": "optional"}
 - finish: you are done. args: {"summary": "...", "checks": [ ... ]}. Provide "checks" \
 the verifier re-runs to PROVE the work: \
