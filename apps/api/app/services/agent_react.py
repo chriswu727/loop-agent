@@ -62,6 +62,16 @@ _HISTORY_WINDOW = 12
 # would let the sub-tree overshoot the parent's (and the global) token ceiling.
 _MIN_SPAWN_BUDGET = 1_000
 
+# A reasoning model (deepseek-reasoner) spends the max_tokens budget on its chain of
+# thought BEFORE the answer, so a tight cap returns finish_reason=length with an EMPTY
+# content field — the decision/verdict is never emitted. That surfaced as intermittent
+# "invalid action" steps and, worse, verifier verdicts silently defaulting to score 0
+# (rejecting valid work). Budget generously for CoT + the answer. max_tokens is a
+# ceiling, not a target: a non-reasoning model still stops at its short answer, so the
+# larger cap costs it nothing.
+_PLAN_MAX_TOKENS = 2_500  # a plan decision can also carry write_file content
+_VERDICT_MAX_TOKENS = 1_500  # rubric + verify: reasoning then a short JSON verdict
+
 
 def _balanced_json_objects(text: str) -> list[str]:
     """Every balanced-brace ``{...}`` substring, in order, ignoring braces inside
@@ -408,7 +418,9 @@ class AgentReactService:
                 allow_spawn=task.depth < settings.agent_max_spawn_depth,
                 today=date.today().isoformat(),
             )
-            decision = await self.llm.complete(system, user, max_tokens=1200, temperature=0.5)
+            decision = await self.llm.complete(
+                system, user, max_tokens=_PLAN_MAX_TOKENS, temperature=0.5
+            )
             step_tokens = decision.tokens
             thought, tool, args = self._parse_decision(_extract_json(decision.content))
 
@@ -779,7 +791,9 @@ class AgentReactService:
 
     async def _understand(self, goal: str) -> tuple[list[str], int]:
         system, user = understand_prompts(goal, self._conversation)
-        result = await self.llm.complete(system, user, max_tokens=500, temperature=0.4)
+        result = await self.llm.complete(
+            system, user, max_tokens=_VERDICT_MAX_TOKENS, temperature=0.4
+        )
         parsed = _extract_json(result.content)
         if isinstance(parsed, list):
             rubric = [str(c).strip() for c in parsed if str(c).strip()][:6]
@@ -830,7 +844,9 @@ class AgentReactService:
             workspace.contents_digest(),
             today=date.today().isoformat(),
         )
-        result = await self.llm.complete(system, user, max_tokens=500, temperature=0.2)
+        result = await self.llm.complete(
+            system, user, max_tokens=_VERDICT_MAX_TOKENS, temperature=0.2
+        )
         parsed = _extract_json(result.content)
         if isinstance(parsed, dict):
             score = _clamp_score(parsed.get("score"))
