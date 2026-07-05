@@ -4,7 +4,7 @@
 #   docker compose up --build
 # Services are wired by name on a shared network; no host ports needed between them.
 # =============================================================================
-name: scalable-starter
+name: loop
 
 services:
   web:

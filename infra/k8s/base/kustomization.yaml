@@ -3,12 +3,12 @@ kind: Kustomization
 
 # Base manifests shared by every environment. Overlays patch replicas, images,
 # env, and namespace on top of these.
-namespace: scalable-starter
+namespace: loop
 
 labels:
   - includeSelectors: false
     pairs:
-      app.kubernetes.io/part-of: scalable-starter
+      app.kubernetes.io/part-of: loop
       app.kubernetes.io/managed-by: kustomize
 
 resources:

@@ -46,4 +46,4 @@ kubectl run migrate --rm -it --restart=Never \
 ## Rollout & rollback
 
 - Deploys are `RollingUpdate` with `maxUnavailable: 0` — no dropped requests.
-- Roll back: `kubectl rollout undo deployment/api -n scalable-starter-prod`.
+- Roll back: `kubectl rollout undo deployment/api -n loop-prod`.

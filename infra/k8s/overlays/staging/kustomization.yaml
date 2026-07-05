@@ -1,7 +1,7 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
-namespace: scalable-starter-staging
+namespace: loop-staging
 resources:
   - ../../base
 
@@ -15,10 +15,10 @@ replicas:
 
 images:
   - name: app-api
-    newName: ghcr.io/your-org/app-api
+    newName: ghcr.io/your-org/loop-agent-api
     newTag: staging
   - name: app-web
-    newName: ghcr.io/your-org/app-web
+    newName: ghcr.io/your-org/loop-agent-web
     newTag: staging
 
 patches:
