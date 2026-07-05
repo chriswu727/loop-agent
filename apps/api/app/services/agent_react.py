@@ -62,19 +62,53 @@ _HISTORY_WINDOW = 12
 _MIN_SPAWN_BUDGET = 1_000
 
 
+def _balanced_json_objects(text: str) -> list[str]:
+    """Every balanced-brace ``{...}`` substring, in order, ignoring braces inside
+    string literals. A greedy ``\\{.*\\}`` regex fails on the two things reasoning
+    models do constantly — dict-like braces in prose (``a map {k: v}``) before the
+    real JSON, and emitting more than one object — so scan properly instead."""
+    spans: list[str] = []
+    depth, start = 0, -1
+    in_str = esc = False
+    for i, ch in enumerate(text):
+        if in_str:
+            if esc:
+                esc = False
+            elif ch == "\\":
+                esc = True
+            elif ch == '"':
+                in_str = False
+            continue
+        if ch == '"':
+            in_str = True
+        elif ch == "{":
+            if depth == 0:
+                start = i
+            depth += 1
+        elif ch == "}" and depth > 0:
+            depth -= 1
+            if depth == 0 and start >= 0:
+                spans.append(text[start : i + 1])
+                start = -1
+    return spans
+
+
 def _extract_json(text: str) -> Any:
-    """Best-effort: pull the first JSON object/array out of a model reply."""
+    """Best-effort: pull the model's JSON decision out of a reply that may be wrapped
+    in prose or chain-of-thought. Prefers the LAST parseable object — a reasoning
+    model reasons first and states its decision at the end."""
     cleaned = re.sub(r"```(?:json)?", "", text).strip()
     try:
         return json.loads(cleaned)
     except json.JSONDecodeError:
         pass
-    match = re.search(r"(\{.*\}|\[.*\])", cleaned, re.DOTALL)
-    if match:
+    for span in reversed(_balanced_json_objects(cleaned)):
         try:
-            return json.loads(match.group(1))
+            obj = json.loads(span)
         except json.JSONDecodeError:
-            return None
+            continue
+        if isinstance(obj, dict):
+            return obj
     return None
 
 

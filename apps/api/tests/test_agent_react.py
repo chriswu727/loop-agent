@@ -16,8 +16,26 @@ from app.core.llm import LLMResult
 from app.domain.task import StopReason, TaskStatus
 from app.repositories.step import StepRepository
 from app.repositories.task import TaskRepository
-from app.services.agent_react import AgentReactService
+from app.services.agent_react import AgentReactService, _extract_json
 from app.tools import Workspace
+
+
+def test_extract_json_handles_reasoning_model_output() -> None:
+    # Clean JSON and fenced JSON still work.
+    assert _extract_json('{"tool":"finish"}')["tool"] == "finish"
+    assert _extract_json('```json\n{"tool":"write_file"}\n```')["tool"] == "write_file"
+    # Prose with dict-like braces BEFORE the decision (greedy regex used to choke).
+    assert _extract_json('a map {k: v} then:\n{"tool":"finish"}')["tool"] == "finish"
+    # Multiple objects -> take the LAST (the decision a reasoning model states last).
+    assert (
+        _extract_json('{"thought":"x"}\nActually:\n{"tool":"run_command"}')["tool"] == "run_command"
+    )
+    # Braces inside a string literal must not confuse brace-balancing.
+    assert _extract_json('{"tool":"write_file","args":{"content":"f() { return {}; }"}}')[
+        "tool"
+    ] == ("write_file")
+    # No JSON at all -> None (the loop then re-prompts).
+    assert _extract_json("just reasoning, no json") is None
 
 
 class ScriptedLLM:
