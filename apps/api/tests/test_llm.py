@@ -147,3 +147,32 @@ async def test_retries_same_provider_on_transient_error(monkeypatch: pytest.Monk
     assert result.content == "ok"
     assert calls["n"] == 3  # two retries, then success
     assert result.fallbacks == []  # same provider, no cascade
+
+
+async def test_default_retry_budget_rides_out_a_sustained_blip(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A reasoning model can be overloaded for several seconds; the DEFAULT budget must
+    # ride that out rather than discarding a partially-complete run. Four transient
+    # failures in a row then success -> the task should still get its completion.
+    monkeypatch.setattr(settings, "deepseek_api_key", "d")
+    for attr in ("anthropic_api_key", "gemini_api_key", "glm_api_key"):
+        monkeypatch.setattr(settings, attr, None)
+    monkeypatch.setattr(settings, "llm_retry_backoff_seconds", 0.0)  # no real sleep in test
+    # NOTE: no llm_max_retries override — this asserts the shipped default is resilient.
+
+    calls = {"n": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls["n"] += 1
+        if calls["n"] < 5:  # four transient failures before recovery
+            return httpx.Response(503, text="overloaded")
+        return httpx.Response(
+            200,
+            json={"choices": [{"message": {"content": "ok"}}], "usage": {"total_tokens": 2}},
+        )
+
+    llm = FallbackLLMClient(primary="deepseek", client=_client(handler))
+    result = await llm.complete("s", "u")
+    assert result.content == "ok"  # survived; the default budget covers 4 retries
+    assert calls["n"] == 5

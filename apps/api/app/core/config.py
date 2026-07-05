@@ -95,11 +95,14 @@ class Settings(BaseSettings):
     )
     llm_timeout_seconds: int = 120
     # Retry a retryable failure (timeout, 5xx, empty) on the same provider before
-    # cascading — one transient blip shouldn't fail a whole task. Bounded so a
-    # negative value can't make complete() skip every provider (client asserts >=1
-    # attempt), and backoff can't be negative.
-    llm_max_retries: int = Field(default=2, ge=0)
-    llm_retry_backoff_seconds: float = Field(default=0.5, ge=0.0)
+    # cascading — one transient blip shouldn't fail a whole task. A mid-run failure
+    # is expensive: it discards a partially-complete run (the model may already have
+    # written correct output), so the budget is set to ride out a multi-second
+    # overload of a reasoning model, not just an instant blip. With these defaults:
+    # 5 attempts, linear backoff summing to ~7.5s. Bounded so a negative value can't
+    # make complete() skip every provider (client asserts >=1 attempt).
+    llm_max_retries: int = Field(default=4, ge=0)
+    llm_retry_backoff_seconds: float = Field(default=0.75, ge=0.0)
 
     # ---- Agent loop limits (the "within the limit" guardrails) ----
     # Defaults are what a new task starts with; caps are the hard ceilings a
