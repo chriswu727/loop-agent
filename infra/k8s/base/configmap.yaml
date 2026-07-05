@@ -13,5 +13,5 @@ data:
   PROMETHEUS_ENABLED: "true"
   # Frontend
   NEXT_PUBLIC_API_URL: "https://app.example.com"
-  NEXT_PUBLIC_APP_NAME: "Scalable Starter"
+  NEXT_PUBLIC_APP_NAME: "Loop"
   API_INTERNAL_URL: "http://api:8000"

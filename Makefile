@@ -1,5 +1,5 @@
 # =============================================================================
-# Scalable Starter — one entrypoint for every common task.
+# Loop — one entrypoint for every common task.
 # Run `make help` to see everything. Designed so a new contributor can go from
 # `git clone` to a running stack with two commands: `make setup` then `make up`.
 # =============================================================================

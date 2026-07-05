@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for building on Scalable Starter. This guide keeps the codebase coherent
+Thanks for contributing to Loop. This guide keeps the codebase coherent
 as it grows.
 
 ## Getting started

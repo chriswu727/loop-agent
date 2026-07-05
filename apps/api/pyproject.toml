@@ -1,7 +1,7 @@
 [project]
-name = "app"
+name = "loop-api"
 version = "0.1.0"
-description = "Scalable Starter API — FastAPI backend skeleton (no business logic)."
+description = "Loop — autonomous agent runtime with re-execution receipts and least-authority sandboxing (FastAPI backend)."
 readme = "README.md"
 requires-python = ">=3.12"
 license = { text = "MIT" }

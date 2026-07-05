@@ -22,7 +22,7 @@ from app.observability.metrics import MetricsMiddleware, metrics_endpoint
 
 def create_app() -> FastAPI:
     app = FastAPI(
-        title="Scalable Starter API",
+        title="Loop API",
         version=settings.version,
         docs_url="/docs",
         redoc_url="/redoc",

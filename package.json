@@ -2,7 +2,7 @@
   "name": "loop",
   "version": "0.1.0",
   "private": true,
-  "description": "Production-grade, platform-agnostic full-stack skeleton: Next.js + FastAPI, built to scale on Kubernetes. Zero business logic \u2014 fork it and ship.",
+  "description": "Loop \u2014 a verifiable, least-authority autonomous agent runtime. Next.js + FastAPI, deployable on Kubernetes.",
   "license": "MIT",
   "packageManager": "pnpm@10.11.0",
   "engines": {
