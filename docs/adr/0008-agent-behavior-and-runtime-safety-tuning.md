@@ -125,7 +125,7 @@ ecosystem (one bundled skill), and adoption (zero) — those are maturity, not b
 ## 2026-07-05 follow-up — a second deepseek-reasoner live-testing round
 
 Running real tasks against `deepseek-reasoner` and reading the traces (and the
-server tracebacks, not just the status) surfaced **nine** defects that unit tests
+server tracebacks, not just the status) surfaced **eleven** defects that unit tests
 could not — each a case where the *real model on a real task* hit something the
 mocks never exercised. Two of them (spawn, container) were headline capabilities
 that were effectively unusable for the common case yet green in every test that
@@ -172,6 +172,18 @@ wasn't a real end-to-end model run:
   "invalid action" steps — worsened by the `reasoning_content` fallback feeding it
   raw CoT. Replaced with a brace-balancing scanner that returns the last parseable
   object.
+- **The agent had no clock.** Nothing told the model the date, so a "dated report"
+  (or any log/changelog) guessed the stale training date or — with shell off — asked
+  the user. Inject "Today's date is <YYYY-MM-DD>" into the plan and verify prompts.
+- **`max_tokens` starved the reasoning model's answer (root cause of two symptoms).**
+  For `deepseek-reasoner` the cap covers the chain-of-thought, so the verify call at
+  `max_tokens=500` returned `finish_reason=length` with an EMPTY `content` — the JSON
+  verdict never emitted. `_extract_json`→None→verdict defaults to **score 0/met=False,
+  rejecting valid work → stuck**; the same starvation produced the intermittent
+  "invalid action" plan steps. Captured the raw response to confirm, then raised the
+  caps (plan 1200→2500, rubric/verify 500→1500). `max_tokens` is a ceiling not a
+  target, so non-reasoning models are unaffected. A doc/README task that was `stuck`
+  now completes `goal_achieved/100`.
 
 Lesson reinforced: for an LLM agent, **live-test with the strongest real model and
 read the traces/tracebacks** — the highest-value defects (empty-content, verifier
