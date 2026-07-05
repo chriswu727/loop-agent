@@ -24,6 +24,7 @@ import json
 import re
 import shutil
 import uuid
+from datetime import date
 from pathlib import Path
 from typing import Any
 
@@ -405,6 +406,7 @@ class AgentReactService:
                 self._conversation,
                 notices=self._notices,
                 allow_spawn=task.depth < settings.agent_max_spawn_depth,
+                today=date.today().isoformat(),
             )
             decision = await self.llm.complete(system, user, max_tokens=1200, temperature=0.5)
             step_tokens = decision.tokens
@@ -826,6 +828,7 @@ class AgentReactService:
             workspace.tree(),
             checks_summary(check_results),
             workspace.contents_digest(),
+            today=date.today().isoformat(),
         )
         result = await self.llm.complete(system, user, max_tokens=500, temperature=0.2)
         parsed = _extract_json(result.content)

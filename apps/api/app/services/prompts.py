@@ -49,6 +49,7 @@ def plan_prompts(
     conversation: str = "",
     notices: str = "",
     allow_spawn: bool = False,
+    today: str = "",
 ) -> tuple[str, str]:
     system = (
         "You are an autonomous agent that completes a task by taking ONE action at "
@@ -128,9 +129,13 @@ def plan_prompts(
         else ""
     )
     notices_block = f"IMPORTANT:\n{notices}\n" if notices.strip() else ""
+    # The model has no clock; without this it guesses (its stale training date) or,
+    # when shell is off, must ask the user — so dated reports/logs/changelogs break.
+    date_block = f"Today's date is {today}.\n\n" if today else ""
     user = (
         f"Goal:\n{goal}\n\n"
         f"Success criteria:\n{criteria}\n\n"
+        f"{date_block}"
         f"{notices_block}"
         f"{convo_block}"
         f"{skill_block}"
@@ -151,6 +156,7 @@ def verify_prompts(
     workspace_tree: str,
     checks_summary: str,
     file_contents: str = "",
+    today: str = "",
 ) -> tuple[str, str]:
     system = (
         "You are a demanding verifier. You decide whether an autonomous agent has "
@@ -163,8 +169,10 @@ def verify_prompts(
     # config, code that must not be run) they are the ONLY way to judge correctness —
     # without them a correct file is indistinguishable from an empty one.
     contents_block = f"File contents:\n{file_contents}\n\n" if file_contents else ""
+    date_block = f"Today's date is {today}.\n\n" if today else ""
     user = (
         f"Goal:\n{goal}\n\nSuccess criteria:\n{criteria}\n\n"
+        f"{date_block}"
         f"Workspace files:\n{workspace_tree}\n\n"
         f"{contents_block}"
         f"Machine check results (re-run independently):\n{checks_summary}\n\n"

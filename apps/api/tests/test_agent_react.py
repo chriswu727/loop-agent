@@ -38,6 +38,20 @@ def test_extract_json_handles_reasoning_model_output() -> None:
     assert _extract_json("just reasoning, no json") is None
 
 
+def test_prompts_inject_the_current_date() -> None:
+    # The agent has no clock; a dated report/log needs the date in context (else it
+    # guesses its stale training date or, with shell off, has to ask the user).
+    from app.services.prompts import plan_prompts, verify_prompts
+
+    _, plan_user = plan_prompts("g", ["c"], "tree", "hist", 5, 1000, today="2026-07-05")
+    assert "Today's date is 2026-07-05." in plan_user
+    _, verify_user = verify_prompts("g", ["c"], "sum", "tree", "checks", today="2026-07-05")
+    assert "Today's date is 2026-07-05." in verify_user
+    # Absent when not supplied (no misleading blank date line).
+    _, no_date = plan_prompts("g", ["c"], "tree", "hist", 5, 1000)
+    assert "Today's date" not in no_date
+
+
 class ScriptedLLM:
     """Returns a rubric for the understand call, a scripted decision for each plan
     call, and a fixed verdict for the verify call."""
