@@ -199,12 +199,20 @@ import pytest as _pytest  # noqa: E402
         ("dig example.com", True),
         ("ping -c1 8.8.8.8", True),
         ("nslookup example.com", True),
+        # node's low-level network modules must be caught (were a raw-socket bypass).
+        ("node -e \"require('net').connect(1234,'evil.com')\"", True),
+        ("node -e \"require('dgram').createSocket('udp4')\"", True),
+        ("node -e \"require('https').request(o)\"", True),
+        ('node -e "http.get(o)"', True),
+        ("python -c \"import socket; socket.create_connection(('h',1))\"", True),
         ("ls -la", False),
         ("python solution.py", False),
         ("git status", False),
         ("git commit -m x", False),
         ("hostname", False),  # local, not a network probe
         ("echo symlinks are fine", False),  # 'links' inside a word
+        ('node -e "console.log(magnet_link)"', False),  # 'net' inside a word, not net.connect
+        ("cat socket.py", False),  # a filename, not a socket call
     ],
 )
 def test_network_command_detection(command: str, is_network: bool) -> None:

@@ -197,8 +197,9 @@ _NETWORK: tuple[tuple[re.Pattern[str], str], ...] = tuple(
             r"(import\s+(urllib|requests|httpx|socket|http|aiohttp|ftplib|smtplib)|"
             r"urllib\.|requests\.(get|post|put|delete|patch|head|request|Session)|"
             r"urlopen|socket\.socket|http\.client|aiohttp\.|net/http|Net::HTTP|\bLWP\b|IO::Socket|"
-            r"fetch\s*\(|require\(\s*['\"](https?|node:http|http)|open-uri|file_get_contents|"
-            r"['\"]https?://)",
+            r"fetch\s*\(|require\(\s*['\"](?:node:)?(?:https?|net|dgram|tls|dns|http2)\b|"
+            r"\bnet\.(?:connect|createConnection)|\bhttps?\.(?:request|get)\b|"
+            r"open-uri|file_get_contents|['\"]https?://)",
             "interpreter network access",
         ),
     ]
@@ -210,7 +211,12 @@ _NETWORK: tuple[tuple[re.Pattern[str], str], ...] = tuple(
 # default-deny egress on the inline path we also scan the referenced script.
 _NET_IN_CODE = re.compile(
     r"(urllib|requests|httpx|http\.client|aiohttp|urlopen|socket\.|ftplib|smtplib|"
-    r"net/http|open-uri|file_get_contents|fetch\s*\(|https?://|/dev/tcp/)",
+    r"net/http|open-uri|file_get_contents|fetch\s*\(|https?://|/dev/tcp/|"
+    # node's low-level network modules — net.connect / http.request / require('net')
+    # etc. carry no URL or socket. token, so without these they slip past (a raw-socket
+    # egress bypass in inline mode; the container's --network none always blocks it).
+    r"require\(\s*['\"](?:net|http|https|http2|dgram|dns|tls)['\"]\s*\)|"
+    r"\bnet\.(?:connect|createConnection|Socket)|\bhttps?\.(?:request|get)\b)",
     re.IGNORECASE,
 )
 _SCRIPT_ARG = re.compile(r"(?:^|/)[\w.\-]+\.(py|js|mjs|cjs|ts|rb|pl|php|sh|bash)$", re.IGNORECASE)
