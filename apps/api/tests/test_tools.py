@@ -31,6 +31,26 @@ def test_workspace_write_read_roundtrip(tmp_path: Path) -> None:
     assert ("notes/a.txt", 5) in ws.list_files()
 
 
+def test_workspace_contents_digest_shows_text_skips_binary(tmp_path: Path) -> None:
+    ws = Workspace(tmp_path / "ws")
+    ws.write("hello.rs", 'fn main() { println!("hi"); }')
+    ws.write("README.md", "# Title\nsome docs")
+    (ws.root / "blob.bin").write_bytes(b"\x00\x01\x02binary")
+    digest = ws.contents_digest()
+    # Text files show their actual content (the evidence the verifier judges by)...
+    assert "fn main()" in digest and "# Title" in digest
+    assert "### hello.rs" in digest
+    # ...but a binary file is named, not dumped.
+    assert "blob.bin" in digest and "skipped (binary)" in digest
+
+
+def test_workspace_contents_digest_truncates(tmp_path: Path) -> None:
+    ws = Workspace(tmp_path / "ws")
+    ws.write("big.txt", "A" * 5000)
+    digest = ws.contents_digest(per_file=200)
+    assert "truncated" in digest and digest.count("A") <= 300  # bounded, not the full 5000
+
+
 def test_workspace_edit_replaces_unique_snippet(tmp_path: Path) -> None:
     ws = Workspace(tmp_path / "ws")
     ws.write("a.py", "x = 1\ny = 2\n")

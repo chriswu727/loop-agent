@@ -772,7 +772,12 @@ class AgentReactService:
         verified_by = "execution" if check_results else "judgment"
 
         system, user = verify_prompts(
-            task.goal, task.rubric, summary, workspace.tree(), checks_summary(check_results)
+            task.goal,
+            task.rubric,
+            summary,
+            workspace.tree(),
+            checks_summary(check_results),
+            workspace.contents_digest(),
         )
         result = await self.llm.complete(system, user, max_tokens=500, temperature=0.2)
         parsed = _extract_json(result.content)

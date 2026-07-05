@@ -143,7 +143,12 @@ def plan_prompts(
 
 
 def verify_prompts(
-    goal: str, rubric: list[str], summary: str, workspace_tree: str, checks_summary: str
+    goal: str,
+    rubric: list[str],
+    summary: str,
+    workspace_tree: str,
+    checks_summary: str,
+    file_contents: str = "",
 ) -> tuple[str, str]:
     system = (
         "You are a demanding verifier. You decide whether an autonomous agent has "
@@ -152,9 +157,14 @@ def verify_prompts(
         "those results over the agent's prose. You never rubber-stamp."
     )
     criteria = "\n".join(f"- {c}" for c in rubric) or "- Fully satisfies the task"
+    # The file CONTENTS are first-class evidence: for content-only work (a doc, a
+    # config, code that must not be run) they are the ONLY way to judge correctness —
+    # without them a correct file is indistinguishable from an empty one.
+    contents_block = f"File contents:\n{file_contents}\n\n" if file_contents else ""
     user = (
         f"Goal:\n{goal}\n\nSuccess criteria:\n{criteria}\n\n"
         f"Workspace files:\n{workspace_tree}\n\n"
+        f"{contents_block}"
         f"Machine check results (re-run independently):\n{checks_summary}\n\n"
         f"The agent says it is done:\n{summary}\n\n"
         "The agent WROTE ITS OWN checks, so judge whether they actually substantiate "

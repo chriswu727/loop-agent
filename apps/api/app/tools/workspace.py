@@ -96,6 +96,33 @@ class Workspace:
                 break
         return files
 
+    def contents_digest(
+        self, *, max_files: int = 10, per_file: int = 2000, total: int = 8000
+    ) -> str:
+        """A bounded snapshot of output-file CONTENTS. The tree alone hides whether a
+        file's content actually satisfies the goal, so the verifier needs this to judge
+        content-only (non-executable) work by evidence rather than the agent's word.
+        Skips binary and oversized files; truncates per file and in total."""
+        out: list[str] = []
+        used = 0
+        for rel, size in self.list_files():
+            if len(out) >= max_files or used >= total:
+                break
+            if size > 200_000:
+                out.append(f"### {rel} ({size}b) — skipped (too large to show)")
+                continue
+            try:
+                text = self.read(rel, limit=per_file)
+            except Exception:
+                continue
+            if "\x00" in text:
+                out.append(f"### {rel} ({size}b) — skipped (binary)")
+                continue
+            block = f"### {rel}\n{text}"
+            out.append(block)
+            used += len(block)
+        return "\n\n".join(out) if out else "(no readable files)"
+
     def tree(self, *, max_entries: int = 200) -> str:
         """A compact listing of the workspace, shown to the agent each turn so it
         knows what it has already created."""
