@@ -94,6 +94,11 @@ _DENY: tuple[tuple[re.Pattern[str], str], ...] = tuple(
             r"\bn(c|cat)\b[^;|&\n]*\s-[a-z]*[ec]\b|\bsocat\b[^;|&\n]*(exec|system):|>&\s*/dev/tcp",
             "reverse shell",
         ),
+        # The interpreter equivalents: redirecting a socket fd onto stdio
+        # (os.dup2(s.fileno(), 0)) or grabbing a TTY (pty.spawn) — the classic python
+        # reverse-shell signatures, ~never legitimate. Keeps the reverse-shell block
+        # consistent across shell and allowlisted interpreters.
+        (r"\bdup2\b[^;\n]*\bfileno\b|\bpty\.spawn\b", "interpreter reverse shell"),
     ]
 )
 
