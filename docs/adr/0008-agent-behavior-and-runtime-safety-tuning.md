@@ -122,6 +122,41 @@ concrete weaknesses where the code lagged the pitch. Closed the code-fixable one
 Not code-fixable, stated plainly in the comparison: reach (one chat surface),
 ecosystem (one bundled skill), and adoption (zero) — those are maturity, not bugs.
 
+## 2026-07-05 follow-up — a second deepseek-reasoner live-testing round
+
+Running real tasks against `deepseek-reasoner` and reading the traces (and the
+server tracebacks, not just the status) surfaced five defects that unit tests could
+not — each a case where the *real model on a real task* hit something the mocks
+never exercised:
+
+- **Empty `content` from a reasoning model killed ~1/3 of runs.** R1 intermittently
+  returns an empty `content` field with its answer left in `reasoning_content`. The
+  adapter read only `content`, so the client saw "empty content", retried (still
+  empty — it's prompt/moment-specific, not a transient blip), exhausted retries, and
+  the `LLMError` failed an otherwise-complete run. Fix: fall back to
+  `reasoning_content` when `content` is empty (`providers.py`). This was found only
+  by capturing the actual traceback — the symptom looked like a generic blip.
+- **The verifier judged content-only work blind.** `verify_prompts` was fed the
+  workspace *tree* (names + sizes) but never file *contents*, while told to "judge
+  only by evidence, never rubber-stamp". Non-executable tasks (a doc, a config, code
+  told not to run) therefore always went `stuck`. Fix: a bounded
+  `Workspace.contents_digest()` as first-class evidence. Validated: a "write a file,
+  don't run it" task went `stuck` → `goal_achieved/100`.
+- **Inline demo workspace nested under the app project.** `make demo` put task
+  workspaces under `apps/api/`, so an agent's `pytest` inherited the app's
+  `pyproject.toml` (`rootdir`, asyncio-auto) and its tests failed no matter what.
+  Fix: demo workspace root outside any Python project; documented the inline caveat.
+- **Shallow retry budget.** 2 retries / ~1.5s couldn't ride out a multi-second R1
+  overload; widened to 4 / ~7.5s (transient blips only — empty content is the case
+  above, which retries can't fix).
+- **Path-assumption wasted steps.** R1 guessed `cd /home/user` (a container path)
+  inline; the prompt now states commands already run in the workspace (no `cd`).
+
+Lesson reinforced: for an LLM agent, **live-test with the strongest real model and
+read the traces/tracebacks** — the highest-value defects (empty-content, verifier
+blindness, environment nesting) are invisible to unit tests and to "status=failed"
+alone.
+
 ## Consequences
 
 - Fewer wasted steps/tokens per task; cleaner finishes; honest degradation when a
