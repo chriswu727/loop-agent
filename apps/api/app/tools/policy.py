@@ -46,6 +46,11 @@ _DENY: tuple[tuple[re.Pattern[str], str], ...] = tuple(
             r"\brm\b(?=[^;|&\n]*(?:-[a-z]*r|--recursive))[^;|&\n]*\s(/|~|\*)",
             "recursive delete of a broad path",
         ),
+        # The Python equivalents of rm -rf. Since `python` is allowlisted and the
+        # -c inner is scanned, a library call (no shell danger-word) would otherwise
+        # slip straight through the shell-oriented rules above and, inline, delete
+        # host files. Blocked broadly, like rm -rf is.
+        (r"\bshutil\.rmtree\b|\bos\.removedirs\b", "recursive delete via a Python library"),
         (r"\b(sudo|doas|pkexec)\b|\bsu\s+-", "privilege escalation"),
         # mkfs at a command position (start / after a separator / after sudo), so
         # `cat mkfs.md` (a filename) isn't flagged.

