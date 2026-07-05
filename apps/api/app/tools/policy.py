@@ -51,6 +51,10 @@ _DENY: tuple[tuple[re.Pattern[str], str], ...] = tuple(
         # slip straight through the shell-oriented rules above and, inline, delete
         # host files. Blocked broadly, like rm -rf is.
         (r"\bshutil\.rmtree\b|\bos\.removedirs\b", "recursive delete via a Python library"),
+        # Same hole for the other allowlisted interpreter: node's fs.rm/rmdir with
+        # {recursive:true}. Match the recursive option so single-file deletes aren't
+        # over-blocked.
+        (r"\b(rm|rmdir)(Sync)?\s*\([^;\n]*recursive", "recursive delete via a Node fs call"),
         (r"\b(sudo|doas|pkexec)\b|\bsu\s+-", "privilege escalation"),
         # mkfs at a command position (start / after a separator / after sudo), so
         # `cat mkfs.md` (a filename) isn't flagged.
