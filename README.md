@@ -6,8 +6,10 @@
 re-running it, and produces a receipt you can replay — stopping the moment it hits
 a limit you set.**
 
-A complete, production-shaped autonomous agent on a layered Next.js + FastAPI
-foundation. Runs on a laptop with one LLM API key and no other infrastructure.
+Most personal agents run chat-first on your own machine — handy, but researchers keep
+pulling real secrets out of them through prompt injection. Loop is built the other way
+around: sandboxed, least-authority, and every task ends in a receipt you can replay.
+Runs on a laptop with one LLM API key and no other infrastructure.
 
 [![CI](https://github.com/chriswu727/loop-agent/actions/workflows/ci.yml/badge.svg)](https://github.com/chriswu727/loop-agent/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
@@ -17,6 +19,12 @@ foundation. Runs on a laptop with one LLM API key and no other infrastructure.
 `Next.js 16` · `FastAPI` · `Python 3.12` · `Postgres or SQLite` · `MIT`
 
 </div>
+
+<p align="center">
+  <img src="./docs/images/task.png" alt="A finished task in Loop: verified by re-execution, default-deny network, a hash-verified Receipt, and downloadable output files" width="840" />
+</p>
+
+<p align="center"><sub>A real finished task. You asked for the first 12 Fibonacci numbers — Loop wrote <code>fib.py</code>, ran it, an independent verifier re-ran the checks on a fresh copy of the workspace, and it shipped a <b>Receipt</b>: <code>verified 96/100</code> · <code>Network: none (default-deny)</code> · <code>hash verified</code>, with the outputs downloadable.</sub></p>
 
 ---
 
@@ -154,6 +162,10 @@ NEXT_PUBLIC_API_URL=http://localhost:8000 pnpm --filter web dev
 
 Open http://localhost:3000, publish anything, and watch it plan → write → run →
 **verify** → Receipt. Then add a real key (below) to point it at your own goals.
+
+<p align="center">
+  <img src="./docs/images/home.png" alt="Loop's publish form: a goal box with example tasks, per-task safety toggles (no shell, allow network, require approval, use browser), a skill picker, and step / token-budget sliders" width="840" />
+</p>
 
 ## Quickstart (zero infrastructure)
 
