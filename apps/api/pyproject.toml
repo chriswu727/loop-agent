@@ -40,7 +40,7 @@ dev = [
     # stale local ruff hasn't, so `ruff check` is green locally but red in CI. Bump
     # deliberately after fixing any new findings locally.
     "ruff==0.15.20",
-    "mypy==2.1.0",
+    "mypy==2.2.0",
 ]
 # Preinstalled in the runtime image so the agent can edit real documents:
 # spreadsheets (openpyxl), Word docs (python-docx), and tabular data (pandas).
