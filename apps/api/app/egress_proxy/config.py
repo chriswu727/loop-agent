@@ -26,6 +26,24 @@ class EgressProxySettings(BaseSettings):
     authority_public_key_file: str | None = Field(
         default=None, validation_alias="EGRESS_PROXY_AUTHORITY_PUBLIC_KEY_FILE"
     )
+    audit_database_path: str | None = Field(
+        default=None, validation_alias="EGRESS_PROXY_AUDIT_DATABASE_PATH"
+    )
+    require_durable_audit: bool = Field(
+        default=False, validation_alias="EGRESS_PROXY_REQUIRE_DURABLE_AUDIT"
+    )
+    audit_max_events_per_run: int = Field(
+        default=200,
+        ge=1,
+        le=10_000,
+        validation_alias="EGRESS_PROXY_AUDIT_MAX_EVENTS_PER_RUN",
+    )
+    audit_max_events_total: int = Field(
+        default=50_000,
+        ge=1,
+        le=1_000_000,
+        validation_alias="EGRESS_PROXY_AUDIT_MAX_EVENTS_TOTAL",
+    )
 
     def public_key_pem(self) -> str | None:
         if self.authority_public_key:

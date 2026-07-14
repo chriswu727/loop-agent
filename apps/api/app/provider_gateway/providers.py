@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import contextlib
 import email
 import imaplib
 import json
@@ -213,6 +214,7 @@ class BrowserProvider:
         self._stack = AsyncExitStack()
         self._session: Any = None
         self._config_path: Path | None = None
+        self._relay: _AuthenticatedProxyRelay | None = None
         self.tools: list[dict[str, str]] = []
 
     async def start(self) -> None:
@@ -221,6 +223,8 @@ class BrowserProvider:
 
         if not self._proxy_url or not self._egress_token:
             raise RuntimeError("Browser requires an authenticated egress proxy")
+        if not self._argv:
+            raise RuntimeError("Browser command is empty")
         if any(
             arg == "--config"
             or arg.startswith("--config=")
@@ -229,13 +233,15 @@ class BrowserProvider:
             for arg in self._argv[1:]
         ):
             raise RuntimeError("Browser command must not override the enforced proxy config")
-        self._config_path = _write_browser_proxy_config(self._proxy_url, self._egress_token)
-        params = StdioServerParameters(
-            command=self._argv[0],
-            args=[*self._argv[1:], "--config", str(self._config_path)],
-            env=_browser_subprocess_env(),
-        )
         try:
+            self._relay = _AuthenticatedProxyRelay(self._proxy_url, self._egress_token)
+            await self._relay.start()
+            self._config_path = _write_browser_proxy_config(self._relay.proxy_url)
+            params = StdioServerParameters(
+                command=self._argv[0],
+                args=[*self._argv[1:], "--config", str(self._config_path)],
+                env=_browser_subprocess_env(),
+            )
             read, write = await self._stack.enter_async_context(stdio_client(params))
             self._session = await self._stack.enter_async_context(ClientSession(read, write))
             await self._session.initialize()
@@ -259,6 +265,11 @@ class BrowserProvider:
         text = "".join(getattr(item, "text", "") for item in getattr(result, "content", []))
         return (text or "(no text output)")[:5000]
 
+    async def update_egress_token(self, token: str) -> None:
+        if self._relay is None:
+            raise RuntimeError("Browser proxy relay is unavailable")
+        await self._relay.update_token(token)
+
     async def stop(self) -> None:
         try:
             await self._stack.aclose()
@@ -266,9 +277,84 @@ class BrowserProvider:
             if self._config_path is not None:
                 self._config_path.unlink(missing_ok=True)
                 self._config_path = None
+            if self._relay is not None:
+                await self._relay.close()
+                self._relay = None
 
 
-def _browser_proxy(proxy_url: str, token: str) -> dict[str, str]:
+class _AuthenticatedProxyRelay:
+    def __init__(self, upstream_url: str, token: str) -> None:
+        self._upstream_host, self._upstream_port = _proxy_endpoint(upstream_url)
+        self._token = token
+        self._server: asyncio.AbstractServer | None = None
+        self._listen_port: int | None = None
+        self._writers: set[asyncio.StreamWriter] = set()
+
+    @property
+    def proxy_url(self) -> str:
+        if self._server is None or self._listen_port is None:
+            raise RuntimeError("Browser proxy relay is unavailable")
+        return f"http://127.0.0.1:{self._listen_port}"
+
+    async def start(self) -> None:
+        if self._server is None:
+            self._server = await asyncio.start_server(self._handle, "127.0.0.1", 0)
+            sockets = getattr(self._server, "sockets", None)
+            if not sockets:
+                await self.close()
+                raise RuntimeError("Browser proxy relay did not bind a socket")
+            self._listen_port = int(sockets[0].getsockname()[1])
+
+    async def update_token(self, token: str) -> None:
+        if not token:
+            raise ValueError("Browser egress token is required")
+        if token == self._token:
+            return
+        self._token = token
+        await self._close_connections()
+
+    async def close(self) -> None:
+        if self._server is not None:
+            self._server.close()
+            await self._server.wait_closed()
+            self._server = None
+            self._listen_port = None
+        await self._close_connections()
+        self._writers.clear()
+
+    async def _close_connections(self) -> None:
+        writers = list(self._writers)
+        for writer in writers:
+            writer.close()
+        for writer in writers:
+            with contextlib.suppress(Exception):
+                await writer.wait_closed()
+
+    async def _handle(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+        upstream_writer: asyncio.StreamWriter | None = None
+        self._writers.add(writer)
+        try:
+            request_head = await reader.readuntil(b"\r\n\r\n")
+            upstream_reader, upstream_writer = await asyncio.open_connection(
+                self._upstream_host, self._upstream_port
+            )
+            self._writers.add(upstream_writer)
+            upstream_writer.write(_inject_proxy_authorization(request_head, self._token))
+            await upstream_writer.drain()
+            await _relay_streams(reader, writer, upstream_reader, upstream_writer)
+        except (ConnectionError, asyncio.IncompleteReadError, asyncio.LimitOverrunError):
+            pass
+        finally:
+            for active in (writer, upstream_writer):
+                if active is None:
+                    continue
+                self._writers.discard(active)
+                active.close()
+                with contextlib.suppress(Exception):
+                    await active.wait_closed()
+
+
+def _proxy_endpoint(proxy_url: str) -> tuple[str, int]:
     parsed = urlsplit(proxy_url)
     if (
         parsed.scheme != "http"
@@ -280,16 +366,22 @@ def _browser_proxy(proxy_url: str, token: str) -> dict[str, str]:
         or parsed.path not in {"", "/"}
     ):
         raise ValueError("Provider gateway egress proxy URL must be http://host:port")
-    host = f"[{parsed.hostname}]" if ":" in parsed.hostname else parsed.hostname
+    try:
+        port = parsed.port or 80
+    except ValueError as exc:
+        raise ValueError("Provider gateway egress proxy URL has an invalid port") from exc
+    return parsed.hostname, port
+
+
+def _browser_proxy(proxy_url: str) -> dict[str, str]:
+    parsed = urlsplit(proxy_url)
+    hostname, _ = _proxy_endpoint(proxy_url)
+    host = f"[{hostname}]" if ":" in hostname else hostname
     port = f":{parsed.port}" if parsed.port else ""
-    return {
-        "server": urlunsplit((parsed.scheme, f"{host}{port}", "", "", "")),
-        "username": "loop",
-        "password": token,
-    }
+    return {"server": urlunsplit((parsed.scheme, f"{host}{port}", "", "", ""))}
 
 
-def _write_browser_proxy_config(proxy_url: str, token: str) -> Path:
+def _write_browser_proxy_config(proxy_url: str) -> Path:
     descriptor, raw_path = tempfile.mkstemp(prefix="loop-browser-", suffix=".json")
     path = Path(raw_path)
     try:
@@ -297,8 +389,8 @@ def _write_browser_proxy_config(proxy_url: str, token: str) -> Path:
             json.dump(
                 {
                     "browser": {
-                        "launchOptions": {"proxy": _browser_proxy(proxy_url, token)},
-                        "contextOptions": {"proxy": _browser_proxy(proxy_url, token)},
+                        "launchOptions": {"proxy": _browser_proxy(proxy_url)},
+                        "contextOptions": {"proxy": _browser_proxy(proxy_url)},
                     }
                 },
                 handle,
@@ -307,6 +399,40 @@ def _write_browser_proxy_config(proxy_url: str, token: str) -> Path:
         path.unlink(missing_ok=True)
         raise
     return path
+
+
+def _inject_proxy_authorization(request_head: bytes, token: str) -> bytes:
+    lines = request_head.removesuffix(b"\r\n\r\n").split(b"\r\n")
+    if not lines or b" " not in lines[0]:
+        raise ConnectionError("Invalid browser proxy request")
+    filtered = [
+        line
+        for line in lines[1:]
+        if line.partition(b":")[0].strip().lower() != b"proxy-authorization"
+    ]
+    encoded = base64.b64encode(f"loop:{token}".encode())
+    return b"\r\n".join([lines[0], *filtered, b"Proxy-Authorization: Basic " + encoded, b"", b""])
+
+
+async def _relay_streams(
+    client_reader: asyncio.StreamReader,
+    client_writer: asyncio.StreamWriter,
+    upstream_reader: asyncio.StreamReader,
+    upstream_writer: asyncio.StreamWriter,
+) -> None:
+    async def copy(source: asyncio.StreamReader, destination: asyncio.StreamWriter) -> None:
+        while data := await source.read(64 * 1024):
+            destination.write(data)
+            await destination.drain()
+
+    tasks = {
+        asyncio.create_task(copy(client_reader, upstream_writer)),
+        asyncio.create_task(copy(upstream_reader, client_writer)),
+    }
+    done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+    for task in pending:
+        task.cancel()
+    await asyncio.gather(*done, *pending, return_exceptions=True)
 
 
 def _browser_subprocess_env() -> dict[str, str]:

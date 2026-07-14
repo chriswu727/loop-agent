@@ -64,7 +64,12 @@ class ProviderGatewayRuntime:
         return tools
 
     async def invoke(
-        self, grant: AuthorityGrant, tool: str, args: dict[str, Any]
+        self,
+        grant: AuthorityGrant,
+        tool: str,
+        args: dict[str, Any],
+        *,
+        egress_token: str | None = None,
     ) -> tuple[str, dict[str, Any]]:
         required = TOOL_CAPABILITIES.get(tool)
         browser = self._browsers.get(grant.run_id)
@@ -77,7 +82,10 @@ class ProviderGatewayRuntime:
             raise AuthorityTokenError("Authority token does not grant browser access")
 
         if browser is not None and tool in browser_tools:
+            if not egress_token:
+                raise AuthorityTokenError("Browser requires fresh egress authority")
             self._enforce_browser_target(grant, args)
+            await browser.update_egress_token(egress_token)
             result = await browser.call(tool, args)
         elif tool in {"read_inbox", "send_email"}:
             if not self.settings.email_configured:
@@ -139,14 +147,16 @@ class ProviderGatewayRuntime:
         return tools
 
     async def _browser(self, grant: AuthorityGrant, egress_token: str | None) -> BrowserProvider:
-        existing = self._browsers.get(grant.run_id)
-        if existing is not None:
-            return existing
         if not self.settings.egress_proxy_url or not egress_token:
             raise AuthorityTokenError("Browser requires the destination-enforcing egress proxy")
+        existing = self._browsers.get(grant.run_id)
+        if existing is not None:
+            await existing.update_egress_token(egress_token)
+            return existing
         async with self._browser_lock:
             existing = self._browsers.get(grant.run_id)
             if existing is not None:
+                await existing.update_egress_token(egress_token)
                 return existing
             browser = BrowserProvider(
                 self.settings.browser_command,

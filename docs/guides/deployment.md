@@ -39,10 +39,10 @@ production rather than applying that example.
 Set `AGENT_SANDBOX_IMAGE_DIGEST=sha256:...` in the production ConfigMap after
 publishing the sandbox image; production rejects mutable tag-only execution.
 
-The egress proxy keeps a bounded in-memory audit buffer, and browser sessions live in
-gateway memory, so both base deployments use one replica. If audit durability or
-gateway high availability is required, externalize those stores before scaling them
-horizontally.
+The egress proxy keeps a bounded SQLite WAL on its dedicated `egress-proxy-audit`
+PVC, while browser sessions live in gateway memory. Both base deployments therefore
+use one replica: audit survives a proxy pod restart, but horizontal proxy or gateway
+session HA still requires shared external stores.
 
 ## 4. Apply
 

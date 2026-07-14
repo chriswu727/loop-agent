@@ -29,7 +29,7 @@ def _keys() -> tuple[str, str]:
     return private, public_key_pem(private)
 
 
-def _token(private: str, hosts: list[str]) -> str:
+def _token(private: str, hosts: list[str], *, ttl_seconds: int = 120) -> str:
     return issue_authority_token(
         private,
         audience=EGRESS_PROXY_AUDIENCE,
@@ -39,7 +39,7 @@ def _token(private: str, hosts: list[str]) -> str:
         run_id="task-1:1",
         capabilities=[Capability.NET_SHELL],
         egress_hosts=hosts,
-        ttl_seconds=120,
+        ttl_seconds=ttl_seconds,
     )
 
 
@@ -216,6 +216,52 @@ async def test_proxy_connect_tunnel_is_destination_bound() -> None:
         await upstream.wait_closed()
 
 
+async def test_proxy_closes_existing_tunnel_when_authority_expires() -> None:
+    private, public = _keys()
+
+    async def hold_open(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+        await reader.read()
+        writer.close()
+        await writer.wait_closed()
+
+    upstream = await asyncio.start_server(hold_open, "127.0.0.1", 0)
+    upstream_port = int(upstream.sockets[0].getsockname()[1])
+
+    async def resolver(_host: str, _port: int) -> tuple[int, str]:
+        return socket.AF_INET, "127.0.0.1"
+
+    audit = AuditStore()
+    proxy = EgressProxy(
+        EgressProxySettings(authority_public_key=public, allowed_ports=str(upstream_port)),
+        audit,
+        resolver=resolver,
+    )
+    server = await asyncio.start_server(proxy.handle, "127.0.0.1", 0)
+    proxy_port = int(server.sockets[0].getsockname()[1])
+    try:
+        reader, writer = await _connect(
+            proxy_port,
+            _token(private, ["browser.example"], ttl_seconds=2),
+            f"browser.example:{upstream_port}",
+        )
+        assert await asyncio.wait_for(reader.read(), timeout=3) == b""
+        events = await audit.list("task-1:1")
+        for _ in range(10):
+            if len(events) == 2:
+                break
+            await asyncio.sleep(0)
+            events = await audit.list("task-1:1")
+        assert [event["decision"] for event in events] == ["allowed", "blocked"]
+        assert events[-1]["reason"] == "authority_expired"
+        writer.close()
+        await writer.wait_closed()
+    finally:
+        server.close()
+        upstream.close()
+        await server.wait_closed()
+        await upstream.wait_closed()
+
+
 async def test_proxy_blocks_unapproved_port_before_resolving() -> None:
     private, public = _keys()
     resolved = False
@@ -254,6 +300,21 @@ async def test_audit_store_discards_oldest_events_at_its_bound() -> None:
     await audit.append("run", {"id": "two"})
     await audit.append("run", {"id": "three"})
     assert await audit.list("run") == [{"id": "two"}, {"id": "three"}]
+
+
+async def test_audit_store_survives_restart_and_enforces_durable_bounds(tmp_path) -> None:
+    path = tmp_path / "audit" / "events.sqlite3"
+    first = AuditStore(path, max_events_per_run=2, max_events_total=3)
+    await first.append("run-one", {"id": "one"})
+    await first.append("run-one", {"id": "two"})
+    await first.append("run-one", {"id": "three"})
+    await first.append("run-two", {"id": "four"})
+
+    restarted = AuditStore(path, max_events_per_run=2, max_events_total=3)
+
+    assert restarted.durable
+    assert await restarted.list("run-one") == [{"id": "two"}, {"id": "three"}]
+    assert await restarted.list("run-two") == [{"id": "four"}]
 
 
 async def test_default_resolver_rejects_private_destinations() -> None:

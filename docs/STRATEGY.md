@@ -8,9 +8,10 @@
 > Kubernetes Job shell isolation. It now also ships an isolated, credential-bearing
 > Provider Gateway; short-lived audience-bound authority grants; and a network-layer
 > egress proxy that requires explicit hosts, rejects private resolution, pins DNS,
-> and records per-run audit events. Remaining work that cannot honestly be marked
-> done: a meaningful skill marketplace, broader channels, durable proxy audit,
-> protocol-level provider network separation, and production/adoption evidence.
+> and records durable per-run audit events. Remaining work that cannot honestly be
+> marked done: a meaningful skill marketplace, broader channels, horizontally shared
+> proxy audit/session state, protocol-level provider network separation, and
+> production/adoption evidence.
 
 _Synthesized by a multi-agent research workflow (2026-06): 4 verified OpenClaw research dimensions + repo analysis + a 6-lens differentiation panel. Two research dimensions (capabilities, ecosystem) failed structured-output validation and were covered indirectly via the panel; treat those areas as lower-confidence until re-verified._
 

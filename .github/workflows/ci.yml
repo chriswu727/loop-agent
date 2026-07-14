@@ -84,4 +84,6 @@ jobs:
           kubectl kustomize infra/k8s/overlays/prod >/tmp/loop-k8s-prod.yaml
           grep -q 'name: provider-gateway' /tmp/loop-k8s-prod.yaml
           grep -q 'name: egress-proxy' /tmp/loop-k8s-prod.yaml
+          grep -q 'claimName: egress-proxy-audit' /tmp/loop-k8s-prod.yaml
+          grep -q 'name: EGRESS_PROXY_REQUIRE_DURABLE_AUDIT' /tmp/loop-k8s-prod.yaml
           grep -q 'loop.openai.com/egress: proxied' /tmp/loop-k8s-prod.yaml

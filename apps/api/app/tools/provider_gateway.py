@@ -58,7 +58,10 @@ class ProviderGatewayClient:
             payload = self._image_payload(args)
         response = await self.client.post(
             f"{self.base_url}/v1/tools/{name}",
-            headers={"Authorization": f"Bearer {self.token_factory(PROVIDER_GATEWAY_AUDIENCE)}"},
+            headers={
+                "Authorization": f"Bearer {self.token_factory(PROVIDER_GATEWAY_AUDIENCE)}",
+                "X-Loop-Egress-Token": self.token_factory(EGRESS_PROXY_AUDIENCE),
+            },
             json={"args": payload},
         )
         body = response.json()

@@ -48,6 +48,7 @@ class EgressProxy:
 
     async def handle(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         grant: AuthorityGrant | None = None
+        upstream_writer: asyncio.StreamWriter | None = None
         try:
             raw = await asyncio.wait_for(reader.readuntil(b"\r\n\r\n"), timeout=10)
             request_line, headers = _parse_request(raw)
@@ -77,15 +78,21 @@ class EgressProxy:
                 asyncio.open_connection(address, port, family=family),
                 timeout=self.settings.connect_timeout_seconds,
             )
+            assert upstream_writer is not None
             await self._record(grant, host, port, method, "allowed", None, address=address)
             if method.upper() == "CONNECT":
                 writer.write(f"{version} 200 Connection Established\r\n\r\n".encode())
                 await writer.drain()
-                await _relay_tunnel(reader, writer, upstream_reader, upstream_writer)
+                relay = _relay_tunnel(reader, writer, upstream_reader, upstream_writer)
             else:
                 upstream_writer.write(_forward_headers(method, path, version, headers, host, port))
                 await upstream_writer.drain()
-                await _relay_http(reader, writer, upstream_reader, upstream_writer)
+                relay = _relay_http(reader, writer, upstream_reader, upstream_writer)
+            remaining = max(0.0, (grant.expires_at - datetime.now(UTC)).total_seconds())
+            try:
+                await asyncio.wait_for(relay, timeout=remaining)
+            except TimeoutError:
+                await self._record(grant, host, port, method, "blocked", "authority_expired")
         except (AuthorityTokenError, TimeoutError, ValueError) as exc:
             await _respond_error(writer, 403, str(exc))
         except (asyncio.IncompleteReadError, asyncio.LimitOverrunError):
@@ -95,6 +102,10 @@ class EgressProxy:
                 await self._record(grant, None, None, None, "blocked", type(exc).__name__)
             await _respond_error(writer, 502, "Upstream connection failed")
         finally:
+            if upstream_writer is not None:
+                upstream_writer.close()
+                with contextlib.suppress(Exception):
+                    await upstream_writer.wait_closed()
             writer.close()
             with contextlib.suppress(Exception):
                 await writer.wait_closed()
@@ -219,13 +230,18 @@ async def _relay_tunnel(
         asyncio.create_task(_copy(client_reader, upstream_writer)),
         asyncio.create_task(_copy(upstream_reader, client_writer)),
     }
-    done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
-    for task in pending:
-        task.cancel()
-    await asyncio.gather(*done, *pending, return_exceptions=True)
-    upstream_writer.close()
-    with contextlib.suppress(Exception):
-        await upstream_writer.wait_closed()
+    try:
+        done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+        for task in pending:
+            task.cancel()
+        await asyncio.gather(*done, *pending, return_exceptions=True)
+    finally:
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+        upstream_writer.close()
+        with contextlib.suppress(Exception):
+            await upstream_writer.wait_closed()
 
 
 async def _relay_http(
@@ -235,12 +251,14 @@ async def _relay_http(
     upstream_writer: asyncio.StreamWriter,
 ) -> None:
     upload = asyncio.create_task(_copy(client_reader, upstream_writer))
-    await _copy(upstream_reader, client_writer)
-    upload.cancel()
-    await asyncio.gather(upload, return_exceptions=True)
-    upstream_writer.close()
-    with contextlib.suppress(Exception):
-        await upstream_writer.wait_closed()
+    try:
+        await _copy(upstream_reader, client_writer)
+    finally:
+        upload.cancel()
+        await asyncio.gather(upload, return_exceptions=True)
+        upstream_writer.close()
+        with contextlib.suppress(Exception):
+            await upstream_writer.wait_closed()
 
 
 async def _respond_error(writer: asyncio.StreamWriter, status: int, detail: str) -> None:

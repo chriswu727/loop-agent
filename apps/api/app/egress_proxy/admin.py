@@ -34,6 +34,7 @@ def create_admin_app(settings: EgressProxySettings, audit: AuditStore) -> FastAP
             "status": "ok",
             "service": "egress-proxy",
             "authority_key_configured": bool(settings.public_key_pem()),
+            "audit_durable": audit.durable,
         }
 
     @app.get("/v1/audit")
