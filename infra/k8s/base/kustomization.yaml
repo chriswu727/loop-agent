@@ -18,6 +18,7 @@ resources:
   - data-pvc.yaml
   - egress-proxy-audit-pvc.yaml
   - provider-gateway-state-pvc.yaml
+  - browser-gateway-state-pvc.yaml
   - configmap.yaml
   - api-deployment.yaml
   - api-service.yaml
@@ -31,6 +32,8 @@ resources:
   - worker-hpa.yaml
   - provider-gateway-deployment.yaml
   - provider-gateway-service.yaml
+  - browser-gateway-deployment.yaml
+  - browser-gateway-service.yaml
   - egress-proxy-deployment.yaml
   - egress-proxy-service.yaml
   - ingress.yaml

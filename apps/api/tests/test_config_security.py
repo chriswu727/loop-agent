@@ -26,6 +26,7 @@ def production(**overrides: object) -> Settings:
         "agent_receipt_signing_key": TEST_RECEIPT_KEY,
         "agent_authority_signing_key": TEST_RECEIPT_KEY,
         "agent_provider_gateway_url": "http://provider-gateway:8090",
+        "agent_browser_gateway_url": "http://browser-gateway:8090",
         "agent_egress_proxy_url": "http://egress-proxy:8080",
         "agent_egress_proxy_audit_url": "http://egress-proxy:8081",
     }
@@ -47,6 +48,7 @@ def test_secure_production_settings_are_accepted() -> None:
         {"agent_sandbox_image_digest": None},
         {"agent_allow_host_providers": True},
         {"agent_provider_gateway_url": None},
+        {"agent_browser_gateway_url": None},
         {"agent_egress_proxy_url": None},
         {"agent_egress_proxy_audit_url": None},
         {"agent_authority_signing_key": None},

@@ -105,6 +105,7 @@ services:
       AGENT_DOCKER_WORKSPACE_VOLUME: '${COMPOSE_PROJECT_NAME:-loop}_loopdata'
       AGENT_DOCKER_WORKSPACE_MOUNT: /var/lib/loop
       AGENT_PROVIDER_GATEWAY_URL: http://provider-gateway:8090
+      AGENT_BROWSER_GATEWAY_URL: http://browser-gateway:8090
       AGENT_EGRESS_PROXY_URL: http://172.30.0.2:8080
       AGENT_EGRESS_PROXY_AUDIT_URL: http://egress-proxy:8081
       AGENT_EGRESS_DOCKER_NETWORK: '${COMPOSE_PROJECT_NAME:-loop}_sandbox-egress'
@@ -122,6 +123,9 @@ services:
       - ./apps/api:/app:ro
       - loopdata:/var/lib/loop
       - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      default:
+      browser-egress:
     group_add:
       - '0'
     depends_on:
@@ -130,6 +134,8 @@ services:
       redis:
         condition: service_healthy
       provider-gateway:
+        condition: service_healthy
+      browser-gateway:
         condition: service_healthy
       egress-proxy:
         condition: service_healthy
@@ -150,18 +156,20 @@ services:
         '/var/lib/loop',
         '/var/lib/loop-egress',
         '/var/lib/loop-provider',
+        '/var/lib/loop-browser',
       ]
     volumes:
       - loopdata:/var/lib/loop
       - egressaudit:/var/lib/loop-egress
       - providerstate:/var/lib/loop-provider
+      - browserstate:/var/lib/loop-browser
     restart: 'no'
 
   provider-gateway:
     build:
       context: .
       dockerfile: infra/docker/api.Dockerfile
-      target: provider-gateway
+      target: runtime
     command: ['uvicorn', 'app.provider_gateway.main:app', '--host', '0.0.0.0', '--port', '8090']
     environment:
       PROVIDER_GATEWAY_REQUIRE_AUTHORITY_KEY: 'true'
@@ -169,7 +177,7 @@ services:
       PROVIDER_GATEWAY_AUTHORITY_PUBLIC_KEYS: ${AGENT_AUTHORITY_PUBLIC_KEYS:-{}}
       PROVIDER_GATEWAY_REQUIRE_DURABLE_REVOCATIONS: 'true'
       PROVIDER_GATEWAY_REVOCATION_DATABASE_PATH: /var/lib/loop-provider/authority.sqlite3
-      PROVIDER_GATEWAY_EGRESS_PROXY_URL: http://egress-proxy:8080
+      PROVIDER_GATEWAY_BROWSER_ENABLED: 'false'
       PROVIDER_GATEWAY_GEMINI_API_KEY: ${PROVIDER_GATEWAY_GEMINI_API_KEY:-}
       SMTP_HOST: ${SMTP_HOST:-}
       SMTP_PORT: ${SMTP_PORT:-587}
@@ -202,6 +210,48 @@ services:
       start_period: 10s
     restart: unless-stopped
 
+  browser-gateway:
+    build:
+      context: .
+      dockerfile: infra/docker/api.Dockerfile
+      target: provider-gateway
+    command: ['uvicorn', 'app.provider_gateway.main:app', '--host', '0.0.0.0', '--port', '8090']
+    environment:
+      PROVIDER_GATEWAY_SERVICE_NAME: browser-gateway
+      PROVIDER_GATEWAY_AUTHORITY_AUDIENCE: loop-browser-gateway
+      PROVIDER_GATEWAY_REQUIRE_AUTHORITY_KEY: 'true'
+      PROVIDER_GATEWAY_AUTHORITY_PUBLIC_KEY: ${AGENT_AUTHORITY_PUBLIC_KEY:-}
+      PROVIDER_GATEWAY_AUTHORITY_PUBLIC_KEYS: ${AGENT_AUTHORITY_PUBLIC_KEYS:-{}}
+      PROVIDER_GATEWAY_REQUIRE_DURABLE_REVOCATIONS: 'true'
+      PROVIDER_GATEWAY_REVOCATION_DATABASE_PATH: /var/lib/loop-browser/authority.sqlite3
+      PROVIDER_GATEWAY_BROWSER_ENABLED: 'true'
+      PROVIDER_GATEWAY_EGRESS_PROXY_URL: http://172.31.0.2:8080
+    volumes:
+      - ./apps/api:/app:ro
+      - browserstate:/var/lib/loop-browser
+    depends_on:
+      data-init:
+        condition: service_completed_successfully
+      egress-proxy:
+        condition: service_healthy
+    networks:
+      browser-egress:
+    dns:
+      - 127.0.0.1
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'python',
+          '-c',
+          "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8090/healthz').status==200 else 1)",
+        ]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 20s
+    restart: unless-stopped
+
   egress-proxy:
     build:
       context: .
@@ -225,6 +275,8 @@ services:
       default:
       sandbox-egress:
         ipv4_address: 172.30.0.2
+      browser-egress:
+        ipv4_address: 172.31.0.2
     healthcheck:
       test:
         [
@@ -302,6 +354,7 @@ volumes:
   loopdata:
   egressaudit:
   providerstate:
+  browserstate:
 
 networks:
   sandbox-egress:
@@ -309,3 +362,8 @@ networks:
     ipam:
       config:
         - subnet: 172.30.0.0/24
+  browser-egress:
+    internal: true
+    ipam:
+      config:
+        - subnet: 172.31.0.0/24

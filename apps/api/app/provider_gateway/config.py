@@ -38,6 +38,19 @@ class ProviderGatewaySettings(BaseSettings):
     egress_proxy_url: str | None = Field(
         default=None, validation_alias="PROVIDER_GATEWAY_EGRESS_PROXY_URL"
     )
+    egress_proxy_service_host: str | None = Field(
+        default=None, validation_alias="EGRESS_PROXY_SERVICE_HOST"
+    )
+    egress_proxy_service_port: int = Field(
+        default=8080, ge=1, le=65535, validation_alias="EGRESS_PROXY_SERVICE_PORT_PROXY"
+    )
+    authority_audience: str = Field(
+        default="loop-provider-gateway",
+        validation_alias="PROVIDER_GATEWAY_AUTHORITY_AUDIENCE",
+    )
+    service_name: str = Field(
+        default="provider-gateway", validation_alias="PROVIDER_GATEWAY_SERVICE_NAME"
+    )
     browser_enabled: bool = Field(default=True, validation_alias="PROVIDER_GATEWAY_BROWSER_ENABLED")
     browser_command: str = Field(
         default="playwright-mcp --headless --isolated",
@@ -92,6 +105,13 @@ class ProviderGatewaySettings(BaseSettings):
         if keys:
             authority_public_keyring(keys)
         return keys
+
+    def resolved_egress_proxy_url(self) -> str | None:
+        if self.egress_proxy_url:
+            return self.egress_proxy_url
+        if self.egress_proxy_service_host:
+            return f"http://{self.egress_proxy_service_host}:{self.egress_proxy_service_port}"
+        return None
 
     @property
     def email_configured(self) -> bool:

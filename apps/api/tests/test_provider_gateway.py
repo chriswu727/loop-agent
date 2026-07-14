@@ -14,6 +14,7 @@ from cryptography.hazmat.primitives.serialization import Encoding, NoEncryption,
 
 from app.domain.authority_token import (
     AUTHORITY_CONTROL_AUDIENCE,
+    BROWSER_GATEWAY_AUDIENCE,
     EGRESS_PROXY_AUDIENCE,
     PROVIDER_GATEWAY_AUDIENCE,
     AuthorityGrant,
@@ -31,7 +32,7 @@ from app.provider_gateway.providers import (
 )
 from app.provider_gateway.runtime import ProviderGatewayRuntime
 from app.tools import CapabilityEnvelope, ToolExecutor, ToolStatus, Workspace
-from app.tools.provider_gateway import ProviderGatewayClient
+from app.tools.provider_gateway import ProviderGatewayClient, ProviderGatewayPool
 
 
 def _keys() -> tuple[str, str]:
@@ -125,6 +126,57 @@ async def test_gateway_rejects_unsigned_requests() -> None:
     async with httpx.AsyncClient(transport=transport, base_url="http://gateway") as client:
         response = await client.get("/v1/tools")
     assert response.status_code == 401
+
+
+async def test_browser_gateway_rejects_provider_audience_token() -> None:
+    private, public = _keys()
+    app = create_app(
+        ProviderGatewaySettings(
+            authority_public_key=public,
+            authority_audience=BROWSER_GATEWAY_AUDIENCE,
+            service_name="browser-gateway",
+            browser_enabled=False,
+        )
+    )
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://gateway") as client:
+        rejected = await client.get(
+            "/v1/tools",
+            headers={"Authorization": f"Bearer {_token(private, [Capability.NET_BROWSER])}"},
+        )
+        accepted = await client.get(
+            "/v1/tools",
+            headers={
+                "Authorization": (
+                    "Bearer "
+                    + _token(
+                        private,
+                        [Capability.NET_BROWSER],
+                        audience=BROWSER_GATEWAY_AUDIENCE,
+                    )
+                )
+            },
+        )
+        health = await client.get("/healthz")
+
+    assert rejected.status_code == 403
+    assert accepted.status_code == 200
+    assert health.json()["service"] == "browser-gateway"
+
+
+def test_browser_gateway_resolves_proxy_from_service_identity(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("EGRESS_PROXY_SERVICE_HOST", "10.96.0.42")
+    monkeypatch.setenv("EGRESS_PROXY_SERVICE_PORT_PROXY", "8180")
+    settings = ProviderGatewaySettings()
+    assert settings.resolved_egress_proxy_url() == "http://10.96.0.42:8180"
+
+    explicit = ProviderGatewaySettings(
+        egress_proxy_url="http://127.0.0.1:8080",
+        egress_proxy_service_host="10.96.0.42",
+    )
+    assert explicit.resolved_egress_proxy_url() == "http://127.0.0.1:8080"
 
 
 async def test_gateway_revokes_run_with_signed_control_token(tmp_path) -> None:
@@ -333,6 +385,87 @@ async def test_gateway_client_keeps_denied_call_audit(tmp_path) -> None:
         await gateway.call("send_email", {"to": "victim@example.com"})
     assert gateway.drain_audit()[0]["decision"] == "blocked"
     await gateway.client.aclose()
+
+
+async def test_gateway_clients_separate_audiences_and_egress_authority(tmp_path) -> None:
+    requested: list[str] = []
+
+    def token_factory(audience: str) -> str:
+        requested.append(audience)
+        return f"token-for-{audience}"
+
+    protocol = ProviderGatewayClient(
+        "http://provider-gateway",
+        Workspace(tmp_path / "protocol"),
+        token_factory,
+    )
+    browser = ProviderGatewayClient(
+        "http://browser-gateway",
+        Workspace(tmp_path / "browser"),
+        token_factory,
+        audience=BROWSER_GATEWAY_AUDIENCE,
+        egress_authority=True,
+    )
+
+    protocol_headers = protocol._headers(include_egress=True)
+    browser_headers = browser._headers(include_egress=True)
+
+    assert "X-Loop-Egress-Token" not in protocol_headers
+    assert protocol_headers["Authorization"] == "Bearer token-for-loop-provider-gateway"
+    assert browser_headers == {
+        "Authorization": "Bearer token-for-loop-browser-gateway",
+        "X-Loop-Egress-Token": "token-for-loop-egress-proxy",
+    }
+    assert requested == [
+        PROVIDER_GATEWAY_AUDIENCE,
+        BROWSER_GATEWAY_AUDIENCE,
+        EGRESS_PROXY_AUDIENCE,
+    ]
+    await protocol.client.aclose()
+    await browser.client.aclose()
+
+
+async def test_gateway_pool_routes_tools_and_revokes_every_gateway() -> None:
+    class FakeClient:
+        def __init__(self, name: str, result: str) -> None:
+            self.audience = name
+            self.tool_names = {name}
+            self.tools = [{"name": name, "description": result, "capability": result}]
+            self.stopped = False
+
+        async def start(self) -> None:
+            return None
+
+        async def call(self, name: str, args: dict[str, Any]) -> str:
+            return f"{name}:{args['value']}"
+
+        async def stop(self) -> None:
+            self.stopped = True
+
+        async def revoke(self) -> dict[str, Any]:
+            return {"kind": "authority", "decision": "revoked", "service": self.audience}
+
+        def drain_audit(self) -> list[dict[str, Any]]:
+            return [{"kind": "provider", "decision": "allowed", "tool": self.audience}]
+
+    email = FakeClient("read_inbox", "email.read")
+    browser = FakeClient("browser_navigate", "net.browser")
+    pool = ProviderGatewayPool([email, browser])
+
+    await pool.start()
+    assert await pool.call("read_inbox", {"value": 2}) == "read_inbox:2"
+    assert await pool.call("browser_navigate", {"value": 3}) == "browser_navigate:3"
+    assert pool.specs("net.browser") == "- browser_navigate: net.browser"
+    assert {event["tool"] for event in pool.drain_audit()} == {
+        "read_inbox",
+        "browser_navigate",
+    }
+    assert [event["service"] for event in await pool.revoke()] == [
+        "read_inbox",
+        "browser_navigate",
+    ]
+    await pool.stop()
+    assert email.stopped and browser.stopped
 
 
 def test_browser_subprocess_receives_no_provider_credentials_or_tokens(

@@ -147,7 +147,8 @@ class ProviderGatewayRuntime:
         return tools
 
     async def _browser(self, grant: AuthorityGrant, egress_token: str | None) -> BrowserProvider:
-        if not self.settings.egress_proxy_url or not egress_token:
+        proxy_url = self.settings.resolved_egress_proxy_url()
+        if not proxy_url or not egress_token:
             raise AuthorityTokenError("Browser requires the destination-enforcing egress proxy")
         existing = self._browsers.get(grant.run_id)
         if existing is not None:
@@ -160,7 +161,7 @@ class ProviderGatewayRuntime:
                 return existing
             browser = BrowserProvider(
                 self.settings.browser_command,
-                proxy_url=self.settings.egress_proxy_url,
+                proxy_url=proxy_url,
                 egress_token=egress_token,
             )
             await browser.start()

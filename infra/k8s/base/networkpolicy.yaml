@@ -106,6 +106,44 @@ spec:
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
+  name: allow-browser-gateway-from-worker
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: browser-gateway
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: worker
+      ports:
+        - protocol: TCP
+          port: 8090
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: restrict-browser-gateway-egress
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: browser-gateway
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: egress-proxy
+      ports:
+        - protocol: TCP
+          port: 8080
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
   name: allow-egress-proxy-clients
 spec:
   podSelector:
@@ -121,7 +159,7 @@ spec:
               loop.openai.com/egress: proxied
         - podSelector:
             matchLabels:
-              app.kubernetes.io/name: provider-gateway
+              app.kubernetes.io/name: browser-gateway
       ports:
         - protocol: TCP
           port: 8080

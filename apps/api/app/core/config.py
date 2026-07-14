@@ -182,8 +182,8 @@ class Settings(BaseSettings):
         return None
 
     # Separate Ed25519 issuer for short-lived task authority. The worker holds
-    # this private key; Provider Gateway and egress proxy receive only its public
-    # key, so neither the model nor a sandbox can mint broader authority.
+    # this private key; both gateways and the egress proxy receive only its public
+    # key, so no enforcement service can mint broader authority.
     agent_authority_signing_key: str | None = None
     agent_authority_signing_key_file: str | None = None
     agent_authority_token_ttl_seconds: int = Field(default=300, ge=30, le=900)
@@ -276,6 +276,7 @@ class Settings(BaseSettings):
     agent_allow_host_providers: bool = True
     agent_browser_command: str = "npx -y @playwright/mcp@0.0.78 --headless --isolated"
     agent_provider_gateway_url: str | None = None
+    agent_browser_gateway_url: str | None = None
 
     # Destination-enforcing proxy used by shell and isolated browser runtimes.
     # The sandbox joins an internal-only network where this proxy is the sole
@@ -319,6 +320,8 @@ class Settings(BaseSettings):
             raise ValueError("production host providers must be disabled")
         if not self.agent_provider_gateway_url:
             raise ValueError("production requires an isolated Provider Gateway")
+        if not self.agent_browser_gateway_url:
+            raise ValueError("production requires an isolated Browser Gateway")
         if not self.agent_egress_proxy_url or not self.agent_egress_proxy_audit_url:
             raise ValueError("production requires a destination-enforcing egress proxy")
         if self.service_name == "worker":

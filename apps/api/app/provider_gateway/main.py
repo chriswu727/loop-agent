@@ -15,7 +15,6 @@ from app.domain.authority_revocation import AuthorityRevocationStore
 from app.domain.authority_token import (
     AUTHORITY_CONTROL_AUDIENCE,
     EGRESS_PROXY_AUDIENCE,
-    PROVIDER_GATEWAY_AUDIENCE,
     AuthorityGrant,
     AuthorityTokenError,
     validate_authority_public_key,
@@ -60,7 +59,7 @@ def create_app(settings: ProviderGatewaySettings | None = None) -> FastAPI:
         if scheme.lower() != "bearer" or not token or not keys:
             raise HTTPException(status_code=401, detail="A signed authority token is required")
         try:
-            authority = verify_authority_token(token, keys, audience=PROVIDER_GATEWAY_AUDIENCE)
+            authority = verify_authority_token(token, keys, audience=config.authority_audience)
         except AuthorityTokenError as exc:
             raise HTTPException(status_code=403, detail=str(exc)) from exc
         if await revocations.is_revoked(authority.run_id):
@@ -108,7 +107,7 @@ def create_app(settings: ProviderGatewaySettings | None = None) -> FastAPI:
     async def health() -> dict[str, Any]:
         return {
             "status": "ok",
-            "service": "provider-gateway",
+            "service": config.service_name,
             "authority_key_configured": bool(config.public_keyring()),
             "authority_key_count": len(config.public_keyring()),
             "revocations_durable": revocations.durable,
@@ -130,7 +129,7 @@ def create_app(settings: ProviderGatewaySettings | None = None) -> FastAPI:
                 "owner_id": authority.owner_id,
                 "project_id": authority.project_id,
                 "run_id": authority.run_id,
-                "service": "provider-gateway",
+                "service": config.service_name,
             },
         }
 

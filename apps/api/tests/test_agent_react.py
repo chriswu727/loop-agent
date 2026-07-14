@@ -145,6 +145,120 @@ async def test_goal_achieved_when_verifier_accepts_finish(session: AsyncSession)
     assert (Path(task.workspace_path) / "result.txt").read_text() == "done"
 
 
+async def test_agent_scopes_protocol_and_browser_gateway_tokens(
+    session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import app.services.agent_react as agent_module
+    from app.domain.authority_token import (
+        BROWSER_GATEWAY_AUDIENCE,
+        EGRESS_PROXY_AUDIENCE,
+        PROVIDER_GATEWAY_AUDIENCE,
+        verify_authority_token,
+    )
+    from app.domain.capability import Capability
+    from app.services.skills import generate_keypair
+
+    private, public = generate_keypair()
+    grants: list[tuple[str, frozenset[Capability]]] = []
+
+    class GatewaySpy:
+        capability = Capability.NET_BROWSER
+
+        def __init__(
+            self,
+            _base_url: str,
+            _workspace: Workspace,
+            token_factory: Any,
+            *,
+            audience: str = PROVIDER_GATEWAY_AUDIENCE,
+            egress_authority: bool = False,
+            timeout_seconds: int = 65,
+        ) -> None:
+            del timeout_seconds
+            self.token_factory = token_factory
+            self.audience = audience
+            self.egress_authority = egress_authority
+            if audience == BROWSER_GATEWAY_AUDIENCE:
+                self.tools = [
+                    {
+                        "name": "browser_navigate",
+                        "description": "Navigate",
+                        "capability": "net.browser",
+                    }
+                ]
+            else:
+                self.tools = [
+                    {
+                        "name": "read_inbox",
+                        "description": "Read inbox",
+                        "capability": "email.read",
+                    }
+                ]
+            self.tool_names = {item["name"] for item in self.tools}
+
+        async def start(self) -> None:
+            grant = verify_authority_token(
+                self.token_factory(self.audience), public, audience=self.audience
+            )
+            grants.append((self.audience, grant.capabilities))
+            if self.egress_authority:
+                egress = verify_authority_token(
+                    self.token_factory(EGRESS_PROXY_AUDIENCE),
+                    public,
+                    audience=EGRESS_PROXY_AUDIENCE,
+                )
+                grants.append((EGRESS_PROXY_AUDIENCE, egress.capabilities))
+
+        async def call(self, _name: str, _args: dict[str, Any]) -> str:
+            raise AssertionError("No gateway tool should be called")
+
+        async def stop(self) -> None:
+            return None
+
+        async def revoke(self) -> dict[str, Any]:
+            return {"kind": "authority", "decision": "revoked", "service": self.audience}
+
+        def drain_audit(self) -> list[dict[str, Any]]:
+            return []
+
+    monkeypatch.setattr(agent_module, "ProviderGatewayClient", GatewaySpy)
+    monkeypatch.setattr(settings, "agent_provider_gateway_url", "http://provider-gateway:8090")
+    monkeypatch.setattr(settings, "agent_browser_gateway_url", "http://browser-gateway:8090")
+    monkeypatch.setattr(settings, "agent_allow_host_providers", False)
+    monkeypatch.setattr(settings, "agent_authority_signing_key", private)
+    monkeypatch.setattr(settings, "agent_authority_signing_key_file", None)
+    monkeypatch.setattr(settings, "agent_egress_proxy_audit_url", None)
+
+    task = await TaskRepository(session).create(
+        goal="read mail and browse",
+        status=TaskStatus.PENDING.value,
+        rubric=[],
+        requested_capabilities=["email.read", "net.browser"],
+        egress_hosts=["docs.example.com"],
+        max_steps=5,
+        token_budget=1_000_000,
+        summary=None,
+        verification_score=0,
+        steps_used=0,
+        tokens_used=0,
+        workspace_path=None,
+    )
+    await session.commit()
+    service = _service(
+        session,
+        ScriptedLLM([{"thought": "done", "tool": "finish", "args": {"summary": "done"}}]),
+    )
+    monkeypatch.setattr(service, "_resolve_sandbox", lambda: (None, "inline", None))
+
+    await service.run(task.id)
+
+    assert grants == [
+        (PROVIDER_GATEWAY_AUDIENCE, frozenset({Capability.EMAIL_READ})),
+        (BROWSER_GATEWAY_AUDIENCE, frozenset({Capability.NET_BROWSER})),
+        (EGRESS_PROXY_AUDIENCE, frozenset({Capability.NET_BROWSER})),
+    ]
+
+
 async def test_rejected_finish_then_gives_up_stuck(session: AsyncSession) -> None:
     # Agent keeps declaring done; verifier keeps rejecting -> stuck after retries.
     plans = [{"thought": "done?", "tool": "finish", "args": {"summary": "maybe"}}]

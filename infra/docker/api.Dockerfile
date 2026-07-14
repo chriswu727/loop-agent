@@ -46,7 +46,7 @@ EXPOSE 8000
 # Horizontal scale = more pods. Keep workers modest per pod; the cluster scales out.
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
 
-# Provider credentials and browser runtime live in a separate image/process.
+# Chromium and Node exist only in the Browser Gateway image.
 FROM runtime AS provider-gateway
 USER root
 ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright \

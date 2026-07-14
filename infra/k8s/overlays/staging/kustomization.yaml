@@ -20,6 +20,9 @@ images:
   - name: app-web
     newName: ghcr.io/your-org/loop-agent-web
     newTag: staging
+  - name: app-provider-gateway
+    newName: ghcr.io/your-org/loop-agent-provider-gateway
+    newTag: staging
 
 patches:
   - path: patch-config.yaml

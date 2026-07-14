@@ -35,6 +35,7 @@ export interface Authority {
   sandbox: string | null;
   enforcement: {
     provider_gateway: boolean;
+    browser_gateway: boolean;
     egress_proxy: boolean;
   };
   audit: Array<{

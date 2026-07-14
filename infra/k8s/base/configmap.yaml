@@ -21,6 +21,7 @@ data:
   AGENT_SANDBOX_IMAGE: 'loop-sandbox:latest'
   AGENT_ALLOW_HOST_PROVIDERS: 'false'
   AGENT_PROVIDER_GATEWAY_URL: 'http://provider-gateway:8090'
+  AGENT_BROWSER_GATEWAY_URL: 'http://browser-gateway:8090'
   AGENT_EGRESS_PROXY_URL: 'http://egress-proxy:8080'
   AGENT_EGRESS_PROXY_AUDIT_URL: 'http://egress-proxy:8081'
   AGENT_REQUIRE_EGRESS_HOSTS: 'true'
