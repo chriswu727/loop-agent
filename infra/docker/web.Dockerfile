@@ -23,7 +23,7 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY --from=deps /app/apps/web/node_modules ./apps/web/node_modules
 COPY . .
 ENV NEXT_TELEMETRY_DISABLED=1
-RUN pnpm --filter web build
+RUN mkdir -p apps/web/public && pnpm --filter web build
 
 # ---- dev: hot reload (source is bind-mounted by docker-compose) ----
 FROM base AS dev
