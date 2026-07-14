@@ -1,6 +1,9 @@
 from __future__ import annotations
 
-from collections.abc import Callable
+import asyncio
+import ipaddress
+import socket
+from collections.abc import Awaitable, Callable
 from typing import Any
 from urllib.parse import quote, urlsplit, urlunsplit
 
@@ -8,15 +11,51 @@ import httpx
 
 from app.domain.authority_token import EGRESS_PROXY_AUDIENCE
 
+ProxyResolver = Callable[[str, int], Awaitable[str]]
+
+
+def _proxy_parts(proxy_url: str) -> tuple[str, str, int]:
+    parsed = urlsplit(proxy_url)
+    if (
+        parsed.scheme != "http"
+        or not parsed.hostname
+        or parsed.username
+        or parsed.password
+        or parsed.query
+        or parsed.fragment
+        or parsed.path not in {"", "/"}
+    ):
+        raise ValueError("Egress proxy URL must be http://host:port")
+    return parsed.scheme, parsed.hostname, parsed.port or 80
+
 
 def authenticated_proxy_url(proxy_url: str, token: str) -> str:
-    parsed = urlsplit(proxy_url)
-    if parsed.scheme != "http" or not parsed.hostname:
-        raise ValueError("Egress proxy URL must be http://host:port")
-    host = f"[{parsed.hostname}]" if ":" in parsed.hostname else parsed.hostname
-    port = f":{parsed.port}" if parsed.port else ""
+    scheme, hostname, port_number = _proxy_parts(proxy_url)
+    host = f"[{hostname}]" if ":" in hostname else hostname
+    port = f":{port_number}"
     netloc = f"loop:{quote(token, safe='')}@{host}{port}"
-    return urlunsplit((parsed.scheme, netloc, parsed.path, "", ""))
+    return urlunsplit((scheme, netloc, "", "", ""))
+
+
+async def resolve_proxy_endpoint(
+    proxy_url: str,
+    *,
+    resolver: ProxyResolver | None = None,
+) -> str:
+    scheme, hostname, port = _proxy_parts(proxy_url)
+    try:
+        address = ipaddress.ip_address(hostname).compressed
+    except ValueError:
+        if resolver is None:
+            loop = asyncio.get_running_loop()
+            records = await loop.getaddrinfo(hostname, port, type=socket.SOCK_STREAM)
+            if not records:
+                raise OSError(f"Egress proxy {hostname!r} did not resolve") from None
+            address = ipaddress.ip_address(str(records[0][4][0])).compressed
+        else:
+            address = ipaddress.ip_address(str(await resolver(hostname, port))).compressed
+    host = f"[{address}]" if ":" in address else address
+    return urlunsplit((scheme, f"{host}:{port}", "", "", ""))
 
 
 class EgressAuditClient:

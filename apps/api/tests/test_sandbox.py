@@ -10,6 +10,7 @@ from pathlib import Path
 import pytest
 
 from app.tools import CapabilityEnvelope, ToolExecutor, ToolResult, ToolStatus, Workspace
+from app.tools.egress import resolve_proxy_endpoint
 from app.tools.sandbox import image_present
 
 
@@ -117,6 +118,62 @@ def test_docker_sandbox_mounts_only_a_task_volume_subpath(tmp_path: Path) -> Non
     assert _workspace_volume_subpath(mount, workspace) == "workspaces/task-id"
     assert _workspace_volume_subpath(mount, mount) is None
     assert _workspace_volume_subpath(mount, tmp_path / "other") is None
+
+
+async def test_proxy_endpoint_is_resolved_before_entering_the_sandbox() -> None:
+    async def resolver(host: str, port: int) -> str:
+        assert (host, port) == ("egress-proxy.loop.svc", 8080)
+        return "10.96.4.20"
+
+    assert (
+        await resolve_proxy_endpoint("http://egress-proxy.loop.svc:8080", resolver=resolver)
+        == "http://10.96.4.20:8080"
+    )
+
+
+async def test_networked_docker_sandbox_disables_dns(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import app.tools.sandbox as sandbox
+
+    seen: dict[str, tuple[str, ...]] = {}
+
+    async def fake_create(*argv: str, **_kwargs: object) -> object:
+        seen["argv"] = argv
+        return object()
+
+    async def fake_collect(
+        _proc: object, *, timeout_seconds: int, output_limit: int
+    ) -> tuple[bytes, int]:
+        assert timeout_seconds == 75
+        assert output_limit == 4000
+        return b"ok", 0
+
+    async def fake_remove(_name: str) -> None:
+        return None
+
+    monkeypatch.setattr(sandbox.asyncio, "create_subprocess_exec", fake_create)
+    monkeypatch.setattr(sandbox, "collect_output", fake_collect)
+    monkeypatch.setattr(sandbox, "_force_remove", fake_remove)
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+
+    result = await sandbox.run_command_in_container(
+        "curl https://allowed.example",
+        workspace,
+        image="sandbox:latest",
+        network=True,
+        egress_proxy_url="http://172.30.0.2:8080",
+        egress_token="short-token",
+        egress_network="loop_sandbox-egress",
+    )
+
+    assert result.status is ToolStatus.OK
+    argv = seen["argv"]
+    assert argv[argv.index("--dns") + 1] == "127.0.0.1"
+    assert any(
+        value.startswith("HTTP_PROXY=http://loop:short-token@172.30.0.2:8080") for value in argv
+    )
 
 
 def test_docker_available_does_not_cache_negative(monkeypatch: pytest.MonkeyPatch) -> None:

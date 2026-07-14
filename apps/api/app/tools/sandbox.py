@@ -17,7 +17,7 @@ from pathlib import Path
 
 from app.core.logging import get_logger
 from app.tools.base import ToolResult, ToolStatus
-from app.tools.egress import authenticated_proxy_url
+from app.tools.egress import authenticated_proxy_url, resolve_proxy_endpoint
 from app.tools.shell import collect_output, format_result
 
 log = get_logger("sandbox")
@@ -85,6 +85,12 @@ async def run_command_in_container(
             "Network authority requires the destination-enforcing egress proxy.",
             ToolStatus.BLOCKED,
         )
+    resolved_proxy_url: str | None = None
+    if network:
+        try:
+            resolved_proxy_url = await resolve_proxy_endpoint(egress_proxy_url or "")
+        except (OSError, ValueError) as exc:
+            return ToolResult(f"Egress proxy is unavailable: {exc}", ToolStatus.BLOCKED)
     name = f"loop-{uuid.uuid4().hex[:12]}"
     network_name = egress_network if network else "none"
     workspace_mount: list[str]
@@ -135,9 +141,11 @@ async def run_command_in_container(
         "/tmp:rw,size=64m,exec",
     ]
     if network:
-        proxy = authenticated_proxy_url(egress_proxy_url or "", egress_token or "")
+        proxy = authenticated_proxy_url(resolved_proxy_url or "", egress_token or "")
         argv.extend(
             [
+                "--dns",
+                "127.0.0.1",
                 "--env",
                 f"HTTP_PROXY={proxy}",
                 "--env",

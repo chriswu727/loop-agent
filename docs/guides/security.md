@@ -48,6 +48,10 @@ not prompt instructions.
   private, link-local and otherwise non-global addresses, resolves once, and connects
   to that pinned IP to prevent DNS rebinding. Every allow/deny is available to the
   worker audit endpoint and is embedded in the task/Receipt.
+- The worker resolves the internal proxy service before creating a sandbox and passes
+  only its IP. Sandbox DNS is disabled locally and not allowed by Kubernetes
+  NetworkPolicy, closing DNS-query exfiltration while target DNS remains inside the
+  audited proxy.
 - Local `preferred` mode may fall back to the host and labels the Receipt accordingly.
   Use `required` when containment is mandatory.
 - Browser/email/calendar/vision provider credentials exist only in the Provider

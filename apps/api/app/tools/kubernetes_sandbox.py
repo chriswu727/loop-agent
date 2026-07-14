@@ -11,7 +11,7 @@ from typing import Any, cast
 from app.core.config import settings
 from app.core.logging import get_logger
 from app.tools.base import ToolResult, ToolStatus
-from app.tools.egress import authenticated_proxy_url
+from app.tools.egress import authenticated_proxy_url, resolve_proxy_endpoint
 from app.tools.shell import format_result
 
 log = get_logger("kubernetes-sandbox")
@@ -49,6 +49,12 @@ async def run_command_in_kubernetes(
             "Network authority requires the destination-enforcing egress proxy.",
             ToolStatus.BLOCKED,
         )
+    resolved_proxy_url: str | None = None
+    if network:
+        try:
+            resolved_proxy_url = await resolve_proxy_endpoint(egress_proxy_url or "")
+        except (OSError, ValueError) as exc:
+            return ToolResult(f"Egress proxy is unavailable: {exc}", ToolStatus.BLOCKED)
     mount, workspace, subpath = _resolve_workspace_scope(workspace_root)
     if subpath is None:
         return ToolResult(
@@ -111,13 +117,13 @@ async def run_command_in_kubernetes(
                                     {
                                         "name": "HTTP_PROXY",
                                         "value": authenticated_proxy_url(
-                                            egress_proxy_url or "", egress_token or ""
+                                            resolved_proxy_url or "", egress_token or ""
                                         ),
                                     },
                                     {
                                         "name": "HTTPS_PROXY",
                                         "value": authenticated_proxy_url(
-                                            egress_proxy_url or "", egress_token or ""
+                                            resolved_proxy_url or "", egress_token or ""
                                         ),
                                     },
                                     {"name": "NO_PROXY", "value": ""},

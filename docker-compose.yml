@@ -105,7 +105,7 @@ services:
       AGENT_DOCKER_WORKSPACE_VOLUME: '${COMPOSE_PROJECT_NAME:-loop}_loopdata'
       AGENT_DOCKER_WORKSPACE_MOUNT: /var/lib/loop
       AGENT_PROVIDER_GATEWAY_URL: http://provider-gateway:8090
-      AGENT_EGRESS_PROXY_URL: http://egress-proxy:8080
+      AGENT_EGRESS_PROXY_URL: http://172.30.0.2:8080
       AGENT_EGRESS_PROXY_AUDIT_URL: http://egress-proxy:8081
       AGENT_EGRESS_DOCKER_NETWORK: '${COMPOSE_PROJECT_NAME:-loop}_sandbox-egress'
       AGENT_WORKSPACES_ROOT: /var/lib/loop/workspaces
@@ -195,8 +195,9 @@ services:
       EGRESS_PROXY_REQUIRE_AUTHORITY_KEY: 'true'
       EGRESS_PROXY_AUTHORITY_PUBLIC_KEY: ${AGENT_AUTHORITY_PUBLIC_KEY:-}
     networks:
-      - default
-      - sandbox-egress
+      default:
+      sandbox-egress:
+        ipv4_address: 172.30.0.2
     healthcheck:
       test:
         [
@@ -276,3 +277,6 @@ volumes:
 networks:
   sandbox-egress:
     internal: true
+    ipam:
+      config:
+        - subnet: 172.30.0.0/24
