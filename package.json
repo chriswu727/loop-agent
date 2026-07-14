@@ -22,7 +22,7 @@
   "devDependencies": {
     "prettier": "^3.9.4",
     "turbo": "^2.5.0",
-    "typescript": "5.9.3"
+    "typescript": "7.0.2"
   },
   "pnpm": {
     "overrides": {
