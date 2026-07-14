@@ -16,9 +16,15 @@ async def run() -> None:
     key = settings.public_key_pem()
     if settings.require_authority_key and not key:
         raise RuntimeError("Egress proxy requires an Ed25519 authority verification key")
+    if settings.require_durable_audit and not settings.audit_database_path:
+        raise RuntimeError("Egress proxy requires a durable audit database")
     if key:
         validate_authority_public_key(key)
-    audit = AuditStore()
+    audit = AuditStore(
+        settings.audit_database_path,
+        max_events_per_run=settings.audit_max_events_per_run,
+        max_events_total=settings.audit_max_events_total,
+    )
     proxy = EgressProxy(settings, audit)
     server = await asyncio.start_server(proxy.handle, settings.host, settings.port)
     admin = uvicorn.Server(

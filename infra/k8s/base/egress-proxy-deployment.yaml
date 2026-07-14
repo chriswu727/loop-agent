@@ -23,6 +23,8 @@ spec:
         runAsNonRoot: true
         runAsUser: 10001
         runAsGroup: 10001
+        fsGroup: 10001
+        fsGroupChangePolicy: OnRootMismatch
         seccompProfile:
           type: RuntimeDefault
       containers:
@@ -41,6 +43,10 @@ spec:
           env:
             - name: EGRESS_PROXY_REQUIRE_AUTHORITY_KEY
               value: 'true'
+            - name: EGRESS_PROXY_REQUIRE_DURABLE_AUDIT
+              value: 'true'
+            - name: EGRESS_PROXY_AUDIT_DATABASE_PATH
+              value: /var/lib/loop-egress/audit.sqlite3
           resources:
             requests:
               cpu: 100m
@@ -62,6 +68,11 @@ spec:
           volumeMounts:
             - name: tmp
               mountPath: /tmp
+            - name: audit
+              mountPath: /var/lib/loop-egress
       volumes:
         - name: tmp
           emptyDir: { sizeLimit: 64Mi }
+        - name: audit
+          persistentVolumeClaim:
+            claimName: egress-proxy-audit

@@ -351,7 +351,8 @@ agent create the file, run it, self-correct, and finish).
 - **Provider protocol egress is not uniformly FQDN-enforced at L4.** Shell and browser
   traffic use the proxy; SMTP/IMAP/CalDAV/vision calls originate in the isolated
   gateway, whose Kubernetes network identity currently also has direct egress.
-- **Proxy audit is bounded and in-memory.** Events are persisted into tasks after
-  calls, but a proxy restart in that interval can lose them.
-- **Roadmap:** broader transports, signed-skill ecosystem, durable audit, hardened
+- **Proxy audit is durable but single-replica.** A bounded SQLite WAL survives proxy
+  restarts and events are embedded into tasks after calls; horizontal HA requires a
+  shared append-only sink.
+- **Roadmap:** broader transports, signed-skill ecosystem, hardened
   provider network identities, and measured production/adversarial evidence.

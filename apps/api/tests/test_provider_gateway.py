@@ -1,7 +1,11 @@
 from __future__ import annotations
 
+import asyncio
+import base64
+import json
 from datetime import UTC, datetime, timedelta
 from typing import Any, ClassVar
+from urllib.parse import urlsplit
 
 import httpx
 import pytest
@@ -19,7 +23,11 @@ from app.domain.authority_token import (
 from app.domain.capability import Capability
 from app.provider_gateway.config import ProviderGatewaySettings
 from app.provider_gateway.main import create_app
-from app.provider_gateway.providers import _browser_subprocess_env, _write_browser_proxy_config
+from app.provider_gateway.providers import (
+    _AuthenticatedProxyRelay,
+    _browser_subprocess_env,
+    _write_browser_proxy_config,
+)
 from app.provider_gateway.runtime import ProviderGatewayRuntime
 from app.tools import CapabilityEnvelope, ToolExecutor, ToolStatus, Workspace
 from app.tools.provider_gateway import ProviderGatewayClient
@@ -147,6 +155,74 @@ async def test_gateway_rejects_egress_grant_from_another_run() -> None:
     assert "do not match" in response.json()["detail"]
 
 
+async def test_browser_invocation_requires_matching_fresh_egress_grant() -> None:
+    private, public = _keys()
+    app = create_app(ProviderGatewaySettings(authority_public_key=public, browser_enabled=False))
+    runtime: ProviderGatewayRuntime = app.state.runtime
+    rotated: list[str] = []
+
+    class FakeBrowser:
+        tools: ClassVar[list[dict[str, str]]] = [
+            {
+                "name": "browser_navigate",
+                "description": "Navigate",
+                "capability": "net.browser",
+            }
+        ]
+
+        async def update_egress_token(self, token: str) -> None:
+            rotated.append(token)
+
+        async def call(self, _name: str, _args: dict[str, Any]) -> str:
+            return "navigated"
+
+        async def stop(self) -> None:
+            return None
+
+    runtime._browsers["task-1:1"] = FakeBrowser()  # type: ignore[assignment]
+    provider_token = _token(private, [Capability.NET_BROWSER], egress_hosts=["docs.example.com"])
+    matching_egress = _token(
+        private,
+        [Capability.NET_BROWSER],
+        audience=EGRESS_PROXY_AUDIENCE,
+        egress_hosts=["docs.example.com"],
+    )
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://gateway") as client:
+        missing = await client.post(
+            "/v1/tools/browser_navigate",
+            headers={"Authorization": f"Bearer {provider_token}"},
+            json={"args": {"url": "https://docs.example.com"}},
+        )
+        mismatch = await client.post(
+            "/v1/tools/browser_navigate",
+            headers={
+                "Authorization": f"Bearer {provider_token}",
+                "X-Loop-Egress-Token": _token(
+                    private,
+                    [Capability.NET_BROWSER],
+                    audience=EGRESS_PROXY_AUDIENCE,
+                    run_id="task-2:1",
+                    egress_hosts=["docs.example.com"],
+                ),
+            },
+            json={"args": {"url": "https://docs.example.com"}},
+        )
+        allowed = await client.post(
+            "/v1/tools/browser_navigate",
+            headers={
+                "Authorization": f"Bearer {provider_token}",
+                "X-Loop-Egress-Token": matching_egress,
+            },
+            json={"args": {"url": "https://docs.example.com"}},
+        )
+
+    assert missing.status_code == 403
+    assert mismatch.status_code == 403
+    assert allowed.status_code == 200
+    assert rotated == [matching_egress]
+
+
 async def test_gateway_does_not_return_provider_exception_details(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -236,16 +312,94 @@ def test_browser_subprocess_receives_no_provider_credentials_or_tokens(
     assert "PROVIDER_GATEWAY_GEMINI_API_KEY" not in env
 
 
-def test_browser_proxy_config_is_explicit_authenticated_and_private() -> None:
-    path = _write_browser_proxy_config("http://egress-proxy:8080", "short-token")
+def test_browser_proxy_config_contains_only_private_loopback_relay() -> None:
+    path = _write_browser_proxy_config("http://127.0.0.1:49152")
     try:
         assert path.stat().st_mode & 0o777 == 0o600
-        config = path.read_text()
-        assert '"server": "http://egress-proxy:8080"' in config
-        assert '"username": "loop"' in config
-        assert '"password": "short-token"' in config
+        config = json.loads(path.read_text())
+        assert config["browser"]["launchOptions"]["proxy"] == {"server": "http://127.0.0.1:49152"}
+        assert config["browser"]["contextOptions"]["proxy"] == {"server": "http://127.0.0.1:49152"}
+        assert "short-token" not in path.read_text()
     finally:
         path.unlink(missing_ok=True)
+
+
+async def test_browser_proxy_relay_injects_and_rotates_egress_authority() -> None:
+    authorizations: list[str] = []
+
+    async def upstream_handler(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+        request = (await reader.readuntil(b"\r\n\r\n")).decode("iso-8859-1")
+        authorizations.extend(
+            line.partition(":")[2].strip()
+            for line in request.split("\r\n")
+            if line.lower().startswith("proxy-authorization:")
+        )
+        writer.write(b"HTTP/1.1 204 No Content\r\nConnection: close\r\n\r\n")
+        await writer.drain()
+        writer.close()
+        await writer.wait_closed()
+
+    upstream = await asyncio.start_server(upstream_handler, "127.0.0.1", 0)
+    upstream_port = int(upstream.sockets[0].getsockname()[1])
+    relay = _AuthenticatedProxyRelay(f"http://127.0.0.1:{upstream_port}", "token-one")
+    await relay.start()
+
+    async def request() -> None:
+        parsed = urlsplit(relay.proxy_url)
+        reader, writer = await asyncio.open_connection(parsed.hostname, parsed.port)
+        writer.write(
+            b"GET http://docs.example.com/ HTTP/1.1\r\n"
+            b"Host: docs.example.com\r\n"
+            b"Proxy-Authorization: Basic attacker-controlled\r\n\r\n"
+        )
+        await writer.drain()
+        assert b"204 No Content" in await asyncio.wait_for(reader.read(), timeout=5)
+        writer.close()
+        await writer.wait_closed()
+
+    try:
+        await request()
+        await relay.update_token("token-two")
+        await request()
+    finally:
+        await relay.close()
+        upstream.close()
+        await upstream.wait_closed()
+
+    assert [base64.b64decode(value.partition(" ")[2]).decode() for value in authorizations] == [
+        "loop:token-one",
+        "loop:token-two",
+    ]
+
+
+async def test_browser_proxy_relay_drops_old_connections_when_authority_rotates() -> None:
+    async def upstream_handler(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+        await reader.readuntil(b"\r\n\r\n")
+        writer.write(b"HTTP/1.1 200 Connection Established\r\n\r\n")
+        await writer.drain()
+        await reader.read()
+        writer.close()
+        await writer.wait_closed()
+
+    upstream = await asyncio.start_server(upstream_handler, "127.0.0.1", 0)
+    upstream_port = int(upstream.sockets[0].getsockname()[1])
+    relay = _AuthenticatedProxyRelay(f"http://127.0.0.1:{upstream_port}", "token-one")
+    await relay.start()
+    parsed = urlsplit(relay.proxy_url)
+    reader, writer = await asyncio.open_connection(parsed.hostname, parsed.port)
+    writer.write(b"CONNECT docs.example.com:443 HTTP/1.1\r\nHost: docs.example.com:443\r\n\r\n")
+    await writer.drain()
+    assert b"200 Connection Established" in await reader.readuntil(b"\r\n\r\n")
+
+    try:
+        await relay.update_token("token-two")
+        assert await asyncio.wait_for(reader.read(), timeout=1) == b""
+    finally:
+        writer.close()
+        await writer.wait_closed()
+        await relay.close()
+        upstream.close()
+        await upstream.wait_closed()
 
 
 async def test_gateway_browser_tool_dispatches_through_executor(tmp_path) -> None:
@@ -286,6 +440,9 @@ async def test_browser_gateway_enforces_host_before_provider_call() -> None:
             }
         ]
 
+        async def update_egress_token(self, token: str) -> None:
+            assert token == "fresh-egress-token"
+
         async def call(self, name: str, args: dict[str, Any]) -> str:
             calls.append((name, args))
             return "ok"
@@ -305,9 +462,17 @@ async def test_browser_gateway_enforces_host_before_provider_call() -> None:
         expires_at=datetime.now(UTC) + timedelta(minutes=1),
     )
     with pytest.raises(AuthorityTokenError, match="not allowlisted"):
-        await runtime.invoke(grant, "browser_navigate", {"url": "https://example.com.evil.test/"})
+        await runtime.invoke(
+            grant,
+            "browser_navigate",
+            {"url": "https://example.com.evil.test/"},
+            egress_token="fresh-egress-token",
+        )
     result, audit = await runtime.invoke(
-        grant, "browser_navigate", {"url": "https://docs.example.com/"}
+        grant,
+        "browser_navigate",
+        {"url": "https://docs.example.com/"},
+        egress_token="fresh-egress-token",
     )
     assert result == "ok"
     assert audit["target"] == "docs.example.com"

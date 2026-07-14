@@ -63,16 +63,18 @@ not prompt instructions.
 - Shell containers/Jobs have no direct external route: destination enforcement is a
   network-layer property of the sandbox namespace plus proxy.
 - Browser navigation is checked by the Provider Gateway and routed through the same
-  authenticated proxy. The gateway pod also needs direct protocol egress for
-  SMTP/IMAP/CalDAV/vision APIs; standard Kubernetes NetworkPolicy cannot express
+  authenticated proxy. A gateway-local loopback relay refreshes short-lived proxy
+  authority without exposing it to Chromium, and the proxy closes established
+  connections when that authority expires. The gateway pod also needs direct
+  protocol egress for SMTP/IMAP/CalDAV/vision APIs; standard Kubernetes NetworkPolicy cannot express
   DNS-name policy for those connections. Deployments that need equivalent L4
   separation should split browser and protocol providers into separate gateways or
   use a CNI/service mesh with FQDN policy.
-- Proxy audit is currently an in-memory bounded buffer and the Kubernetes deployment
-  intentionally has one replica. The worker fetches it after each invocation, but a
-  proxy restart in that interval can lose network audit evidence. Task steps and
-  already-persisted Receipt events remain durable. Use a durable audit sink before
-  treating the proxy as a compliance ledger.
+- Proxy audit is a bounded SQLite WAL on a dedicated persistent volume, so a proxy
+  restart does not erase events waiting for the worker to embed them in a task and
+  Receipt. The base deployment intentionally has one replica because this local
+  store is not a horizontally shared log. Use an external append-only audit sink if
+  the deployment needs multi-replica proxy HA or compliance-ledger retention.
 
 ## Receipts and provenance
 

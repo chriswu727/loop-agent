@@ -294,14 +294,15 @@ scheduler, SSE live view, provider registry, a **local Ollama provider**, an **M
 client with a headless browser**, **container isolation**, **multi-agent delegation**
 (`spawn` → a tree of verified sub-agents), **email + calendar**, **conversational
 sessions** with a web chat page, **Telegram + Slack chat inlets**, and a
-**channel-agnostic `/chat` API**, an isolated **Provider Gateway**, short-lived
-capability tokens, and **network-layer destination enforcement** with auditable,
-DNS-pinned proxy routing.
+**channel-agnostic `/chat` API**, an isolated **Provider Gateway**, renewable
+short-lived capability tokens, and **network-layer destination enforcement** with
+durable, bounded audit records and DNS-pinned proxy routing.
 
-**Next:** broaden the signed skill catalog and channel ecosystem, persist proxy
-audit events outside process memory, split protocol-specific provider egress into
-separate network identities where deployments require L4 enforcement, and accumulate
-real production/adversarial evidence. Loop's core trust architecture is implemented;
+**Next:** broaden the signed skill catalog and channel ecosystem, split
+protocol-specific provider egress into separate network identities where deployments
+require L4 enforcement, add shared audit/session backends for horizontal HA, and
+accumulate real production/adversarial evidence. Loop's core trust architecture is
+implemented;
 its remaining gap versus mature assistants is ecosystem and operational proof, not
 another missing safety layer.
 

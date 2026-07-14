@@ -142,9 +142,10 @@ services:
   data-init:
     image: alpine:3.22
     user: '0:0'
-    command: ['chown', '-R', '10001:10001', '/var/lib/loop']
+    command: ['chown', '-R', '10001:10001', '/var/lib/loop', '/var/lib/loop-egress']
     volumes:
       - loopdata:/var/lib/loop
+      - egressaudit:/var/lib/loop-egress
     restart: 'no'
 
   provider-gateway:
@@ -194,6 +195,13 @@ services:
     environment:
       EGRESS_PROXY_REQUIRE_AUTHORITY_KEY: 'true'
       EGRESS_PROXY_AUTHORITY_PUBLIC_KEY: ${AGENT_AUTHORITY_PUBLIC_KEY:-}
+      EGRESS_PROXY_REQUIRE_DURABLE_AUDIT: 'true'
+      EGRESS_PROXY_AUDIT_DATABASE_PATH: /var/lib/loop-egress/audit.sqlite3
+    volumes:
+      - egressaudit:/var/lib/loop-egress
+    depends_on:
+      data-init:
+        condition: service_completed_successfully
     networks:
       default:
       sandbox-egress:
@@ -273,6 +281,7 @@ volumes:
   pgdata:
   redisdata:
   loopdata:
+  egressaudit:
 
 networks:
   sandbox-egress:

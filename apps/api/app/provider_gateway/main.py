@@ -108,9 +108,13 @@ def create_app(settings: ProviderGatewaySettings | None = None) -> FastAPI:
         tool: str,
         payload: InvokeRequest,
         authority: AuthorityGrant = Depends(grant),
+        x_loop_egress_token: str | None = Header(default=None),
     ) -> Any:
         try:
-            result, audit = await runtime.invoke(authority, tool, payload.args)
+            egress_token = verified_egress_token(authority, x_loop_egress_token)
+            result, audit = await runtime.invoke(
+                authority, tool, payload.args, egress_token=egress_token
+            )
         except AuthorityTokenError as exc:
             return JSONResponse(
                 status_code=403,

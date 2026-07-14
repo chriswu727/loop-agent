@@ -13,8 +13,9 @@
 >   Production is fail-closed for sandbox and provider tools. It now also has an
 >   isolated credential-bearing Provider Gateway, short-lived audience-bound
 >   authority tokens, and a destination-enforcing egress proxy with private-address
->   rejection, DNS pinning and Receipt audit. Ecosystem and real-world adoption
->   remain unproven; provider-protocol egress separation and durable proxy audit are
+>   rejection, DNS pinning and durable Receipt audit. Ecosystem and real-world
+>   adoption remain unproven; provider-protocol egress separation and horizontally
+>   shared audit are
 >   still deployment hardening work.
 >
 > **Update (2026-07-04, after this comparison):** several concrete weaknesses this
