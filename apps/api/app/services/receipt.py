@@ -153,6 +153,7 @@ def build_receipt(
             "audit": task.authority_audit if isinstance(task.authority_audit, list) else [],
             "enforcement": {
                 "provider_gateway": bool(settings.agent_provider_gateway_url),
+                "browser_gateway": bool(settings.agent_browser_gateway_url),
                 "egress_proxy": bool(settings.agent_egress_proxy_url),
             },
         },

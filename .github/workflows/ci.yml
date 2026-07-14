@@ -83,10 +83,14 @@ jobs:
           kubectl kustomize infra/k8s/overlays/dev >/tmp/loop-k8s-dev.yaml
           kubectl kustomize infra/k8s/overlays/prod >/tmp/loop-k8s-prod.yaml
           grep -q 'name: provider-gateway' /tmp/loop-k8s-prod.yaml
+          grep -q 'name: browser-gateway' /tmp/loop-k8s-prod.yaml
           grep -q 'name: egress-proxy' /tmp/loop-k8s-prod.yaml
           grep -q 'claimName: egress-proxy-audit' /tmp/loop-k8s-prod.yaml
           grep -q 'name: EGRESS_PROXY_REQUIRE_DURABLE_AUDIT' /tmp/loop-k8s-prod.yaml
           grep -q 'name: EGRESS_PROXY_REQUIRE_DURABLE_REVOCATIONS' /tmp/loop-k8s-prod.yaml
           grep -q 'claimName: provider-gateway-state' /tmp/loop-k8s-prod.yaml
+          grep -q 'claimName: browser-gateway-state' /tmp/loop-k8s-prod.yaml
           grep -q 'name: PROVIDER_GATEWAY_REQUIRE_DURABLE_REVOCATIONS' /tmp/loop-k8s-prod.yaml
+          grep -q 'name: restrict-browser-gateway-egress' /tmp/loop-k8s-prod.yaml
+          grep -q 'value: loop-browser-gateway' /tmp/loop-k8s-prod.yaml
           grep -q 'loop.openai.com/egress: proxied' /tmp/loop-k8s-prod.yaml

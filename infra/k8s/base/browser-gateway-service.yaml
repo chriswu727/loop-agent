@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: browser-gateway
+spec:
+  selector:
+    app.kubernetes.io/name: browser-gateway
+  ports:
+    - name: http
+      port: 8090
+      targetPort: http

@@ -18,7 +18,7 @@ const baseTask: Task = {
     resolved: ['net.browser'],
     egress_hosts: [],
     sandbox: 'required',
-    enforcement: { provider_gateway: true, egress_proxy: true },
+    enforcement: { provider_gateway: true, browser_gateway: true, egress_proxy: true },
     audit: [],
   },
   allow_egress: false,
@@ -54,6 +54,7 @@ describe('AuthorityPanel', () => {
 
     expect(screen.getByText('Shell network: denied')).toBeInTheDocument();
     expect(screen.getByText('net.browser')).toBeInTheDocument();
+    expect(screen.getByText('Browser network isolated')).toBeInTheDocument();
     expect(screen.queryByText('Shell network: any host')).not.toBeInTheDocument();
   });
 

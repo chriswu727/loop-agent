@@ -39,9 +39,10 @@ Define every task and every skill to run under a single machine-readable envelop
 
 ### 3. Default-deny network egress (the exfiltration firewall) _(effort: M)_
 
-**Shipped for shell and browser traffic.** Sandboxes have no direct internet route;
-the authenticated proxy enforces explicit destination hosts and ports, rejects
-non-public resolution, pins the approved IP, and emits a per-run audit trail.
+**Shipped for shell and browser traffic.** Sandboxes and the credentialless Browser
+Gateway have no direct internet or DNS route; the authenticated proxy enforces
+explicit destination hosts and ports, rejects non-public resolution, pins the
+approved IP, and emits a per-run audit trail.
 
 Promote egress to a first-class declared capability enforced at the network-namespace/proxy layer, not by regex. The task container blocks all network by default; the task/skill manifest lists allowed hosts; run_command and any future web/MCP tool can only reach declared destinations. Ship an opt-in profile pre-allowlisting PyPI/npm so normal installs still work.
 

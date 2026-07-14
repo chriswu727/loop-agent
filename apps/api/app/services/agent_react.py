@@ -35,7 +35,9 @@ from app.core.logging import get_logger
 from app.core.redaction import redact_secrets
 from app.db.models.task import TaskModel
 from app.domain.authority_token import (
+    BROWSER_GATEWAY_AUDIENCE,
     EGRESS_PROXY_AUDIENCE,
+    PROVIDER_GATEWAY_AUDIENCE,
     AuthorityTokenError,
     intersect_host_policies,
     issue_authority_token,
@@ -63,7 +65,7 @@ from app.tools.email import EmailTools
 from app.tools.guards import make_egress_guard
 from app.tools.mcp import McpBrowser
 from app.tools.policy import Verdict, evaluate_command
-from app.tools.provider_gateway import ProviderGatewayClient
+from app.tools.provider_gateway import ProviderGatewayClient, ProviderGatewayPool
 from app.tools.registry import CALENDAR_SPEC, EMAIL_SPEC, VISION_SPEC
 from app.tools.sandbox import docker_available, image_present
 from app.tools.vision import VisionTools
@@ -290,8 +292,8 @@ class AgentReactService:
             egress_hosts=task.egress_hosts,
         )
         task.resolved_capabilities = sorted_capabilities(resolved_capabilities)
-        provider_capabilities = {
-            Capability.NET_BROWSER,
+        browser_capabilities = {Capability.NET_BROWSER}
+        protocol_capabilities = {
             Capability.EMAIL_READ,
             Capability.EMAIL_SEND,
             Capability.CALENDAR_READ,
@@ -311,16 +313,27 @@ class AgentReactService:
             self._ensure_unverified_receipt(task)
             await self._commit()
             return
+        unavailable_gateways: list[str] = []
         if (
-            resolved_capabilities & provider_capabilities
+            resolved_capabilities & browser_capabilities
+            and not settings.agent_browser_gateway_url
+            and not settings.agent_allow_host_providers
+        ):
+            unavailable_gateways.append("Browser Gateway")
+        if (
+            resolved_capabilities & protocol_capabilities
             and not settings.agent_provider_gateway_url
             and not settings.agent_allow_host_providers
         ):
+            unavailable_gateways.append("Provider Gateway")
+        if unavailable_gateways:
+            gateway_names = " and ".join(unavailable_gateways)
+            verb = "is" if len(unavailable_gateways) == 1 else "are"
             task.status = TaskStatus.FAILED.value
             task.stop_reason = StopReason.ERROR.value
             task.error = (
-                "A requested provider capability is disabled because no isolated "
-                "provider gateway is configured."
+                "Requested capabilities are disabled because no isolated "
+                f"{gateway_names} {verb} configured."
             )
             task.workspace_path = str(workspace.root)
             self._ensure_unverified_receipt(task)
@@ -357,9 +370,12 @@ class AgentReactService:
             await self._commit()
             return
 
-        uses_gateway = bool(
-            resolved_capabilities & provider_capabilities and settings.agent_provider_gateway_url
-        )
+        gateway_capabilities: set[Capability] = set()
+        if settings.agent_provider_gateway_url:
+            gateway_capabilities |= resolved_capabilities & protocol_capabilities
+        if settings.agent_browser_gateway_url:
+            gateway_capabilities |= resolved_capabilities & browser_capabilities
+        uses_gateway = bool(gateway_capabilities)
         needs_authority_token = uses_gateway or Capability.NET_SHELL in resolved_capabilities
         authority_key = settings.authority_signing_key_pem()
         if needs_authority_token and not authority_key:
@@ -373,23 +389,30 @@ class AgentReactService:
 
         run_id = f"{task.id}:{task.attempt}"
 
-        def token_factory(audience: str) -> str:
-            if not authority_key:
-                raise RuntimeError("Authority signing key is unavailable")
-            return issue_authority_token(
-                authority_key,
-                audience=audience,
-                task_id=str(task.id),
-                owner_id=task.owner_id,
-                project_id=task.project_id,
-                run_id=run_id,
-                capabilities=resolved_capabilities,
-                egress_hosts=task.egress_hosts or [],
-                ttl_seconds=settings.agent_authority_token_ttl_seconds,
-            )
+        def scoped_token_factory(
+            granted_capabilities: set[Capability],
+        ) -> Callable[[str], str]:
+            def factory(audience: str) -> str:
+                if not authority_key:
+                    raise RuntimeError("Authority signing key is unavailable")
+                return issue_authority_token(
+                    authority_key,
+                    audience=audience,
+                    task_id=str(task.id),
+                    owner_id=task.owner_id,
+                    project_id=task.project_id,
+                    run_id=run_id,
+                    capabilities=granted_capabilities,
+                    egress_hosts=task.egress_hosts or [],
+                    ttl_seconds=settings.agent_authority_token_ttl_seconds,
+                )
+
+            return factory
+
+        token_factory = scoped_token_factory(set(resolved_capabilities))
 
         self._authority_token_factory = token_factory if needs_authority_token else None
-        provider_gateway: ProviderGatewayClient | None = None
+        provider_gateway: ProviderGatewayPool | None = None
         egress_audit = (
             EgressAuditClient(settings.agent_egress_proxy_audit_url, token_factory)
             if resolved_capabilities & destination_capabilities
@@ -448,18 +471,36 @@ class AgentReactService:
 
         browser: McpBrowser | None = None
         if uses_gateway:
-            provider_gateway = ProviderGatewayClient(
-                settings.agent_provider_gateway_url or "",
-                workspace,
-                token_factory,
-                timeout_seconds=settings.agent_command_timeout_seconds + 15,
-            )
+            gateway_clients: list[ProviderGatewayClient] = []
+            protocol_grants = resolved_capabilities & protocol_capabilities
+            if protocol_grants and settings.agent_provider_gateway_url:
+                gateway_clients.append(
+                    ProviderGatewayClient(
+                        settings.agent_provider_gateway_url,
+                        workspace,
+                        scoped_token_factory(set(protocol_grants)),
+                        audience=PROVIDER_GATEWAY_AUDIENCE,
+                        timeout_seconds=settings.agent_command_timeout_seconds + 15,
+                    )
+                )
+            if Capability.NET_BROWSER in gateway_capabilities:
+                gateway_clients.append(
+                    ProviderGatewayClient(
+                        settings.agent_browser_gateway_url or "",
+                        workspace,
+                        scoped_token_factory({Capability.NET_BROWSER}),
+                        audience=BROWSER_GATEWAY_AUDIENCE,
+                        egress_authority=True,
+                        timeout_seconds=settings.agent_command_timeout_seconds + 15,
+                    )
+                )
+            provider_gateway = ProviderGatewayPool(gateway_clients)
             try:
                 await provider_gateway.start()
             except Exception as exc:
                 task.status = TaskStatus.FAILED.value
                 task.stop_reason = StopReason.ERROR.value
-                task.error = f"Provider Gateway is unavailable: {str(exc)[:300]}"
+                task.error = f"Isolated gateway is unavailable: {str(exc)[:300]}"
                 task.workspace_path = str(workspace.root)
                 self._ensure_unverified_receipt(task)
                 await self._commit()
@@ -480,26 +521,28 @@ class AgentReactService:
             missing = [
                 capability.value
                 for capability, tool in required_tools.items()
-                if capability in resolved_capabilities and tool not in provider_gateway.tool_names
+                if capability in gateway_capabilities and tool not in provider_gateway.tool_names
             ]
-            if Capability.NET_BROWSER in resolved_capabilities and not self._browser_specs.strip():
+            if Capability.NET_BROWSER in gateway_capabilities and not self._browser_specs.strip():
                 missing.append(Capability.NET_BROWSER.value)
             if missing:
                 await provider_gateway.stop()
                 task.status = TaskStatus.FAILED.value
                 task.stop_reason = StopReason.ERROR.value
-                task.error = f"Provider Gateway lacks requested capabilities: {', '.join(missing)}"
+                task.error = f"Isolated gateways lack requested capabilities: {', '.join(missing)}"
                 task.workspace_path = str(workspace.root)
                 self._ensure_unverified_receipt(task)
                 await self._commit()
                 return
-        else:
+        if Capability.NET_BROWSER not in gateway_capabilities:
             browser = await self._start_browser(envelope)
             if browser is not None:
                 executor.mcp = browser
                 self._browser_specs = browser.specs()
                 self._mcp_tools |= set(browser.tool_names)
             elif envelope.permits_capability(Capability.NET_BROWSER):
+                if provider_gateway is not None:
+                    await provider_gateway.stop()
                 task.status = TaskStatus.FAILED.value
                 task.stop_reason = StopReason.ERROR.value
                 task.error = "The requested browser capability is unavailable."
@@ -511,7 +554,10 @@ class AgentReactService:
         wants_email = envelope.permits_capability(
             Capability.EMAIL_READ
         ) or envelope.permits_capability(Capability.EMAIL_SEND)
-        if provider_gateway is not None:
+        email_via_gateway = bool(
+            gateway_capabilities & {Capability.EMAIL_READ, Capability.EMAIL_SEND}
+        )
+        if email_via_gateway:
             pass
         elif wants_email and settings.email_configured:
             executor.email = EmailTools()
@@ -520,6 +566,8 @@ class AgentReactService:
         elif wants_email:
             if browser is not None:
                 await browser.stop()
+            if provider_gateway is not None:
+                await provider_gateway.stop()
             task.status = TaskStatus.FAILED.value
             task.stop_reason = StopReason.ERROR.value
             task.error = "The requested email capability is not configured."
@@ -531,7 +579,10 @@ class AgentReactService:
         wants_calendar = envelope.permits_capability(
             Capability.CALENDAR_READ
         ) or envelope.permits_capability(Capability.CALENDAR_WRITE)
-        if provider_gateway is not None:
+        calendar_via_gateway = bool(
+            gateway_capabilities & {Capability.CALENDAR_READ, Capability.CALENDAR_WRITE}
+        )
+        if calendar_via_gateway:
             pass
         elif wants_calendar and settings.calendar_configured:
             executor.calendar = CalendarTools()
@@ -540,6 +591,8 @@ class AgentReactService:
         elif wants_calendar:
             if browser is not None:
                 await browser.stop()
+            if provider_gateway is not None:
+                await provider_gateway.stop()
             task.status = TaskStatus.FAILED.value
             task.stop_reason = StopReason.ERROR.value
             task.error = "The requested calendar capability is not configured."
@@ -562,7 +615,7 @@ class AgentReactService:
                 "approval; never email or export secrets or workspace credentials.\n"
             )
 
-        if provider_gateway is not None:
+        if Capability.VISION in gateway_capabilities:
             pass
         elif envelope.permits_capability(Capability.VISION) and settings.gemini_api_key:
             executor.vision = VisionTools(workspace)
@@ -571,6 +624,8 @@ class AgentReactService:
         elif envelope.permits_capability(Capability.VISION):
             if browser is not None:
                 await browser.stop()
+            if provider_gateway is not None:
+                await provider_gateway.stop()
             task.status = TaskStatus.FAILED.value
             task.stop_reason = StopReason.ERROR.value
             task.error = "The requested vision capability is not configured."
@@ -618,7 +673,9 @@ class AgentReactService:
                         continue
                     try:
                         event = await client.revoke()
-                        if event:
+                        if isinstance(event, list):
+                            revocation_events.extend(event)
+                        elif event:
                             revocation_events.append(event)
                     except Exception as exc:
                         revocation_events.append(

@@ -222,9 +222,10 @@ the prompt's `TOOL_SPECS`. The loop never changes.
   production: non-root, read-only root, capabilities dropped, no service-account
   token, resource/time limits, and only the task workspace mounted. Production is
   fail-closed; explicitly selected inline development remains reduced isolation.
-- _Provider tools_ run in an isolated gateway that owns email/calendar/browser/vision
-  credentials. The worker carries none of them and grants each call through a
-  short-lived signed token verified independently by the gateway.
+- _Provider tools_ are split across two isolated network identities. The protocol
+  gateway owns email/calendar/vision credentials but contains no browser runtime;
+  the Browser Gateway owns no provider credentials and can reach only the egress
+  proxy. The worker grants each through a capability-scoped, audience-specific token.
 
 **Limits clamped in the service.** `TaskService._resolve_limits` applies defaults
 then clamps to caps. The "within the limit" guarantee lives in one place,
@@ -353,8 +354,9 @@ agent create the file, run it, self-correct, and finish).
   worker profile fail closed on container/Job isolation.
 - **One task per worker process.** Concurrency scales by adding worker replicas.
 - **Provider protocol egress is not uniformly FQDN-enforced at L4.** Shell and browser
-  traffic use the proxy; SMTP/IMAP/CalDAV/vision calls originate in the isolated
-  gateway, whose Kubernetes network identity currently also has direct egress.
+  traffic are proxy-only and have separate network identities. SMTP/IMAP/CalDAV/vision
+  still share one credential-bearing gateway with direct egress; stricter deployments
+  can split those protocols further or use CNI/service-mesh FQDN policy.
 - **Proxy audit is durable but single-replica.** A bounded SQLite WAL survives proxy
   restarts and events are embedded into tasks after calls; horizontal HA requires a
   shared append-only sink.

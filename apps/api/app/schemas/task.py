@@ -89,6 +89,7 @@ class LimitsRead(BaseModel):
 
 class AuthorityEnforcementRead(BaseModel):
     provider_gateway: bool
+    browser_gateway: bool
     egress_proxy: bool
 
 
@@ -167,6 +168,7 @@ class TaskRead(BaseModel):
                 audit=m.authority_audit or [],  # type: ignore[attr-defined]
                 enforcement=AuthorityEnforcementRead(
                     provider_gateway=bool(settings.agent_provider_gateway_url),
+                    browser_gateway=bool(settings.agent_browser_gateway_url),
                     egress_proxy=bool(settings.agent_egress_proxy_url),
                 ),
             ),

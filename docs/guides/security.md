@@ -58,22 +58,22 @@ not prompt instructions.
   audited proxy.
 - Local `preferred` mode may fall back to the host and labels the Receipt accordingly.
   Use `required` when containment is mandatory.
-- Browser/email/calendar/vision provider credentials exist only in the Provider
-  Gateway. The worker calls it with the short-lived grant; production requests fail
-  closed if the gateway is missing or does not expose every granted capability.
+- Email/calendar/vision credentials exist only in the protocol Provider Gateway.
+  Chromium runs in a separate Browser Gateway with no provider credentials, no DNS,
+  and no direct internet route. The worker uses separate audience-bound grants and
+  production fails closed if either required gateway is missing.
 
 ### Exact guarantee boundaries
 
 - Shell containers/Jobs have no direct external route: destination enforcement is a
   network-layer property of the sandbox namespace plus proxy.
-- Browser navigation is checked by the Provider Gateway and routed through the same
-  authenticated proxy. A gateway-local loopback relay refreshes short-lived proxy
-  authority without exposing it to Chromium, and the proxy closes established
-  connections when that authority expires. The gateway pod also needs direct
-  protocol egress for SMTP/IMAP/CalDAV/vision APIs; standard Kubernetes NetworkPolicy
-  cannot express DNS-name policy for those connections. Deployments that need equivalent L4
-  separation should split browser and protocol providers into separate gateways or
-  use a CNI/service mesh with FQDN policy.
+- Browser navigation is checked by a dedicated Browser Gateway and routed through the
+  authenticated proxy. Its Kubernetes identity may connect only to the proxy port;
+  DNS is disabled. A gateway-local loopback relay refreshes short-lived proxy authority
+  without exposing it to Chromium, and the proxy closes established connections when
+  that authority expires. The separate protocol gateway retains direct egress for
+  SMTP/IMAP/CalDAV/vision APIs; deployments needing per-protocol FQDN enforcement can
+  split those providers further or use a CNI/service mesh with FQDN policy.
 - Proxy audit is a bounded SQLite WAL on a dedicated persistent volume, so a proxy
   restart does not erase events waiting for the worker to embed them in a task and
   Receipt. The base deployment intentionally has one replica because this local

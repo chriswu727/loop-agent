@@ -49,6 +49,9 @@ export function AuthorityPanel({ task }: { task: Task }) {
           task.authority.enforcement.egress_proxy && (
             <Pill tone="safe">Destination proxy enforced</Pill>
           )}
+        {granted.has('net.browser') && task.authority.enforcement.browser_gateway && (
+          <Pill tone="safe">Browser network isolated</Pill>
+        )}
         {task.authority.audit.length > 0 && (
           <Pill tone="neutral">
             Runtime decisions: {allowed} allowed / {blocked} blocked

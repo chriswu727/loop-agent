@@ -25,6 +25,7 @@ from app.domain.capability import Capability, parse_capabilities, sorted_capabil
 
 AUTHORITY_TOKEN_SCHEMA = "loop.authority-token/v1"
 PROVIDER_GATEWAY_AUDIENCE = "loop-provider-gateway"
+BROWSER_GATEWAY_AUDIENCE = "loop-browser-gateway"
 EGRESS_PROXY_AUDIENCE = "loop-egress-proxy"
 AUTHORITY_CONTROL_AUDIENCE = "loop-authority-control"
 _HOST_LABEL = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$")

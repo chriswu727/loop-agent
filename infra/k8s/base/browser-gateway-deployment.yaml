@@ -1,24 +1,28 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: provider-gateway
+  name: browser-gateway
   labels:
-    app.kubernetes.io/name: provider-gateway
-    app.kubernetes.io/component: provider
+    app.kubernetes.io/name: browser-gateway
+    app.kubernetes.io/component: browser
 spec:
   replicas: 1
   strategy:
     type: Recreate
   selector:
     matchLabels:
-      app.kubernetes.io/name: provider-gateway
+      app.kubernetes.io/name: browser-gateway
   template:
     metadata:
       labels:
-        app.kubernetes.io/name: provider-gateway
-        app.kubernetes.io/component: provider
+        app.kubernetes.io/name: browser-gateway
+        app.kubernetes.io/component: browser
     spec:
       automountServiceAccountToken: false
+      enableServiceLinks: true
+      dnsPolicy: None
+      dnsConfig:
+        nameservers: ['127.0.0.1']
       securityContext:
         runAsNonRoot: true
         runAsUser: 10001
@@ -28,34 +32,37 @@ spec:
         seccompProfile:
           type: RuntimeDefault
       containers:
-        - name: provider-gateway
-          image: app-api:latest
+        - name: browser-gateway
+          image: app-provider-gateway:latest
           imagePullPolicy: IfNotPresent
-          command: ['uvicorn', 'app.provider_gateway.main:app', '--host', '0.0.0.0', '--port', '8090']
           ports:
             - name: http
               containerPort: 8090
           envFrom:
             - secretRef:
-                name: provider-gateway-secrets
+                name: browser-gateway-secrets
           env:
+            - name: PROVIDER_GATEWAY_SERVICE_NAME
+              value: browser-gateway
+            - name: PROVIDER_GATEWAY_AUTHORITY_AUDIENCE
+              value: loop-browser-gateway
             - name: PROVIDER_GATEWAY_REQUIRE_AUTHORITY_KEY
               value: 'true'
             - name: PROVIDER_GATEWAY_REQUIRE_DURABLE_REVOCATIONS
               value: 'true'
             - name: PROVIDER_GATEWAY_REVOCATION_DATABASE_PATH
-              value: /var/lib/loop-provider/authority.sqlite3
+              value: /var/lib/loop-browser/authority.sqlite3
             - name: PROVIDER_GATEWAY_BROWSER_ENABLED
-              value: 'false'
+              value: 'true'
             - name: HOME
               value: /tmp
           resources:
             requests:
-              cpu: 100m
-              memory: 128Mi
-            limits:
-              cpu: '1'
+              cpu: 250m
               memory: 512Mi
+            limits:
+              cpu: '2'
+              memory: 2Gi
           startupProbe:
             httpGet: { path: /healthz, port: http }
             failureThreshold: 30
@@ -75,10 +82,10 @@ spec:
             - name: tmp
               mountPath: /tmp
             - name: state
-              mountPath: /var/lib/loop-provider
+              mountPath: /var/lib/loop-browser
       volumes:
         - name: tmp
-          emptyDir: { sizeLimit: 256Mi }
+          emptyDir: { sizeLimit: 1Gi }
         - name: state
           persistentVolumeClaim:
-            claimName: provider-gateway-state
+            claimName: browser-gateway-state

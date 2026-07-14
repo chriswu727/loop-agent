@@ -21,6 +21,9 @@ images:
   - name: app-web
     newName: ghcr.io/your-org/loop-agent-web
     newTag: dev
+  - name: app-provider-gateway
+    newName: ghcr.io/your-org/loop-agent-provider-gateway
+    newTag: dev
 
 patches:
   - path: patch-config.yaml
