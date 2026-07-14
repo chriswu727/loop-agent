@@ -4,14 +4,31 @@ kind: ConfigMap
 metadata:
   name: app-config
 data:
-  ENVIRONMENT: "production"
-  LOG_LEVEL: "info"
-  LOG_FORMAT: "json"
-  API_PORT: "8000"
-  CORS_ORIGINS: "https://app.example.com"
-  REDIS_URL: "redis://redis:6379/0"
-  PROMETHEUS_ENABLED: "true"
+  ENVIRONMENT: 'production'
+  LOG_LEVEL: 'info'
+  LOG_FORMAT: 'json'
+  API_PORT: '8000'
+  CORS_ORIGINS: 'https://app.example.com'
+  REDIS_URL: 'redis://redis:6379/0'
+  EXECUTION_MODE: 'worker'
+  AUTH_REQUIRED: 'true'
+  WEB_AUTH_REQUIRED: 'true'
+  APP_BASE_URL: 'https://app.example.com'
+  JWT_ISSUER: 'loop-web'
+  JWT_AUDIENCE: 'loop-api'
+  AGENT_SANDBOX: 'required'
+  AGENT_SANDBOX_BACKEND: 'kubernetes'
+  AGENT_SANDBOX_IMAGE: 'loop-sandbox:latest'
+  AGENT_ALLOW_HOST_PROVIDERS: 'false'
+  AGENT_PROVIDER_GATEWAY_URL: 'http://provider-gateway:8090'
+  AGENT_EGRESS_PROXY_URL: 'http://egress-proxy:8080'
+  AGENT_EGRESS_PROXY_AUDIT_URL: 'http://egress-proxy:8081'
+  AGENT_REQUIRE_EGRESS_HOSTS: 'true'
+  AGENT_WORKSPACES_ROOT: '/var/lib/loop/workspaces'
+  AGENT_MEMORY_ROOT: '/var/lib/loop/memory'
+  AGENT_KUBERNETES_DATA_MOUNT: '/var/lib/loop'
+  AGENT_KUBERNETES_DATA_PVC: 'loop-data'
+  PROMETHEUS_ENABLED: 'true'
   # Frontend
-  NEXT_PUBLIC_API_URL: "https://app.example.com"
-  NEXT_PUBLIC_APP_NAME: "Loop"
-  API_INTERNAL_URL: "http://api:8000"
+  NEXT_PUBLIC_APP_NAME: 'Loop'
+  API_INTERNAL_URL: 'http://api:8000'

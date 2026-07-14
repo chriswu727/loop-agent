@@ -60,7 +60,9 @@ def register_exception_handlers(app: FastAPI) -> None:
             request_id=_request_id(request),
         )
         body = problem.model_dump()
-        body["errors"] = exc.errors()  # field-level detail for clients
+        body["errors"] = [
+            {key: value for key, value in error.items() if key != "ctx"} for error in exc.errors()
+        ]
         return JSONResponse(status_code=problem.status, content=body, media_type=PROBLEM_MEDIA_TYPE)
 
     @app.exception_handler(Exception)

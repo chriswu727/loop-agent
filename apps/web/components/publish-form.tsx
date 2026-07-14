@@ -1,8 +1,8 @@
 'use client';
 
-import type { LimitDefaults, SkillInfo } from '@repo/api-contract';
+import type { Capability, LimitDefaults, SkillInfo } from '@repo/api-contract';
 import { useRouter } from 'next/navigation';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { ApiError, tasksApi } from '@/lib/api-client';
 
 const FALLBACK: LimitDefaults = {
@@ -39,36 +39,51 @@ export function PublishForm({
   const [useBrowser, setUseBrowser] = useState(false);
   const [useEmail, setUseEmail] = useState(false);
   const [useCalendar, setUseCalendar] = useState(false);
+  const [useVision, setUseVision] = useState(false);
   const [skill, setSkill] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const idempotencyKey = useRef(crypto.randomUUID());
+  const needsDestinations = allowNetwork || useBrowser;
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     if (goal.trim().length < 4 || submitting) return;
+    if (needsDestinations && !egressHosts.trim()) {
+      setError('Shell and browser network access require at least one destination host.');
+      return;
+    }
     setSubmitting(true);
     setError(null);
     try {
       const limits = { max_steps: maxSteps, token_budget: tokenBudget };
-      // Least-authority: when "no shell" is on, grant only the file tools.
-      const allowed_tools = noShell ? ['write_file', 'edit_file', 'read_file'] : null;
+      const capabilities: Capability[] = [
+        'fs.read',
+        'fs.write',
+        'memory.read',
+        'memory.write',
+        'task.spawn',
+      ];
+      if (!noShell) capabilities.push('exec');
+      if (allowNetwork) capabilities.push('net.shell');
+      if (useBrowser) capabilities.push('net.browser');
+      if (useEmail) capabilities.push('email.read', 'email.send');
+      if (useCalendar) capabilities.push('calendar.read', 'calendar.write');
+      if (useVision) capabilities.push('vision');
       const base = {
         goal: goal.trim(),
         limits,
-        allowed_tools,
-        allow_egress: allowNetwork,
+        capabilities,
         egress_hosts:
-          allowNetwork && egressHosts.trim()
+          needsDestinations && egressHosts.trim()
             ? egressHosts
                 .split(',')
                 .map((h) => h.trim())
                 .filter(Boolean)
             : null,
         require_approval: requireApproval,
-        use_browser: useBrowser,
-        use_email: useEmail,
-        use_calendar: useCalendar,
         skill: skill || null,
+        idempotency_key: idempotencyKey.current,
       };
       if (files.length > 0) {
         // Draft first so files land in the workspace, then start the agent.
@@ -80,6 +95,7 @@ export function PublishForm({
         const task = await tasksApi.publish(base);
         router.push(`/tasks/${task.id}`);
       }
+      idempotencyKey.current = crypto.randomUUID();
     } catch (err) {
       const message =
         err instanceof ApiError ? err.message : 'Could not reach the API. Is it running?';
@@ -129,12 +145,19 @@ export function PublishForm({
           />
         </label>
         {files.map((f) => (
-          <span key={f.name} className="rounded-full bg-blue-500/10 px-2 py-1 text-blue-600 dark:text-blue-400">
+          <span
+            key={f.name}
+            className="rounded-full bg-blue-500/10 px-2 py-1 text-blue-600 dark:text-blue-400"
+          >
             {f.name}
           </span>
         ))}
         {files.length > 0 && (
-          <button type="button" onClick={() => setFiles([])} className="opacity-50 hover:opacity-100">
+          <button
+            type="button"
+            onClick={() => setFiles([])}
+            className="opacity-50 hover:opacity-100"
+          >
             clear
           </button>
         )}
@@ -182,6 +205,14 @@ export function PublishForm({
           />
           Use calendar
         </label>
+        <label className="flex cursor-pointer items-center gap-1.5 opacity-80">
+          <input
+            type="checkbox"
+            checked={useVision}
+            onChange={(e) => setUseVision(e.target.checked)}
+          />
+          Use vision
+        </label>
         {skills.length > 0 && (
           <select
             value={skill}
@@ -198,12 +229,14 @@ export function PublishForm({
         )}
       </div>
 
-      {allowNetwork && (
+      {needsDestinations && (
         <input
           type="text"
+          aria-label="Allowed destination hosts"
           value={egressHosts}
           onChange={(e) => setEgressHosts(e.target.value)}
-          placeholder="Restrict to hosts (comma-separated, e.g. api.github.com, pypi.org) — blank = any host"
+          required
+          placeholder="Required destinations (comma-separated, e.g. api.github.com, pypi.org)"
           className="mt-3 w-full rounded-lg border border-black/10 bg-transparent px-3 py-1.5 text-xs outline-none focus:border-blue-500/60 dark:border-white/15"
         />
       )}
@@ -237,7 +270,9 @@ export function PublishForm({
         </p>
         <button
           type="submit"
-          disabled={goal.trim().length < 4 || submitting}
+          disabled={
+            goal.trim().length < 4 || submitting || (needsDestinations && !egressHosts.trim())
+          }
           className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-40"
         >
           {submitting ? 'Starting…' : 'Run the agent'}

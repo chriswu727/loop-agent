@@ -6,7 +6,7 @@ start of each task, and the agent appends to it with the ``remember`` tool. This
 gives an OpenClaw-style persistent memory while staying transparent (it's just
 markdown a user can read and edit) and bounded (the snapshot is size-capped).
 
-v1 is a single shared store; per-user/per-project scoping is a later concern.
+Each owner/project gets a separate transparent file-backed store.
 """
 
 from __future__ import annotations
@@ -18,6 +18,13 @@ from pathlib import Path
 def _safe_topic(topic: str) -> str:
     slug = re.sub(r"[^a-zA-Z0-9_-]+", "-", topic.strip().lower()).strip("-")
     return slug[:60] or "notes"
+
+
+def scoped_memory_root(root: Path, owner_id: str, project_id: str) -> Path:
+    def component(value: str) -> str:
+        return re.sub(r"[^A-Za-z0-9_.-]+", "_", value)[:100] or "default"
+
+    return root / component(owner_id) / component(project_id)
 
 
 _MAX_NOTE = 1000  # a memory note is a concise fact, not a document

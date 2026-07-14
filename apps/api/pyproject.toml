@@ -22,6 +22,7 @@ dependencies = [
     "structlog>=24.4",
     "pyjwt>=2.10",
     "prometheus-client>=0.21",
+    "kubernetes-asyncio>=36.1,<37",
     # --- Observability (OpenTelemetry) ---
     "opentelemetry-sdk>=1.43",
     "opentelemetry-exporter-otlp>=1.43",
@@ -41,6 +42,8 @@ dev = [
     # deliberately after fixing any new findings locally.
     "ruff==0.15.20",
     "mypy==2.1.0",
+    "pip-audit==2.10.1",
+    "uv==0.11.15",
 ]
 # Preinstalled in the runtime image so the agent can edit real documents:
 # spreadsheets (openpyxl), Word docs (python-docx), and tabular data (pandas).
@@ -57,6 +60,8 @@ calendar = [
 
 [project.scripts]
 worker = "app.workers.worker:main"
+loop = "app.cli.main:main"
+loop-receipt = "app.cli.receipt:main"
 
 [build-system]
 requires = ["hatchling"]

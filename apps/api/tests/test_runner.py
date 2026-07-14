@@ -19,7 +19,7 @@ async def test_execute_task_bounds_concurrency(monkeypatch: pytest.MonkeyPatch) 
     peak = 0
 
     class _CountingService:
-        def __init__(self, *args: object) -> None:
+        def __init__(self, *args: object, **kwargs: object) -> None:
             pass
 
         async def run(self, _task_id: object) -> None:

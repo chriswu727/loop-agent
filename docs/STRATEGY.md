@@ -1,5 +1,17 @@
 # Loop — OpenClaw parity + differentiation strategy
 
+> **Implementation snapshot (2026-07-14):** Phases 0–4 in this document are a
+> historical build plan, not the current backlog. The repository now ships typed
+> capability grants, re-execution Receipts and offline replay, signed skills,
+> document uploads, owner/project memory, browser/email/calendar adapters, triggers,
+> SSE, Telegram/Slack, GitHub OAuth, durable Redis Streams workers, and required
+> Kubernetes Job shell isolation. It now also ships an isolated, credential-bearing
+> Provider Gateway; short-lived audience-bound authority grants; and a network-layer
+> egress proxy that requires explicit hosts, rejects private resolution, pins DNS,
+> and records per-run audit events. Remaining work that cannot honestly be marked
+> done: a meaningful skill marketplace, broader channels, durable proxy audit,
+> protocol-level provider network separation, and production/adoption evidence.
+
 _Synthesized by a multi-agent research workflow (2026-06): 4 verified OpenClaw research dimensions + repo analysis + a 6-lens differentiation panel. Two research dimensions (capabilities, ecosystem) failed structured-output validation and were covered indirectly via the panel; treat those areas as lower-confidence until re-verified._
 
 ## Positioning
@@ -8,37 +20,48 @@ Loop is the autonomous agent you can actually trust to run unattended: the only 
 
 ## Differentiators (ranked)
 
-### 1. Re-execution-verified Receipt (provably-done)  _(effort: M (check-based verification) + M (Receipt artifact + hash-chained ledger))_
+### 1. Re-execution-verified Receipt (provably-done) _(effort: M (check-based verification) + M (Receipt artifact + hash-chained ledger))_
 
 Turn Loop's seed verifier into the product spine. Today _handle_finish in agent_react.py grades only from workspace.tree() (file names + byte sizes) plus the agent's own prose summary — it never opens a file or re-runs a command, so it largely trusts the claim it checks. Extend the finish tool to require machine-checkable checks (shell command + expected exit code / stdout substring / file sha256); the verifier re-runs each in a fresh executor over a copy of the workspace, and every rubric criterion from _understand must map to at least one passing check. Serialize the whole run into one content-addressed bundle (receipt.json + RECEIPT.md): goal, approved rubric, per-criterion verdict pointing at the proving check, the full step trace, a sha256-per-file manifest, score, model/provider actually used, and token/step accounting — replayable with one command.
 
 **Why it beats OpenClaw / why it's ours:** OpenClaw has no verifier and no completion semantics at all: the agent emits a chat message and the run ends. A chat log can never be re-executed to re-prove a result, so OpenClaw cannot copy this without rebuilding around a verifier and a deterministic trace — both of which Loop already has. This makes Loop the only agent whose output is safe to drop into a CI gate, and it directly closes Loop's own real weakness (the verifier trusting a file-tree glance). Graceful fallback to evidence-based LLM judgment for non-executable goals (essays/designs), clearly labeled as unverified-by-execution.
 
-### 2. Least-authority by construction: one declared, enforced capability envelope per task and per signed skill  _(effort: L)_
+### 2. Least-authority by construction: one declared, enforced capability envelope per task and per signed skill _(effort: L)_
+
+**Shipped.** The task/skill intersection is enforced in the executor and delegated
+to isolated services through short-lived signed grants; the task and Receipt retain
+the resolved grant and enforcement audit.
 
 Define every task and every skill to run under a single machine-readable envelope — allowed tools (of the 6), workspace subpaths, egress hosts, command-prefix classes, and step/token sub-budget — enforced as a hard ceiling at the two points Loop already owns: ToolExecutor.execute (tools/registry.py) and TaskService._resolve_limits (services/task.py). Skills ship as signed bundles whose detached signature is verified against a trust root before load; the prose can ask for anything, the runtime grants only what the signature vouched for and the manifest declared. The user sees and approves the envelope up front.
 
 **Why it beats OpenClaw / why it's ours:** OpenClaw's most-used path runs on the host and its extension model is 5,400+ unsigned prose files injected into the system prompt — prompt-injection-as-a-feature with no provenance or capability bound, across a tool surface with no single enforcement point. Loop is the only one of the two with the structure (single choke point + single clamp) to make a malicious or hijacked skill structurally unable to exceed its declared envelope. This is the headline killer feature.
 
-### 3. Default-deny network egress (the exfiltration firewall)  _(effort: M)_
+### 3. Default-deny network egress (the exfiltration firewall) _(effort: M)_
+
+**Shipped for shell and browser traffic.** Sandboxes have no direct internet route;
+the authenticated proxy enforces explicit destination hosts and ports, rejects
+non-public resolution, pins the approved IP, and emits a per-run audit trail.
 
 Promote egress to a first-class declared capability enforced at the network-namespace/proxy layer, not by regex. The task container blocks all network by default; the task/skill manifest lists allowed hosts; run_command and any future web/MCP tool can only reach declared destinations. Ship an opt-in profile pre-allowlisting PyPI/npm so normal installs still work.
 
 **Why it beats OpenClaw / why it's ours:** OpenClaw's reach IS its exfiltration surface — it can send out over six-plus chat channels plus curl while inbound messages feed memory, so an injected 'send X to this chat' has a real path off the box. Loop has no outbound channels yet and policy.py already denies piping the network into a shell, so it can adopt default-deny cleanly. Exfiltration in Loop would require a destination the user pre-approved.
 
-### 4. Universal ephemeral containment, default-on (including the primary path)  _(effort: L)_
+### 4. Universal ephemeral containment, default-on (including the primary path) _(effort: L)_
+
+**Shipped in production and the full Compose worker profile.** Production refuses
+inline fallback and launches one hardened Kubernetes Job per shell command.
 
 Ship per-task ephemeral containers (Docker default; gVisor/Firecracker as a hardened option) as the default for every task, with only the task workspace bind-mounted and a read-only rootfs. Keep the zero-infra inline mode as an explicit, clearly-labeled reduced-isolation downgrade rather than the silent default.
 
 **Why it beats OpenClaw / why it's ours:** OpenClaw sandboxes only non-main sessions and runs main-session tools on the host — its most-used path is its least contained. Loop inverts that posture and closes its own honest documented gap (docs/loop.md: shell is 'fenced, not jailed,' a determined command can read outside the workspace), making that false by construction. Tension to manage: container cold-start cost vs Loop's runs-on-a-laptop promise, hence the labeled inline fallback.
 
-### 5. Trusted/untrusted content quarantine (data can never become instructions)  _(effort: M)_
+### 5. Trusted/untrusted content quarantine (data can never become instructions) _(effort: M)_
 
 Loop's loop already separates the trusted goal/rubric from untrusted observations (tool output). Formalize it: wrap every observation and any future inbound/external content (uploaded files, emails, chat messages, memory hits) in a typed 'data, not instructions' envelope the planner is told never to obey, and enforce structurally that a tool call can only originate from the planner's own reasoning channel — never be parsed out of observation text. A capability-escalation request found inside data triggers an approval gate instead of executing.
 
 **Why it beats OpenClaw / why it's ours:** OpenClaw's core injection flaw is mixing untrusted inbound channel messages and auto-indexed memory into the same context as trusted instructions. Loop refuses to act on the exact attack OpenClaw enables by design. Honest framing: prompt injection is unsolved; this raises the bar at the data/instruction boundary, it is not a proof.
 
-### 6. Typed, restart-safe human approval gates (generalized ask_user)  _(effort: M)_
+### 6. Typed, restart-safe human approval gates (generalized ask_user) _(effort: M)_
 
 Generalize Loop's existing restart-safe pause (ask_user -> awaiting_input -> /respond resumes, survives process restart) into typed capability gates: reaching a new egress host, running a non-allowlisted command, exceeding a sub-budget, deleting files, or sending an email pauses the run with a structured 'about to do X because Y' diff and resumes on a recorded approve/deny. Mostly wiring primitives that already exist: the resumable pause, the policy NEEDS_APPROVAL verdict, and the steps ledger.
 
@@ -47,7 +70,7 @@ Generalize Loop's existing restart-safe pause (ask_user -> awaiting_input -> /re
 ## Parity matrix (OpenClaw feature -> Loop)
 
 | OpenClaw feature | Loop status | Plan | Effort |
-|---|---|---|---|
+| ---------------- | ----------- | ---- | ------ |
 
 | Agent loop / embedded runtime (intake -> context -> inference -> tools -> stream -> persist) | **have** | Loop's ReAct loop in services/agent_react.py is at parity or ahead: it adds an independent verifier and a rubric OpenClaw lacks. Keep it as the unchanging spine; only widen the tool set and add hook points around ToolExecutor.execute. No architectural change. | S |
 | Hard limits / runaway protection | **have** | Loop already clamps max_steps and token_budget server-side in TaskService._resolve_limits and proves every stop condition offline. Extend the same clamp to carry per-task/per-skill sub-budgets (steps, tokens, egress hosts, command classes) so the limit object becomes the capability envelope. | S |

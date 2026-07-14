@@ -12,7 +12,7 @@ import type {
   Task,
   Trigger,
 } from '@repo/api-contract';
-import { apiBaseUrl } from './env';
+import { apiBaseUrl, serverApiToken } from './env';
 
 /** Normalized error mirroring the backend's RFC 9457 problem+json body. */
 export class ApiError extends Error {
@@ -37,10 +37,15 @@ export async function apiFetch<T>(path: string, options: RequestOptions = {}): P
   const timer = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
+    const token = serverApiToken();
     const res = await fetch(`${apiBaseUrl()}${path}`, {
       ...rest,
       signal: controller.signal,
-      headers: { 'Content-Type': 'application/json', ...headers },
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...headers,
+      },
     });
 
     const requestId = res.headers.get('x-request-id') ?? undefined;
@@ -74,16 +79,20 @@ export type { FileContent, FileEntry, LedgerStatus, LimitDefaults, Page, Step, T
 
 export interface PublishBody {
   goal: string;
+  project_id?: string;
   autostart?: boolean;
   allowed_tools?: string[] | null;
+  capabilities?: import('@repo/api-contract').Capability[] | null;
   allow_egress?: boolean;
   egress_hosts?: string[] | null;
   require_approval?: boolean;
   use_browser?: boolean;
   use_email?: boolean;
   use_calendar?: boolean;
+  use_vision?: boolean;
   chat_id?: string | null;
   skill?: string | null;
+  idempotency_key?: string;
   limits?: {
     max_steps?: number;
     token_budget?: number;
@@ -119,17 +128,19 @@ export const tasksApi = {
     apiFetch<{ receipt: Record<string, unknown>; valid: boolean; recomputed_hash: string }>(
       `/api/v1/tasks/${id}/receipt`,
     ),
+  replayReceipt: (id: string) =>
+    apiFetch<{ passed: boolean; checks: Array<Record<string, unknown>> }>(
+      `/api/v1/tasks/${id}/receipt/replay`,
+      { method: 'POST', timeoutMs: 180_000 },
+    ),
   files: (id: string) => apiFetch<FileEntry[]>(`/api/v1/tasks/${id}/files`),
   fileContent: (id: string, path: string) =>
     apiFetch<FileContent>(`/api/v1/tasks/${id}/files/${path}`),
-  downloadUrl: (id: string, path: string) =>
-    `${apiBaseUrl()}/api/v1/tasks/${id}/download/${path}`,
+  downloadUrl: (id: string, path: string) => `${apiBaseUrl()}/api/v1/tasks/${id}/download/${path}`,
   publish: (body: PublishBody) =>
     apiFetch<Task>('/api/v1/tasks', { method: 'POST', body: JSON.stringify(body) }),
-  cancel: (id: string) =>
-    apiFetch<Task>(`/api/v1/tasks/${id}/cancel`, { method: 'POST' }),
-  retry: (id: string) =>
-    apiFetch<Task>(`/api/v1/tasks/${id}/retry`, { method: 'POST' }),
+  cancel: (id: string) => apiFetch<Task>(`/api/v1/tasks/${id}/cancel`, { method: 'POST' }),
+  retry: (id: string) => apiFetch<Task>(`/api/v1/tasks/${id}/retry`, { method: 'POST' }),
   upload: uploadFile,
   start: (id: string) => apiFetch<Task>(`/api/v1/tasks/${id}/start`, { method: 'POST' }),
   respond: (id: string, answer: string) =>
@@ -148,7 +159,9 @@ export interface TriggerCreateBody {
   goal: string;
   limits?: { max_steps?: number; token_budget?: number };
   allowed_tools?: string[] | null;
+  capabilities?: import('@repo/api-contract').Capability[] | null;
   allow_egress?: boolean;
+  egress_hosts?: string[] | null;
   require_approval?: boolean;
   skill?: string | null;
   interval_minutes?: number | null;
@@ -165,6 +178,5 @@ export const triggersApi = {
       method: 'POST',
       headers: { 'X-Trigger-Secret': secret },
     }),
-  remove: (id: string) =>
-    apiFetch<void>(`/api/v1/triggers/${id}`, { method: 'DELETE' }),
+  remove: (id: string) => apiFetch<void>(`/api/v1/triggers/${id}`, { method: 'DELETE' }),
 };

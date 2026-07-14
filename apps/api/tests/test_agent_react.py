@@ -380,6 +380,71 @@ async def test_verified_skill_applies_its_envelope(
     assert "envelope" in steps[0].observation.lower()
 
 
+async def test_verified_skill_narrows_task_destination_policy(
+    session: AsyncSession, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app.core.config import settings as _settings
+    from app.services.skills import generate_keypair
+
+    _install_signed_skill(
+        tmp_path,
+        monkeypatch,
+        name="api-writer",
+        manifest={
+            "name": "api-writer",
+            "instructions": "Only use the API host.",
+            "capabilities": ["fs.write", "net.shell"],
+            "egress_hosts": ["api.example.com"],
+        },
+    )
+    private, _public = generate_keypair()
+    monkeypatch.setattr(_settings, "agent_authority_signing_key", private)
+    monkeypatch.setattr(_settings, "agent_authority_signing_key_file", None)
+    monkeypatch.setattr(_settings, "agent_egress_proxy_url", "http://egress-proxy:8080")
+    monkeypatch.setattr(_settings, "agent_egress_proxy_audit_url", "http://egress-proxy:8081")
+
+    task = await TaskRepository(session).create(
+        goal="write a local result",
+        status=TaskStatus.PENDING.value,
+        rubric=[],
+        requested_capabilities=["fs.write", "net.shell"],
+        egress_hosts=["example.com"],
+        skill="api-writer",
+        max_steps=5,
+        token_budget=1_000_000,
+        summary=None,
+        verification_score=0,
+        steps_used=0,
+        tokens_used=0,
+        workspace_path=None,
+    )
+    await session.commit()
+    service = _service(
+        session,
+        ScriptedLLM(
+            [
+                {
+                    "thought": "write",
+                    "tool": "write_file",
+                    "args": {"path": "result.txt", "content": "done"},
+                },
+                {"thought": "done", "tool": "finish", "args": {"summary": "done"}},
+            ]
+        ),
+    )
+    monkeypatch.setattr(
+        service,
+        "_resolve_sandbox",
+        lambda: ("loop-sandbox:latest", "container", "docker"),
+    )
+
+    await service.run(task.id)
+
+    await session.refresh(task)
+    assert task.status == TaskStatus.COMPLETED.value
+    assert task.egress_hosts == ["api.example.com"]
+
+
 async def test_unverified_skill_is_refused(
     session: AsyncSession, tmp_path: Path, monkeypatch
 ) -> None:
@@ -402,7 +467,7 @@ async def test_unverified_skill_is_refused(
 
 async def test_remember_persists_across_tasks(session: AsyncSession) -> None:
     from app.core.config import settings as _settings
-    from app.services.memory import MemoryStore
+    from app.services.memory import MemoryStore, scoped_memory_root
 
     plans = [
         {
@@ -415,8 +480,9 @@ async def test_remember_persists_across_tasks(session: AsyncSession) -> None:
     task = await _make_task(session, max_steps=8, token_budget=1_000_000)
     await _service(session, ScriptedLLM(plans, verify={"score": 90, "met": True})).run(task.id)
 
-    # The note is in the shared store, so the next task would see it injected.
-    store = MemoryStore(Path(_settings.agent_memory_root))
+    store = MemoryStore(
+        scoped_memory_root(Path(_settings.agent_memory_root), task.owner_id, task.project_id)
+    )
     assert "make ship" in store.snapshot()
 
 

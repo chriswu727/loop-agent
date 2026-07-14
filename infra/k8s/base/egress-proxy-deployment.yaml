@@ -1,0 +1,67 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: egress-proxy
+  labels:
+    app.kubernetes.io/name: egress-proxy
+    app.kubernetes.io/component: security
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: egress-proxy
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: egress-proxy
+        app.kubernetes.io/component: security
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: egress-proxy
+          image: app-api:latest
+          imagePullPolicy: IfNotPresent
+          command: ['python', '-m', 'app.egress_proxy']
+          ports:
+            - name: proxy
+              containerPort: 8080
+            - name: admin
+              containerPort: 8081
+          envFrom:
+            - secretRef:
+                name: authority-verifier-secrets
+          env:
+            - name: EGRESS_PROXY_REQUIRE_AUTHORITY_KEY
+              value: 'true'
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: '1'
+              memory: 256Mi
+          livenessProbe:
+            httpGet: { path: /healthz, port: admin }
+            periodSeconds: 10
+          readinessProbe:
+            httpGet: { path: /healthz, port: admin }
+            periodSeconds: 10
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ['ALL']
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: { sizeLimit: 64Mi }

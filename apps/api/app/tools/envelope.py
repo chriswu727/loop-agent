@@ -1,34 +1,45 @@
-"""The capability envelope: a task's declared, enforced authority.
-
-An envelope says exactly what a task (and, later, a signed skill) is allowed to
-do. It is enforced at the single tool choke point (``ToolExecutor.execute``), so
-the agent's prose can ask for anything but only what the envelope grants will
-run. Today it scopes the tool set; the same object is where workspace-subpath
-and network-egress scoping will live (enforced in a later phase). The default
-envelope grants the full tool set, so existing behaviour is unchanged.
-"""
+"""Resolved task authority enforced at the tool-dispatch choke point."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 
-# The tools the executor itself dispatches (finish/ask_user are loop control flow,
-# not executor tools, so they are never gated here).
-EXECUTOR_TOOLS = frozenset({"write_file", "edit_file", "read_file", "run_command"})
+from app.domain.capability import (
+    CONTROL_TOOLS,
+    EXECUTOR_TOOL_CAPABILITIES,
+    TOOL_CAPABILITIES,
+    Capability,
+    legacy_capabilities,
+    parse_capabilities,
+    sorted_capabilities,
+)
+
+EXECUTOR_TOOLS = frozenset(EXECUTOR_TOOL_CAPABILITIES)
 
 
 @dataclass(slots=True, frozen=True)
 class CapabilityEnvelope:
-    allowed_tools: frozenset[str]
-    egress_allowed: bool = False
-    # If egress is allowed, an optional allowlist of destination hosts. Empty = any
-    # host; non-empty restricts egress to just these (best-effort at the policy layer).
+    capabilities: frozenset[Capability]
     egress_hosts: frozenset[str] = frozenset()
+    legacy_allowed_tools: frozenset[str] | None = None
 
     @classmethod
     def full(cls) -> CapabilityEnvelope:
-        """The default: every executor tool is permitted."""
-        return cls(allowed_tools=EXECUTOR_TOOLS)
+        return cls(capabilities=frozenset(Capability))
+
+    @classmethod
+    def from_capabilities(
+        cls,
+        capabilities: list[str | Capability] | frozenset[Capability],
+        *,
+        egress_hosts: list[str] | None = None,
+    ) -> CapabilityEnvelope:
+        return cls(
+            capabilities=parse_capabilities(capabilities),
+            egress_hosts=frozenset(
+                host.strip().lower().rstrip(".") for host in (egress_hosts or []) if host.strip()
+            ),
+        )
 
     @classmethod
     def from_tools(
@@ -38,34 +49,76 @@ class CapabilityEnvelope:
         egress_allowed: bool = False,
         egress_hosts: list[str] | None = None,
     ) -> CapabilityEnvelope:
-        """Build from a user/skill-supplied tool list. ``None`` means full tool
-        access; an empty or invalid list is narrowed to whatever valid tools were
-        named. Network egress is default-deny unless explicitly granted."""
-        allowed = (
-            EXECUTOR_TOOLS if tools is None else frozenset(t for t in tools if t in EXECUTOR_TOOLS)
+        envelope = cls.from_capabilities(
+            legacy_capabilities(
+                tools,
+                allow_egress=egress_allowed,
+                use_browser=False,
+                use_email=False,
+                use_calendar=False,
+            ),
+            egress_hosts=egress_hosts,
         )
         return cls(
-            allowed_tools=allowed,
-            egress_allowed=egress_allowed,
-            egress_hosts=frozenset(h.strip().lower() for h in (egress_hosts or []) if h.strip()),
+            capabilities=envelope.capabilities,
+            egress_hosts=envelope.egress_hosts,
+            legacy_allowed_tools=(
+                None
+                if tools is None
+                else frozenset(tool for tool in tools if tool in EXECUTOR_TOOLS)
+            ),
         )
 
-    def permits(self, tool: str) -> bool:
-        # Only executor tools are gated; control-flow tools are always allowed.
-        return tool not in EXECUTOR_TOOLS or tool in self.allowed_tools
+    @property
+    def allowed_tools(self) -> frozenset[str]:
+        return frozenset(tool for tool in EXECUTOR_TOOLS if self.permits(tool))
+
+    @property
+    def egress_allowed(self) -> bool:
+        return Capability.NET_SHELL in self.capabilities
+
+    def permits(
+        self,
+        tool: str,
+        *,
+        provider_capability: Capability | None = None,
+    ) -> bool:
+        if tool in CONTROL_TOOLS:
+            return True
+        if (
+            tool in EXECUTOR_TOOLS
+            and self.legacy_allowed_tools is not None
+            and tool not in self.legacy_allowed_tools
+        ):
+            return False
+        required = TOOL_CAPABILITIES.get(tool)
+        if required is None and provider_capability is not None:
+            required = frozenset({provider_capability})
+        if required is None:
+            return False
+        return required <= self.capabilities
+
+    def permits_capability(self, capability: Capability) -> bool:
+        return capability in self.capabilities
 
     def egress_host_allowed(self, host: str) -> bool:
-        """Whether egress to ``host`` is permitted. An empty allowlist means any
-        host (once egress itself is granted); otherwise the host — or a subdomain
-        of a listed host — must be present (``api.github.com`` matches ``github.com``)."""
+        if not self.egress_allowed:
+            return False
         if not self.egress_hosts:
-            return True
-        h = host.strip().lower().rstrip(".")
-        return any(h == a or h.endswith("." + a) for a in self.egress_hosts)
+            return False
+        normalized = host.strip().lower().rstrip(".")
+        return any(
+            normalized == allowed or normalized.endswith("." + allowed)
+            for allowed in self.egress_hosts
+        )
 
     def restricted_executor_tools(self) -> list[str] | None:
-        """Sorted allowed executor tools if this envelope is narrower than full,
-        else None — used to tell the planner what it may use."""
-        if self.allowed_tools == EXECUTOR_TOOLS:
-            return None
-        return sorted(self.allowed_tools)
+        allowed = sorted(self.allowed_tools)
+        return None if set(allowed) == EXECUTOR_TOOLS else allowed
+
+    def as_dict(self) -> dict[str, object]:
+        return {
+            "schema": "loop.capabilities/v1",
+            "capabilities": sorted_capabilities(self.capabilities),
+            "egress_hosts": sorted(self.egress_hosts),
+        }

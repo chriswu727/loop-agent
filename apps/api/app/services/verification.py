@@ -18,6 +18,7 @@ import asyncio
 import re
 import shutil
 import uuid
+from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
@@ -38,6 +39,9 @@ class CheckResult:
     target: str  # the command or path the check is about
     passed: bool
     evidence: str  # short proof: exit code + output snippet, or why it failed
+    check_id: str = ""
+    criterion_ids: tuple[str, ...] = ()
+    definition: dict[str, Any] | None = None
 
 
 VERIFY_DIR_PREFIX = "verify-"
@@ -66,9 +70,17 @@ async def run_checks(
     command_timeout: int = 60,
     output_limit: int = 4000,
     sandbox_image: str | None = None,
+    sandbox_backend: str | None = None,
     sandbox_memory: str = "512m",
     sandbox_cpus: str = "1",
     egress_allowed: bool = False,
+    envelope: CapabilityEnvelope | None = None,
+    criterion_count: int = 0,
+    egress_proxy_url: str | None = None,
+    egress_network: str | None = None,
+    egress_token_factory: Callable[[], str] | None = None,
+    docker_workspace_volume: str | None = None,
+    docker_workspace_mount: str | None = None,
 ) -> list[CheckResult]:
     """Re-run each check on a fresh copy of the workspace. Never raises — a bad
     check definition becomes a failed result the verifier can act on."""
@@ -85,39 +97,72 @@ async def run_checks(
         # Verify under the same authority as the task: default-deny egress unless
         # the task had it (so a check can't reach the network the task couldn't,
         # and a legit network check isn't blocked in a container).
-        envelope = CapabilityEnvelope.from_tools(None, egress_allowed=egress_allowed)
+        check_envelope = envelope or CapabilityEnvelope.from_tools(
+            None, egress_allowed=egress_allowed
+        )
         executor = ToolExecutor(
             workspace,
             approval_mode=approval_mode,
             command_timeout=command_timeout,
             output_limit=output_limit,
-            envelope=envelope,
-            before_tool=make_egress_guard(envelope, workspace),
+            envelope=check_envelope,
+            before_tool=make_egress_guard(check_envelope, workspace),
             sandbox_image=sandbox_image,
+            sandbox_backend=sandbox_backend,
             sandbox_memory=sandbox_memory,
             sandbox_cpus=sandbox_cpus,
+            egress_proxy_url=egress_proxy_url,
+            egress_network=egress_network,
+            egress_token_factory=egress_token_factory,
+            docker_workspace_volume=docker_workspace_volume,
+            docker_workspace_mount=docker_workspace_mount,
         )
         results: list[CheckResult] = []
-        for check in checks:
-            results.append(await _run_one(check, workspace, executor))
+        for index, check in enumerate(checks, start=1):
+            mapped_check = dict(check)
+            if not mapped_check.get("criterion_ids"):
+                if criterion_count == 1:
+                    mapped_check["criterion_ids"] = ["criterion-001"]
+                elif len(checks) == criterion_count:
+                    mapped_check["criterion_ids"] = [f"criterion-{index:03d}"]
+            results.append(await _run_one(mapped_check, workspace, executor, index=index))
         return results
     finally:
         await asyncio.to_thread(shutil.rmtree, tmp_root, ignore_errors=True)
 
 
 async def _run_one(
-    check: dict[str, Any], workspace: Workspace, executor: ToolExecutor
+    check: dict[str, Any], workspace: Workspace, executor: ToolExecutor, *, index: int = 1
 ) -> CheckResult:
     kind = str(check.get("kind", "")).strip()
+    check_id = str(check.get("id") or f"check-{index:03d}")[:80]
+    raw_criteria = check.get("criterion_ids")
+    criterion_ids = tuple(
+        str(value)[:80]
+        for value in (raw_criteria if isinstance(raw_criteria, list) else [])
+        if str(value).strip()
+    )
+    definition = {key: value for key, value in check.items() if key not in {"passed", "evidence"}}
+
+    def make_result(target: str, passed: bool, evidence: str) -> CheckResult:
+        return CheckResult(
+            kind or "unknown",
+            target,
+            passed,
+            evidence,
+            check_id=check_id,
+            criterion_ids=criterion_ids,
+            definition=definition,
+        )
 
     if kind == "command":
         command = str(check.get("command", "")).strip()
         if not command:
-            return CheckResult("command", "", False, "no command given")
+            return make_result("", False, "no command given")
         expect_exit = check.get("expect_exit", 0)
         expect_stdout = check.get("expect_stdout")
-        result = await executor.execute("run_command", {"command": command})
-        out = result.observation
+        tool_result = await executor.execute("run_command", {"command": command})
+        out = tool_result.observation
         try:
             want_exit = int(expect_exit)
         except (TypeError, ValueError):
@@ -125,16 +170,16 @@ async def _run_one(
         code = _leading_exit_code(out)  # exact code, so "exit code 1" != "exit code 10"
         exit_ok = code == want_exit
         stdout_ok = (expect_stdout is None) or (str(expect_stdout) in out)
-        passed = bool(exit_ok and stdout_ok and result.status is not ToolStatus.BLOCKED)
-        return CheckResult("command", command, passed, out[:300])
+        passed = bool(exit_ok and stdout_ok and tool_result.status is not ToolStatus.BLOCKED)
+        return make_result(command, passed, out[:300])
 
     if kind == "file_exists":
         path = str(check.get("path", "")).strip()
         try:
             exists = workspace.resolve(path).is_file()
         except Exception as exc:
-            return CheckResult("file_exists", path, False, str(exc)[:200])
-        return CheckResult("file_exists", path, exists, "found" if exists else "missing")
+            return make_result(path, False, str(exc)[:200])
+        return make_result(path, exists, "found" if exists else "missing")
 
     if kind == "file_contains":
         path = str(check.get("path", "")).strip()
@@ -142,13 +187,11 @@ async def _run_one(
         try:
             content = workspace.read(path, limit=200_000)
         except Exception as exc:
-            return CheckResult("file_contains", path, False, str(exc)[:200])
+            return make_result(path, False, str(exc)[:200])
         passed = text in content
-        return CheckResult(
-            "file_contains", path, passed, "contains text" if passed else "text not found"
-        )
+        return make_result(path, passed, "contains text" if passed else "text not found")
 
-    return CheckResult(kind or "unknown", "", False, f"unknown check kind: {kind!r}")
+    return make_result("", False, f"unknown check kind: {kind!r}")
 
 
 def checks_summary(results: list[CheckResult]) -> str:
@@ -164,3 +207,11 @@ def checks_summary(results: list[CheckResult]) -> str:
 
 def as_dicts(results: list[CheckResult]) -> list[dict[str, Any]]:
     return [asdict(r) for r in results]
+
+
+def execution_coverage_complete(results: list[CheckResult], criterion_count: int) -> bool:
+    if not results or criterion_count <= 0:
+        return False
+    expected = {f"criterion-{index:03d}" for index in range(1, criterion_count + 1)}
+    covered = {criterion for result in results for criterion in result.criterion_ids}
+    return expected <= covered

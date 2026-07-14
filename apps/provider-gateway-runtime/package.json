@@ -1,0 +1,9 @@
+{
+  "name": "loop-provider-gateway-runtime",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Pinned browser runtime for the isolated Loop Provider Gateway",
+  "dependencies": {
+    "@playwright/mcp": "0.0.78"
+  }
+}

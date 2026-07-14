@@ -17,6 +17,7 @@ from pathlib import Path
 
 from app.core.logging import get_logger
 from app.tools.base import ToolResult, ToolStatus
+from app.tools.egress import authenticated_proxy_url, resolve_proxy_endpoint
 from app.tools.shell import collect_output, format_result
 
 log = get_logger("sandbox")
@@ -55,18 +56,59 @@ def image_present(image: str) -> bool:
         return False
 
 
+def _workspace_volume_subpath(mount: Path, workspace: Path) -> str | None:
+    try:
+        relative = workspace.resolve().relative_to(mount.resolve())
+    except ValueError:
+        return None
+    return None if relative == Path(".") else relative.as_posix()
+
+
 async def run_command_in_container(
     command: str,
     workspace_root: Path,
     *,
     image: str,
     network: bool,
+    egress_proxy_url: str | None = None,
+    egress_token: str | None = None,
+    egress_network: str | None = None,
+    workspace_volume: str | None = None,
+    workspace_volume_mount: str | None = None,
     timeout_seconds: int = 60,
     output_limit: int = 4000,
     memory: str = "512m",
     cpus: str = "1",
 ) -> ToolResult:
+    if network and (not egress_proxy_url or not egress_token or not egress_network):
+        return ToolResult(
+            "Network authority requires the destination-enforcing egress proxy.",
+            ToolStatus.BLOCKED,
+        )
+    resolved_proxy_url: str | None = None
+    if network:
+        try:
+            resolved_proxy_url = await resolve_proxy_endpoint(egress_proxy_url or "")
+        except (OSError, ValueError) as exc:
+            return ToolResult(f"Egress proxy is unavailable: {exc}", ToolStatus.BLOCKED)
     name = f"loop-{uuid.uuid4().hex[:12]}"
+    network_name = egress_network if network else "none"
+    workspace_mount: list[str]
+    if workspace_volume:
+        subpath = _workspace_volume_subpath(
+            Path(workspace_volume_mount or "/var/lib/loop"), workspace_root
+        )
+        if subpath is None:
+            return ToolResult(
+                "Workspace is not an isolated child of the Docker data volume.",
+                ToolStatus.BLOCKED,
+            )
+        workspace_mount = [
+            "--mount",
+            (f"type=volume,src={workspace_volume},dst=/workspace,volume-subpath={subpath}"),
+        ]
+    else:
+        workspace_mount = ["-v", f"{workspace_root}:/workspace"]
     argv = [
         "docker",
         "run",
@@ -74,7 +116,7 @@ async def run_command_in_container(
         "--name",
         name,
         "--network",
-        "bridge" if network else "none",
+        network_name or "none",
         "--memory",
         memory,
         "--memory-swap",
@@ -97,15 +139,32 @@ async def run_command_in_container(
         "--read-only",
         "--tmpfs",
         "/tmp:rw,size=64m,exec",
-        "-v",
-        f"{workspace_root}:/workspace",
-        "-w",
-        "/workspace",
-        image,
-        "sh",
-        "-lc",
-        command,
     ]
+    if network:
+        proxy = authenticated_proxy_url(resolved_proxy_url or "", egress_token or "")
+        argv.extend(
+            [
+                "--dns",
+                "127.0.0.1",
+                "--env",
+                f"HTTP_PROXY={proxy}",
+                "--env",
+                f"HTTPS_PROXY={proxy}",
+                "--env",
+                "NO_PROXY=",
+            ]
+        )
+    argv.extend(
+        [
+            *workspace_mount,
+            "-w",
+            "/workspace",
+            image,
+            "sh",
+            "-lc",
+            command,
+        ]
+    )
     try:
         proc = await asyncio.create_subprocess_exec(
             *argv,

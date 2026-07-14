@@ -103,6 +103,7 @@ class FallbackLLMClient:
 
 
 _client: FallbackLLMClient | None = None
+_verifier_client: FallbackLLMClient | None = None
 
 
 def get_llm_client() -> FallbackLLMClient:
@@ -113,9 +114,21 @@ def get_llm_client() -> FallbackLLMClient:
     return _client
 
 
+def get_verifier_client() -> FallbackLLMClient:
+    global _verifier_client
+    if _verifier_client is None:
+        _verifier_client = FallbackLLMClient(
+            primary=settings.llm_verifier_provider or settings.llm_default_provider
+        )
+    return _verifier_client
+
+
 async def aclose_llm_client() -> None:
     """Close the shared client's connection pool on shutdown (no-op if unused)."""
-    global _client
+    global _client, _verifier_client
     if _client is not None:
         await _client.aclose()
         _client = None
+    if _verifier_client is not None:
+        await _verifier_client.aclose()
+        _verifier_client = None

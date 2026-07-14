@@ -14,15 +14,18 @@ or background session always finds the row.
 from __future__ import annotations
 
 import asyncio
+import contextlib
+import time
 import uuid
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.core.llm import get_llm_client
+from app.core.llm import get_llm_client, get_verifier_client
 from app.core.logging import get_logger
 from app.db.session import get_sessionmaker
 from app.domain.task import StopReason, TaskStatus
+from app.observability.metrics import TASK_RUN_DURATION, TASK_RUNS
 from app.repositories.step import StepRepository
 from app.repositories.task import TaskRepository
 from app.services.agent_react import AgentReactService
@@ -46,7 +49,29 @@ def _run_gate() -> asyncio.Semaphore:
     return gate
 
 
-async def reconcile_interrupted_tasks(session: AsyncSession, *, stale_seconds: int = 0) -> int:
+async def _heartbeat_task(task_id: uuid.UUID, stop: asyncio.Event) -> None:
+    from sqlalchemy import func, update
+
+    from app.db.models.task import TaskModel
+
+    interval = max(10, settings.worker_visibility_timeout_seconds // 3)
+    while not stop.is_set():
+        with contextlib.suppress(TimeoutError):
+            await asyncio.wait_for(stop.wait(), timeout=interval)
+        if stop.is_set():
+            return
+        async with get_sessionmaker()() as session:
+            await session.execute(
+                update(TaskModel)
+                .where(TaskModel.id == task_id, TaskModel.status == TaskStatus.RUNNING.value)
+                .values(updated_at=func.now())
+            )
+            await session.commit()
+
+
+async def reconcile_interrupted_tasks(
+    session: AsyncSession, *, stale_seconds: int = 0, requeue: bool = False
+) -> int:
     """Fail tasks left RUNNING by a crash/restart, so they don't sit stranded RUNNING
     forever (breaking the 'leave it running unattended' promise). Paused
     (awaiting_input) tasks are untouched; they resume when answered.
@@ -91,14 +116,23 @@ async def reconcile_interrupted_tasks(session: AsyncSession, *, stale_seconds: i
             else func.now() - text(f"interval '{secs} seconds'")
         )
         conditions.append(TaskModel.updated_at < cutoff)
+    values: dict[str, object] = (
+        {
+            "status": TaskStatus.PENDING.value,
+            "error": "Interrupted — recovered by the durable worker queue.",
+            "attempt": TaskModel.attempt + 1,
+        }
+        if requeue
+        else {
+            "status": TaskStatus.FAILED.value,
+            "stop_reason": StopReason.ERROR.value,
+            "error": "Interrupted — the runner crashed or restarted mid-run.",
+        }
+    )
     result = await session.execute(
         update(TaskModel)
         .where(*conditions)
-        .values(
-            status=TaskStatus.FAILED.value,
-            stop_reason=StopReason.ERROR.value,
-            error="Interrupted — the runner crashed or restarted mid-run.",
-        )
+        .values(**values)
         .execution_options(synchronize_session=False)
     )
     await session.commit()
@@ -113,12 +147,32 @@ async def execute_task(task_id: uuid.UUID) -> None:
     concurrency gate so the session (and its DB connection) is only held once a
     slot is free — excess runs queue instead of exhausting the pool."""
     async with _run_gate():
+        started = time.perf_counter()
         sessionmaker = get_sessionmaker()
         async with sessionmaker() as session:
             tasks = TaskRepository(session)
             steps = StepRepository(session)
-            service = AgentReactService(tasks, steps, get_llm_client())
-            await service.run(task_id)
+            service = AgentReactService(
+                tasks, steps, get_llm_client(), verifier_llm=get_verifier_client()
+            )
+            stop = asyncio.Event()
+            heartbeat = asyncio.create_task(_heartbeat_task(task_id, stop))
+            try:
+                await service.run(task_id)
+            finally:
+                stop.set()
+                heartbeat.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await heartbeat
+                task = None
+                with contextlib.suppress(Exception):
+                    task = await tasks.get(task_id)
+                if task is not None:
+                    TASK_RUNS.labels(
+                        status=task.status,
+                        stop_reason=task.stop_reason or "none",
+                    ).inc()
+                TASK_RUN_DURATION.observe(time.perf_counter() - started)
 
 
 async def trigger_task(task_id: uuid.UUID) -> None:

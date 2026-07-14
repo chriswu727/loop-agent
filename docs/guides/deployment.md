@@ -2,13 +2,15 @@
 
 ## 1. Build & push images
 
-CI does this automatically (`.github/workflows/docker.yml`) on push to `main`
-and on `v*` tags, publishing to GHCR. Manually:
+CI builds every runtime on relevant pull requests without publishing. Version tags
+and manual runs build and publish the images to GHCR. Manually:
 
 ```bash
 docker build -f infra/docker/api.Dockerfile -t ghcr.io/your-org/app-api:1.0.0 --target runtime .
+docker build -f infra/docker/api.Dockerfile -t ghcr.io/your-org/app-provider-gateway:1.0.0 --target provider-gateway .
 docker build -f infra/docker/web.Dockerfile -t ghcr.io/your-org/app-web:1.0.0 --target runner .
 docker push ghcr.io/your-org/app-api:1.0.0
+docker push ghcr.io/your-org/app-provider-gateway:1.0.0
 docker push ghcr.io/your-org/app-web:1.0.0
 ```
 
@@ -19,9 +21,28 @@ Prefer pinning to an immutable digest in production.
 
 ## 3. Provide real secrets
 
-The base ships an **example** Secret. Replace it with a real one via Sealed
-Secrets, External Secrets Operator, or your cloud's secret manager, and remove
-`secret.example.yaml` from the base `resources`.
+The base references `app-secrets` and `web-secrets` but deliberately does not
+create them. Use `infra/k8s/base/secret.example.yaml` only as a field template,
+then provide the real objects through Sealed Secrets, External Secrets Operator,
+or your cloud secret manager. `SECRET_KEY` and `LOOP_SESSION_SECRET` must contain
+the same random value. `app-secrets` must also provide a valid unencrypted Ed25519
+PEM in `AGENT_RECEIPT_SIGNING_KEY`; generate one with `make receipt-keygen`.
+Generate the runtime authority pair with `make authority-keygen`. Put the private
+PEM only in `authority-issuer-secrets` for the worker, and the public PEM in
+`authority-verifier-secrets` for the Provider Gateway and egress proxy. Never give
+the issuer key to either enforcement service.
+
+Put SMTP/IMAP/CalDAV/provider-vision credentials only in
+`provider-gateway-secrets`. LLM credentials remain worker credentials. The example
+Secret file shows the required object/key split; use an external secret manager in
+production rather than applying that example.
+Set `AGENT_SANDBOX_IMAGE_DIGEST=sha256:...` in the production ConfigMap after
+publishing the sandbox image; production rejects mutable tag-only execution.
+
+The egress proxy keeps a bounded in-memory audit buffer, and browser sessions live in
+gateway memory, so both base deployments use one replica. If audit durability or
+gateway high availability is required, externalize those stores before scaling them
+horizontally.
 
 ## 4. Apply
 
@@ -29,6 +50,19 @@ Secrets, External Secrets Operator, or your cloud's secret manager, and remove
 kubectl kustomize infra/k8s/overlays/prod | less   # review the diff first
 kubectl apply -k infra/k8s/overlays/prod
 ```
+
+After rollout, verify every runtime boundary and inspect a test task Receipt:
+
+```bash
+kubectl rollout status deployment/api -n loop-prod
+kubectl rollout status deployment/worker -n loop-prod
+kubectl rollout status deployment/provider-gateway -n loop-prod
+kubectl rollout status deployment/egress-proxy -n loop-prod
+```
+
+Run one task without network and one with `net.shell` plus a single disposable test
+host. Confirm the first Job has no egress, the second cannot reach any undeclared
+host, and its Receipt contains an allowed proxy audit event for the declared host.
 
 ## 5. Migrations
 

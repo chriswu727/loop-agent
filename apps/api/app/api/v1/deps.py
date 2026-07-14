@@ -33,24 +33,26 @@ def get_cache(request: Request) -> Cache:
 CacheDep = Annotated[Cache, Depends(get_cache)]
 
 
-def get_task_service(session: SessionDep) -> TaskService:
-    return TaskService(TaskRepository(session), StepRepository(session))
+def get_task_service(session: SessionDep, request: Request) -> TaskService:
+    subject = str(getattr(request.state, "subject", "local"))
+    return TaskService(TaskRepository(session), StepRepository(session), subject=subject)
 
 
 TaskServiceDep = Annotated[TaskService, Depends(get_task_service)]
 
 
-def get_trigger_service(session: SessionDep) -> TriggerService:
+def get_trigger_service(session: SessionDep, request: Request) -> TriggerService:
+    subject = str(getattr(request.state, "subject", "local"))
     return TriggerService(
         TriggerRepository(session),
-        TaskService(TaskRepository(session), StepRepository(session)),
+        TaskService(TaskRepository(session), StepRepository(session), subject=subject),
     )
 
 
 TriggerServiceDep = Annotated[TriggerService, Depends(get_trigger_service)]
 
 
-# --- Auth seam (no user store yet — wire to your IdP) -----------------------
+# --- Bearer subject dependency ----------------------------------------------
 _bearer = HTTPBearer(auto_error=False)
 
 
@@ -60,7 +62,7 @@ async def get_current_subject(
     """Verify a bearer token and return its subject. Raises 401 if invalid.
 
     Apply with ``Depends(get_current_subject)`` to protect a route. Returns the
-    ``sub`` claim; swap in your real user lookup when you add one.
+    verified ``sub`` claim.
     """
     if credentials is None:
         raise UnauthorizedError("Missing bearer token")

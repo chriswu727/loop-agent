@@ -1,0 +1,38 @@
+name: Verify Loop Receipt
+
+on:
+  workflow_call:
+    inputs:
+      receipt_path:
+        description: Path to receipt.json.
+        required: true
+        type: string
+      public_key_path:
+        description: Optional Ed25519 public key PEM path.
+        required: false
+        default: ''
+        type: string
+  workflow_dispatch:
+    inputs:
+      receipt_path:
+        description: Path to receipt.json committed in this repository.
+        required: true
+        default: receipt.json
+        type: string
+      public_key_path:
+        description: Optional Ed25519 public key PEM path.
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/verify-loop-receipt
+        with:
+          receipt: ${{ inputs.receipt_path }}
+          public-key: ${{ inputs.public_key_path }}

@@ -12,7 +12,7 @@ a deterministic fake and never touch the network.
 from __future__ import annotations
 
 from app.core.llm.base import LLMClient, LLMError, LLMResult, Message
-from app.core.llm.client import FallbackLLMClient, get_llm_client
+from app.core.llm.client import FallbackLLMClient, get_llm_client, get_verifier_client
 
 __all__ = [
     "FallbackLLMClient",
@@ -21,4 +21,5 @@ __all__ = [
     "LLMResult",
     "Message",
     "get_llm_client",
+    "get_verifier_client",
 ]

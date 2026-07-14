@@ -20,6 +20,10 @@ class TriggerModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
     name: Mapped[str] = mapped_column(String(120), nullable=False)
     goal: Mapped[str] = mapped_column(Text, nullable=False)
+    owner_id: Mapped[str] = mapped_column(String(255), nullable=False, default="local", index=True)
+    project_id: Mapped[str] = mapped_column(
+        String(100), nullable=False, default="default", index=True
+    )
     enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     fire_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     # Webhook secret: firing over HTTP must present this token. Generated on create.
@@ -32,6 +36,8 @@ class TriggerModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     max_steps: Mapped[int] = mapped_column(Integer, nullable=False)
     token_budget: Mapped[int] = mapped_column(Integer, nullable=False)
     allowed_tools: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
+    capabilities: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
     allow_egress: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    egress_hosts: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
     require_approval: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     skill: Mapped[str | None] = mapped_column(String(100), nullable=True)

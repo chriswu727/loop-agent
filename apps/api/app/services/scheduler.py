@@ -29,6 +29,7 @@ async def _tick_once() -> None:
         service = TriggerService(
             TriggerRepository(session),
             TaskService(TaskRepository(session), StepRepository(session)),
+            subject=None,
         )
         fired = await service.tick()
         if fired:

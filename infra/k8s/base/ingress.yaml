@@ -15,9 +15,30 @@ spec:
     - host: app.example.com
       http:
         paths:
-          # API takes precedence on /api; everything else goes to the web app.
-          - path: /api
+          - path: /api/loop
             pathType: Prefix
+            backend:
+              service:
+                name: web
+                port:
+                  number: 3000
+          # API takes precedence on /api; everything else goes to the web app.
+          - path: /api/v1
+            pathType: Prefix
+            backend:
+              service:
+                name: api
+                port:
+                  number: 8000
+          - path: /hooks
+            pathType: Prefix
+            backend:
+              service:
+                name: api
+                port:
+                  number: 8000
+          - path: /slack/events
+            pathType: Exact
             backend:
               service:
                 name: api

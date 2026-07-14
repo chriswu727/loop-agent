@@ -14,6 +14,7 @@
     "generate": "openapi-typescript http://localhost:8000/openapi.json -o ./src/generated.ts"
   },
   "devDependencies": {
-    "openapi-typescript": "^7.4.0"
+    "openapi-typescript": "^7.4.0",
+    "typescript": "5.9.3"
   }
 }

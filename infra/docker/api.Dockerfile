@@ -4,7 +4,9 @@
 # docker-compose) and a small, non-root `runtime` target for production.
 # Build context is the REPO ROOT:  docker build -f infra/docker/api.Dockerfile .
 # =============================================================================
-ARG PYTHON_VERSION=3.13
+ARG PYTHON_VERSION=3.12
+
+FROM node:22-bookworm-slim AS node-runtime
 
 FROM python:${PYTHON_VERSION}-slim AS base
 ENV PYTHONUNBUFFERED=1 \
@@ -17,27 +19,48 @@ WORKDIR /app
 # ---- builder: install runtime dependencies into an isolated venv ----
 FROM base AS builder
 RUN python -m venv /opt/venv
-COPY apps/api/pyproject.toml apps/api/README.md /app/
-COPY apps/api/app /app/app
-# [office] = openpyxl/python-docx/pandas so the verifier can re-open edited docs.
-RUN pip install --upgrade pip && pip install ".[office]"
+COPY apps/api/requirements.lock /app/requirements.lock
+RUN pip install --require-hashes -r requirements.lock
 
 # ---- dev: editable install + dev tools + hot reload ----
 FROM base AS dev
 RUN python -m venv /opt/venv
 COPY apps/api/pyproject.toml apps/api/README.md /app/
 COPY apps/api/app /app/app
-RUN pip install --upgrade pip && pip install -e ".[dev,office]"
+RUN pip install --upgrade pip && pip install -e ".[dev,office,calendar]"
 EXPOSE 8000
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
 
 # ---- runtime: minimal, non-root, production ----
 FROM base AS runtime
-RUN groupadd --system app && useradd --system --gid app --home /app app
+RUN groupadd --gid 10001 app \
+    && useradd --uid 10001 --gid app --no-create-home --home-dir /app --shell /usr/sbin/nologin app
 COPY --from=builder /opt/venv /opt/venv
-COPY apps/api /app
+COPY apps/api/app /app/app
+COPY apps/api/alembic /app/alembic
+COPY apps/api/alembic.ini /app/alembic.ini
+COPY apps/api/skills /app/skills
 RUN chown -R app:app /app
 USER app
 EXPOSE 8000
 # Horizontal scale = more pods. Keep workers modest per pod; the cluster scales out.
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "2"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+
+# Provider credentials and browser runtime live in a separate image/process.
+FROM runtime AS provider-gateway
+USER root
+ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright \
+    PATH="/opt/provider/node_modules/.bin:$PATH"
+COPY --from=node-runtime /usr/local/bin/node /usr/local/bin/node
+COPY --from=node-runtime /usr/local/lib/node_modules /usr/local/lib/node_modules
+RUN ln -sf ../lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
+    && ln -sf ../lib/node_modules/npm/bin/npx-cli.js /usr/local/bin/npx
+WORKDIR /opt/provider
+COPY apps/provider-gateway-runtime/package.json apps/provider-gateway-runtime/package-lock.json ./
+RUN npm ci --omit=dev \
+    && ./node_modules/.bin/playwright install --with-deps chromium \
+    && chmod -R a+rX /ms-playwright
+WORKDIR /app
+USER app
+EXPOSE 8090
+CMD ["uvicorn", "app.provider_gateway.main:app", "--host", "0.0.0.0", "--port", "8090"]

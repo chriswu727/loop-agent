@@ -1,8 +1,10 @@
 import type { LimitDefaults, SkillInfo, Task } from '@repo/api-contract';
 import Link from 'next/link';
+import { cookies } from 'next/headers';
 import { PublishForm } from '@/components/publish-form';
 import { TaskCard } from '@/components/task-card';
-import { apiBaseUrl, env } from '@/lib/env';
+import { apiBaseUrl, env, serverApiToken } from '@/lib/env';
+import { SESSION_COOKIE } from '@/lib/session';
 
 // Server component: load the task list + limit defaults at render time. The API
 // may be down on a fresh checkout, so every fetch degrades to an empty state
@@ -13,9 +15,19 @@ async function getData(): Promise<{
   memory: string;
   skills: SkillInfo[];
   up: boolean;
+  authRequired: boolean;
 }> {
   const base = apiBaseUrl();
-  const opts = { cache: 'no-store' as const, signal: AbortSignal.timeout(2500) };
+  const session = (await cookies()).get(SESSION_COOKIE)?.value;
+  const token = session ?? (env.WEB_AUTH_REQUIRED ? undefined : serverApiToken());
+  if (env.WEB_AUTH_REQUIRED && !token) {
+    return { tasks: [], defaults: null, memory: '', skills: [], up: false, authRequired: true };
+  }
+  const opts = {
+    cache: 'no-store' as const,
+    signal: AbortSignal.timeout(2500),
+    headers: token ? { authorization: `Bearer ${token}` } : undefined,
+  };
   try {
     const [tasksRes, limitsRes, memRes, skillsRes] = await Promise.all([
       fetch(`${base}/api/v1/tasks?limit=50`, opts),
@@ -27,14 +39,14 @@ async function getData(): Promise<{
     const defaults = limitsRes.ok ? ((await limitsRes.json()) as LimitDefaults) : null;
     const memory = memRes?.ok ? ((await memRes.json()).content as string) : '';
     const skills = skillsRes?.ok ? ((await skillsRes.json()) as SkillInfo[]) : [];
-    return { tasks, defaults, memory, skills, up: tasksRes.ok };
+    return { tasks, defaults, memory, skills, up: tasksRes.ok, authRequired: false };
   } catch {
-    return { tasks: [], defaults: null, memory: '', skills: [], up: false };
+    return { tasks: [], defaults: null, memory: '', skills: [], up: false, authRequired: false };
   }
 }
 
 export default async function Home() {
-  const { tasks, defaults, memory, skills, up } = await getData();
+  const { tasks, defaults, memory, skills, up, authRequired } = await getData();
   const verifiedSkills = skills.filter((s) => s.verified);
 
   return (
@@ -76,7 +88,13 @@ export default async function Home() {
           Your tasks {tasks.length > 0 && <span className="opacity-50">({tasks.length})</span>}
         </h2>
 
-        {!up && (
+        {authRequired && (
+          <p className="rounded-lg border border-blue-500/30 bg-blue-500/5 px-4 py-3 text-sm text-blue-700 dark:text-blue-400">
+            Sign in with GitHub to publish and inspect your tasks.
+          </p>
+        )}
+
+        {!up && !authRequired && (
           <p className="rounded-lg border border-amber-500/30 bg-amber-500/5 px-4 py-3 text-sm text-amber-700 dark:text-amber-400">
             The API isn’t reachable yet. Start it with <code className="font-mono">make up</code>{' '}
             (or <code className="font-mono">make dev</code>), then refresh.

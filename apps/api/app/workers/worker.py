@@ -1,9 +1,4 @@
-"""Background worker entrypoint (consumer side).
-
-Runs as its own Deployment so long/bursty work never blocks request handling and
-can scale independently (on queue depth). Handlers are looked up by job type.
-Run with ``python -m app.workers.worker`` (or the ``worker`` console script).
-"""
+"""Redis Streams worker with leases, cross-pod recovery, retries, and a DLQ."""
 
 from __future__ import annotations
 
@@ -14,23 +9,18 @@ import os
 import signal
 import socket
 from collections.abc import Awaitable, Callable
-from typing import Any
+from typing import Any, cast
 
 import redis.asyncio as aioredis
 
 from app.core.config import settings
 from app.core.logging import configure_logging, get_logger
-from app.workers.queue import QUEUE_KEY
+from app.observability.metrics import QUEUE_JOBS
+from app.workers.queue import CONSUMER_GROUP, DEAD_KEY, QUEUE_KEY, ensure_consumer_group
 
 log = get_logger("worker")
 
-# Stable-ish id so a restarted worker can reclaim its own in-flight jobs. Set
-# WORKER_ID (e.g. a StatefulSet pod name) for reliable recovery across restarts.
-WORKER_ID = os.environ.get("WORKER_ID") or socket.gethostname()
-PROCESSING_KEY = f"{QUEUE_KEY}:processing:{WORKER_ID}"
-DEAD_KEY = f"{QUEUE_KEY}:dead"
-
-# Map job types to async handlers. Register real handlers as you add them.
+WORKER_ID = os.environ.get("WORKER_ID") or f"{socket.gethostname()}-{os.getpid()}"
 HANDLERS: dict[str, Callable[[dict[str, Any]], Awaitable[None]]] = {}
 
 
@@ -40,8 +30,6 @@ def handler(
     [Callable[[dict[str, Any]], Awaitable[None]]],
     Callable[[dict[str, Any]], Awaitable[None]],
 ]:
-    """Decorator to register a job handler: ``@handler("send_email")``."""
-
     def register(
         fn: Callable[[dict[str, Any]], Awaitable[None]],
     ) -> Callable[[dict[str, Any]], Awaitable[None]]:
@@ -53,7 +41,6 @@ def handler(
 
 @handler("run_task")
 async def _run_task(payload: dict[str, Any]) -> None:
-    """Run an agent loop for a published task (worker execution mode)."""
     import uuid
 
     from app.services.runner import execute_task
@@ -63,32 +50,35 @@ async def _run_task(payload: dict[str, Any]) -> None:
     await execute_task(task_id)
 
 
-async def _recover_on_startup(client: aioredis.Redis) -> None:
-    """Clean up after this worker's previous incarnation crashed. (1) Fail any task
-    it left stranded RUNNING (staleness-bounded, so a live sibling worker's tasks
-    are untouched). (2) Move any job it was mid-processing to a dead-letter list —
-    preserved for inspection, not silently lost and not auto-requeued (a job that
-    crashed the process could be poison)."""
+def _decode_fields(fields: dict[Any, Any]) -> dict[str, str]:
+    return {
+        (key.decode() if isinstance(key, bytes) else str(key)): (
+            value.decode() if isinstance(value, bytes) else str(value)
+        )
+        for key, value in fields.items()
+    }
+
+
+def _payload(fields: dict[str, str]) -> dict[str, Any]:
+    value = json.loads(fields.get("payload", "{}"))
+    if not isinstance(value, dict):
+        raise ValueError("job payload must be an object")
+    return value
+
+
+async def _reset_stale_tasks() -> None:
     from app.db.session import get_sessionmaker
     from app.services.runner import reconcile_interrupted_tasks
 
     async with get_sessionmaker()() as session:
-        await reconcile_interrupted_tasks(session, stale_seconds=settings.worker_stale_task_seconds)
-
-    dead = 0
-    while await client.lmove(PROCESSING_KEY, DEAD_KEY, "LEFT", "RIGHT"):
-        dead += 1
-    if dead:
-        log.warning("worker.dead_lettered_inflight", count=dead, key=DEAD_KEY)
+        await reconcile_interrupted_tasks(
+            session,
+            stale_seconds=settings.worker_stale_task_seconds,
+            requeue=True,
+        )
 
 
 async def _reconcile_loop(stop: asyncio.Event) -> None:
-    """Periodically fail tasks stranded RUNNING by a crash — not only at startup, so a
-    worker that dies mid-job (its in-flight task's updated_at is still recent) gets
-    cleaned up once it crosses the stale window, instead of hanging until a restart."""
-    from app.db.session import get_sessionmaker
-    from app.services.runner import reconcile_interrupted_tasks
-
     interval = max(30, settings.worker_stale_task_seconds // 2)
     while not stop.is_set():
         with contextlib.suppress(TimeoutError):
@@ -96,50 +86,182 @@ async def _reconcile_loop(stop: asyncio.Event) -> None:
         if stop.is_set():
             return
         try:
-            async with get_sessionmaker()() as session:
-                await reconcile_interrupted_tasks(
-                    session, stale_seconds=settings.worker_stale_task_seconds
-                )
-        except Exception:  # a reconcile hiccup must not kill the worker
+            await _reset_stale_tasks()
+        except Exception:
             log.exception("worker.reconcile_failed")
+
+
+async def _pending_deliveries(client: aioredis.Redis, message_id: str) -> int:
+    pending = await client.xpending_range(
+        QUEUE_KEY,
+        CONSUMER_GROUP,
+        min=message_id,
+        max=message_id,
+        count=1,
+    )
+    if not pending:
+        return 1
+    value = pending[0]
+    if isinstance(value, dict):
+        return int(value.get("times_delivered", 1))
+    return 1
+
+
+async def _dead_letter(
+    client: aioredis.Redis,
+    message_id: str,
+    fields: dict[str, str],
+    error: str,
+) -> None:
+    dead = {**fields, "source_id": message_id, "error": error[:1000]}
+    async with client.pipeline(transaction=True) as pipe:
+        pipe.xadd(
+            DEAD_KEY,
+            cast(dict[Any, Any], dead),
+            maxlen=settings.worker_queue_max_length,
+            approximate=True,
+        )
+        pipe.xack(QUEUE_KEY, CONSUMER_GROUP, message_id)
+        pipe.xdel(QUEUE_KEY, message_id)
+        await pipe.execute()
+    log.error("job.dead_lettered", message_id=message_id, error=error[:300])
+    QUEUE_JOBS.labels(outcome="dead_lettered").inc()
+
+
+async def _retry(
+    client: aioredis.Redis,
+    message_id: str,
+    fields: dict[str, str],
+    error: str,
+) -> None:
+    attempt = int(fields.get("attempt", "1")) + 1
+    retried = {**fields, "attempt": str(attempt), "last_error": error[:1000]}
+    async with client.pipeline(transaction=True) as pipe:
+        pipe.xadd(
+            QUEUE_KEY,
+            cast(dict[Any, Any], retried),
+        )
+        pipe.xack(QUEUE_KEY, CONSUMER_GROUP, message_id)
+        pipe.xdel(QUEUE_KEY, message_id)
+        await pipe.execute()
+    log.warning("job.retry", message_id=message_id, attempt=attempt, error=error[:300])
+    QUEUE_JOBS.labels(outcome="retried").inc()
+
+
+async def _lease_heartbeat(client: aioredis.Redis, message_id: str, stop: asyncio.Event) -> None:
+    interval = max(10, settings.worker_visibility_timeout_seconds // 3)
+    while not stop.is_set():
+        with contextlib.suppress(TimeoutError):
+            await asyncio.wait_for(stop.wait(), timeout=interval)
+        if stop.is_set():
+            return
+        await client.xclaim(
+            QUEUE_KEY,
+            CONSUMER_GROUP,
+            WORKER_ID,
+            min_idle_time=0,
+            message_ids=[message_id],
+            justid=True,
+        )
+
+
+async def _process(
+    client: aioredis.Redis,
+    message_id: str,
+    raw_fields: dict[Any, Any],
+    *,
+    reclaimed: bool,
+) -> None:
+    fields = _decode_fields(raw_fields)
+    deliveries = await _pending_deliveries(client, message_id)
+    if deliveries > settings.worker_max_attempts:
+        await _dead_letter(client, message_id, fields, "visibility lease expired repeatedly")
+        return
+    if reclaimed:
+        await _reset_stale_tasks()
+    heartbeat_stop = asyncio.Event()
+    heartbeat = asyncio.create_task(_lease_heartbeat(client, message_id, heartbeat_stop))
+    try:
+        payload = _payload(fields)
+        handler_fn = HANDLERS.get(fields.get("type", ""))
+        if handler_fn is None:
+            raise ValueError(f"unknown job type {fields.get('type')!r}")
+        await handler_fn(payload)
+    except Exception as exc:
+        heartbeat_stop.set()
+        heartbeat.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await heartbeat
+        attempt = int(fields.get("attempt", "1"))
+        if attempt >= settings.worker_max_attempts:
+            await _dead_letter(client, message_id, fields, str(exc))
+        else:
+            await _retry(client, message_id, fields, str(exc))
+        return
+    heartbeat_stop.set()
+    heartbeat.cancel()
+    with contextlib.suppress(asyncio.CancelledError):
+        await heartbeat
+    async with client.pipeline(transaction=True) as pipe:
+        pipe.xack(QUEUE_KEY, CONSUMER_GROUP, message_id)
+        pipe.xdel(QUEUE_KEY, message_id)
+        await pipe.execute()
+    QUEUE_JOBS.labels(outcome="completed").inc()
+
+
+async def _claim_stale(client: aioredis.Redis) -> list[tuple[str, dict[Any, Any]]]:
+    result = await client.xautoclaim(
+        QUEUE_KEY,
+        CONSUMER_GROUP,
+        WORKER_ID,
+        min_idle_time=settings.worker_visibility_timeout_seconds * 1000,
+        start_id="0-0",
+        count=10,
+    )
+    messages = result[1] if isinstance(result, (list, tuple)) and len(result) > 1 else []
+    return [(str(message_id), fields) for message_id, fields in messages]
 
 
 async def _run() -> None:
     configure_logging()
     client = aioredis.from_url(str(settings.redis_url), decode_responses=True)
     stop = asyncio.Event()
-
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGINT, signal.SIGTERM):
         loop.add_signal_handler(sig, stop.set)
 
-    await _recover_on_startup(client)
+    await ensure_consumer_group(client)
+    await _reset_stale_tasks()
     reconciler = asyncio.create_task(_reconcile_loop(stop))
-    log.info("worker.started", queue=QUEUE_KEY, worker_id=WORKER_ID, handlers=sorted(HANDLERS))
+    scheduler: asyncio.Task[None] | None = None
+    if settings.scheduler_enabled:
+        from app.services.scheduler import run_scheduler
+
+        scheduler = asyncio.create_task(run_scheduler(stop))
+    log.info("worker.started", stream=QUEUE_KEY, group=CONSUMER_GROUP, worker_id=WORKER_ID)
     try:
         while not stop.is_set():
-            # Atomically move a job to our processing list so a crash mid-job doesn't
-            # lose it (blpop would). Block up to 5s so SIGTERM is handled promptly.
-            moved = await client.blmove(QUEUE_KEY, PROCESSING_KEY, 5, "LEFT", "LEFT")
-            if moved is None:
-                continue
-            raw = moved if isinstance(moved, str) else moved.decode()  # decode_responses=True
-            try:
-                job = json.loads(raw)
-                handler_fn = HANDLERS.get(job["type"])
-                if handler_fn is None:
-                    log.warning("job.unknown_type", type=job.get("type"))
-                else:
-                    await handler_fn(job.get("payload", {}))
-            except Exception:  # never let one bad job kill the loop
-                log.exception("job.failed", raw=raw)
-            finally:
-                # Done (or handled-failed): drop it from the in-flight list.
-                await client.lrem(PROCESSING_KEY, 1, raw)
+            for message_id, fields in await _claim_stale(client):
+                await _process(client, message_id, fields, reclaimed=True)
+            raw_messages = await client.xreadgroup(
+                CONSUMER_GROUP,
+                WORKER_ID,
+                streams={QUEUE_KEY: ">"},
+                count=1,
+                block=5000,
+            )
+            messages = cast(list[tuple[Any, list[tuple[Any, dict[Any, Any]]]]], raw_messages or [])
+            for _stream, entries in messages:
+                for message_id, fields in entries:
+                    await _process(client, str(message_id), fields, reclaimed=False)
     finally:
         reconciler.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await reconciler
+        if scheduler is not None:
+            scheduler.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await scheduler
         await client.aclose()
         log.info("worker.stopped")
 

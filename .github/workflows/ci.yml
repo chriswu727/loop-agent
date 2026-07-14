@@ -20,20 +20,27 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v6
         with:
-          python-version: "3.12"
+          python-version: '3.12'
           cache: pip
-      # Install every extra so mypy type-checks the whole codebase (the calendar/
-      # office libs are untyped; without them mypy's per-line ignores read as unused).
-      - run: pip install -e ".[dev,office,calendar]"
+      - run: pip install uv==0.11.15
+      - name: Locked environment
+        run: |
+          uv lock --check
+          uv export --quiet --frozen --no-dev --extra office --extra calendar --no-emit-project --format requirements.txt --output-file requirements.lock
+          uv pip compile --quiet --universal --generate-hashes --python-version 3.12 sandbox-requirements.in --output-file sandbox-requirements.lock
+          git diff --exit-code uv.lock requirements.lock sandbox-requirements.lock
+          uv sync --frozen --all-extras
       - name: Lint (ruff)
         run: |
-          ruff check .
-          ruff format --check .
+          uv run --frozen --all-extras ruff check .
+          uv run --frozen --all-extras ruff format --check .
       - name: Types (mypy)
-        run: mypy app
+        run: uv run --frozen --all-extras mypy app
       - name: Tests
-        run: pytest -q
+        run: uv run --frozen --all-extras pytest -q
         # The suite is fully offline: in-memory SQLite + mocked tools. No services.
+      - name: Dependency audit
+        run: uv run --frozen --all-extras pip-audit
 
   web:
     name: web · lint + typecheck + build
@@ -50,6 +57,31 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm lint
       - run: pnpm typecheck
+      - run: pnpm test
       - run: pnpm build
-        env:
-          NEXT_PUBLIC_API_URL: http://localhost:8000
+      - run: pnpm audit --prod
+
+  runtime-boundaries:
+    name: runtime · locks + compose + kubernetes
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/provider-gateway-runtime/package-lock.json
+      - name: Locked Provider Gateway browser runtime
+        working-directory: apps/provider-gateway-runtime
+        run: |
+          npm ci --ignore-scripts
+          npm audit --omit=dev
+      - name: Compose graph
+        run: docker compose config -q
+      - name: Kubernetes production boundary
+        run: |
+          kubectl kustomize infra/k8s/overlays/dev >/tmp/loop-k8s-dev.yaml
+          kubectl kustomize infra/k8s/overlays/prod >/tmp/loop-k8s-prod.yaml
+          grep -q 'name: provider-gateway' /tmp/loop-k8s-prod.yaml
+          grep -q 'name: egress-proxy' /tmp/loop-k8s-prod.yaml
+          grep -q 'loop.openai.com/egress: proxied' /tmp/loop-k8s-prod.yaml

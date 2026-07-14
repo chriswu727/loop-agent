@@ -115,9 +115,9 @@ def main(argv: list[str]) -> int:
         print(f"  - {m}")
 
     ok = hash_ok and not file_mismatches and sig_status != "INVALID"
-    if ok and "UNCHECKED" in sig_status:
+    if ok and ("UNCHECKED" in sig_status or sig_status == "unsigned"):
         print("RESULT:      OK — content hash + files intact (signature NOT verified)")
-    elif ok:
+    elif ok and sig_status == "VERIFIED":
         print("RESULT:      OK — receipt is authentic")
     else:
         print("RESULT:      TAMPERED — mismatch")

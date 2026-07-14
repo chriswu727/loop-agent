@@ -4,6 +4,8 @@ import { useEffect, useState } from 'react';
 import { tasksApi } from '@/lib/api-client';
 
 interface ReceiptCheck {
+  check_id?: string;
+  criterion_ids?: string[];
   kind: string;
   target: string;
   passed: boolean;
@@ -15,6 +17,7 @@ interface ReceiptFile {
   sha256: string;
 }
 interface Receipt {
+  schema?: string;
   receipt_hash: string;
   goal: string;
   verified_by: string;
@@ -23,6 +26,13 @@ interface Receipt {
   checks?: ReceiptCheck[];
   ledger_head?: string;
   files?: ReceiptFile[];
+  authority?: { resolved?: string[]; egress_hosts?: string[] };
+  provenance?: {
+    revision?: string;
+    sandbox?: { mode?: string; image?: string; image_digest?: string | null };
+    model?: { provider?: string; model?: string };
+    verifier?: { provider?: string; model?: string };
+  };
 }
 
 function IntegrityRow({ ok, label }: { ok: boolean; label: string }) {
@@ -46,11 +56,15 @@ interface ReceiptReport {
   anchor_ok?: boolean;
   files_ok?: boolean;
   file_mismatches?: { path: string; reason: string }[];
+  authentic?: boolean;
+  assurance?: 'authentic' | 'integrity' | 'invalid';
 }
 
 export function ReceiptPanel({ taskId }: { taskId: string }) {
   const [data, setData] = useState<ReceiptReport | null>(null);
   const [open, setOpen] = useState(false);
+  const [replaying, setReplaying] = useState(false);
+  const [replayResult, setReplayResult] = useState<string | null>(null);
 
   useEffect(() => {
     tasksApi
@@ -61,6 +75,19 @@ export function ReceiptPanel({ taskId }: { taskId: string }) {
 
   if (!data) return null;
   const r = data.receipt;
+
+  async function replay() {
+    setReplaying(true);
+    setReplayResult(null);
+    try {
+      const result = await tasksApi.replayReceipt(taskId);
+      setReplayResult(result.passed ? 'Replay passed' : 'Replay failed');
+    } catch (error) {
+      setReplayResult(error instanceof Error ? error.message : 'Replay failed');
+    } finally {
+      setReplaying(false);
+    }
+  }
 
   return (
     <section className="mt-6 rounded-xl border border-black/10 bg-white/50 dark:border-white/10 dark:bg-white/[0.02]">
@@ -77,7 +104,11 @@ export function ReceiptPanel({ taskId }: { taskId: string }) {
                 : 'rounded bg-red-500/15 px-1.5 py-0.5 text-xs font-normal text-red-600 dark:text-red-400'
             }
           >
-            {data.valid ? 'hash verified' : 'hash mismatch'}
+            {data.assurance === 'authentic'
+              ? 'authentic'
+              : data.valid
+                ? 'integrity verified'
+                : 'invalid'}
           </span>
         </span>
         <span className="text-xs opacity-50">{open ? 'hide' : 'show'}</span>
@@ -86,6 +117,8 @@ export function ReceiptPanel({ taskId }: { taskId: string }) {
       {open && (
         <div className="space-y-3 border-t border-black/10 px-4 py-3 text-xs dark:border-white/10">
           <p className="opacity-70">
+            Schema <b>{r.schema ?? 'legacy'}</b>
+            {' · '}
             Verified by <b>{r.verified_by}</b>
             {r.isolation ? (
               <>
@@ -101,10 +134,7 @@ export function ReceiptPanel({ taskId }: { taskId: string }) {
           <ul className="space-y-0.5">
             <IntegrityRow ok={data.valid} label="content hash" />
             {data.signature && data.signature !== 'unsigned' && (
-              <IntegrityRow
-                ok={data.signature === 'valid'}
-                label={`signature ${data.signature}`}
-              />
+              <IntegrityRow ok={data.signature === 'valid'} label={`signature ${data.signature}`} />
             )}
             {data.signature === 'unsigned' && (
               <li className="opacity-40">signature: unsigned (tamper-evident, not tamper-proof)</li>
@@ -130,10 +160,20 @@ export function ReceiptPanel({ taskId }: { taskId: string }) {
               <ul className="space-y-1">
                 {r.checks.map((c, i) => (
                   <li key={i} className="font-mono">
-                    <span className={c.passed ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}>
+                    <span
+                      className={
+                        c.passed
+                          ? 'text-green-600 dark:text-green-400'
+                          : 'text-red-600 dark:text-red-400'
+                      }
+                    >
                       [{c.passed ? 'PASS' : 'FAIL'}]
                     </span>{' '}
+                    {c.check_id ? `${c.check_id} ` : ''}
                     {c.kind} {c.target} — {c.evidence}
+                    {c.criterion_ids && c.criterion_ids.length > 0
+                      ? ` (${c.criterion_ids.join(', ')})`
+                      : ''}
                   </li>
                 ))}
               </ul>
@@ -156,9 +196,29 @@ export function ReceiptPanel({ taskId }: { taskId: string }) {
           <div className="space-y-1 font-mono opacity-50">
             {r.ledger_head ? <p className="break-all">ledger head: {r.ledger_head}</p> : null}
             <p className="break-all">receipt hash: {r.receipt_hash}</p>
+            {r.authority?.resolved ? (
+              <p className="break-all">authority: {r.authority.resolved.join(', ')}</p>
+            ) : null}
+            {r.provenance?.sandbox ? (
+              <p className="break-all">
+                sandbox: {r.provenance.sandbox.mode} {r.provenance.sandbox.image ?? ''}{' '}
+                {r.provenance.sandbox.image_digest ?? ''}
+              </p>
+            ) : null}
+          </div>
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={replay}
+              disabled={replaying}
+              className="rounded-md bg-blue-600 px-2.5 py-1 text-white disabled:opacity-50"
+            >
+              {replaying ? 'Replaying…' : 'Replay checks'}
+            </button>
+            {replayResult ? <span className="opacity-70">{replayResult}</span> : null}
           </div>
           <p className="opacity-40">
-            Verify independently: <code>make verify-receipt f=&lt;workspace&gt;/receipt.json</code>
+            Verify independently: <code>loop receipt verify &lt;workspace&gt;/receipt.json</code>
           </p>
         </div>
       )}

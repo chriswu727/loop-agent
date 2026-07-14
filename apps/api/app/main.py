@@ -13,7 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.errors import register_exception_handlers
 from app.api.v1.router import api_router
-from app.api.v1.routes import health, slack
+from app.api.v1.routes import health, hooks, slack
 from app.core.config import settings
 from app.core.lifespan import lifespan
 from app.middleware.request_id import RequestContextMiddleware
@@ -50,6 +50,7 @@ def create_app() -> FastAPI:
     # The Slack webhook is authenticated by its own signature, not API_TOKEN, so it
     # sits at the root rather than under the api-token-gated /api/v1 surface.
     app.include_router(slack.router)
+    app.include_router(hooks.router)
     if settings.prometheus_enabled:
         app.add_route("/metrics", lambda _request: metrics_endpoint(), include_in_schema=False)
 

@@ -18,11 +18,17 @@ function Pill({ tone, children }: { tone: keyof typeof TONES; children: ReactNod
 }
 
 export function AuthorityPanel({ task }: { task: Task }) {
-  const network = !task.allow_egress
-    ? { label: 'Network: none (default-deny)', tone: 'safe' as const }
-    : task.egress_hosts && task.egress_hosts.length > 0
-      ? { label: `Network: ${task.egress_hosts.join(', ')}`, tone: 'elevated' as const }
-      : { label: 'Network: any host', tone: 'elevated' as const };
+  const granted = new Set(task.authority.resolved);
+  const shellNetwork = !granted.has('net.shell')
+    ? { label: 'Shell network: denied', tone: 'safe' as const }
+    : task.authority.egress_hosts.length > 0
+      ? {
+          label: `Shell network: ${task.authority.egress_hosts.join(', ')}`,
+          tone: 'elevated' as const,
+        }
+      : { label: 'Shell network: invalid empty policy', tone: 'elevated' as const };
+  const allowed = task.authority.audit.filter((event) => event.decision === 'allowed').length;
+  const blocked = task.authority.audit.filter((event) => event.decision === 'blocked').length;
 
   return (
     <section className="mt-6 rounded-2xl border border-black/10 bg-white/40 p-5 dark:border-white/10 dark:bg-white/[0.02]">
@@ -30,16 +36,24 @@ export function AuthorityPanel({ task }: { task: Task }) {
         Granted authority
       </h2>
       <div className="flex flex-wrap gap-2 text-xs">
-        <Pill tone={network.tone}>{network.label}</Pill>
-        <Pill tone="neutral">
-          {task.allowed_tools && task.allowed_tools.length > 0
-            ? `Tools: ${task.allowed_tools.join(', ')}`
-            : 'Tools: all default'}
-        </Pill>
+        <Pill tone={shellNetwork.tone}>{shellNetwork.label}</Pill>
+        <Pill tone="neutral">Schema: {task.authority.schema}</Pill>
+        {task.authority.resolved.map((capability) => (
+          <Pill key={capability} tone={capability.startsWith('net.') ? 'elevated' : 'cap'}>
+            {capability}
+          </Pill>
+        ))}
         {task.require_approval && <Pill tone="neutral">Approval required</Pill>}
-        {task.use_browser && <Pill tone="cap">Browser</Pill>}
-        {task.use_email && <Pill tone="cap">Email</Pill>}
-        {task.use_calendar && <Pill tone="cap">Calendar</Pill>}
+        {task.authority.sandbox && <Pill tone="neutral">Sandbox: {task.authority.sandbox}</Pill>}
+        {(granted.has('net.shell') || granted.has('net.browser')) &&
+          task.authority.enforcement.egress_proxy && (
+            <Pill tone="safe">Destination proxy enforced</Pill>
+          )}
+        {task.authority.audit.length > 0 && (
+          <Pill tone="neutral">
+            Runtime decisions: {allowed} allowed / {blocked} blocked
+          </Pill>
+        )}
         {task.skill && <Pill tone="skill">Skill: {task.skill}</Pill>}
       </div>
     </section>

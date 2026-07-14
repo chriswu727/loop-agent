@@ -1,6 +1,6 @@
 'use client';
 
-import type { Trigger } from '@repo/api-contract';
+import type { Capability, Trigger } from '@repo/api-contract';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useState } from 'react';
@@ -13,6 +13,7 @@ export default function TriggersPage() {
   const [goal, setGoal] = useState('');
   const [noShell, setNoShell] = useState(false);
   const [allowNetwork, setAllowNetwork] = useState(false);
+  const [egressHosts, setEgressHosts] = useState('');
   const [requireApproval, setRequireApproval] = useState(false);
   const [intervalMin, setIntervalMin] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -44,21 +45,41 @@ export default function TriggersPage() {
   async function create(e: React.FormEvent) {
     e.preventDefault();
     if (name.trim().length < 1 || goal.trim().length < 4 || busy) return;
+    if (allowNetwork && !egressHosts.trim()) {
+      setError('Network triggers require at least one destination host.');
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
       const interval = parseInt(intervalMin, 10);
+      const capabilities: Capability[] = [
+        'fs.read',
+        'fs.write',
+        'memory.read',
+        'memory.write',
+        'task.spawn',
+      ];
+      if (!noShell) capabilities.push('exec');
+      if (allowNetwork) capabilities.push('net.shell');
       await triggersApi.create({
         name: name.trim(),
         goal: goal.trim(),
-        allowed_tools: noShell ? ['write_file', 'edit_file', 'read_file'] : null,
+        capabilities,
         allow_egress: allowNetwork,
+        egress_hosts: allowNetwork
+          ? egressHosts
+              .split(',')
+              .map((host) => host.trim())
+              .filter(Boolean)
+          : null,
         require_approval: requireApproval,
         interval_minutes: Number.isFinite(interval) && interval >= 1 ? interval : null,
       });
       setName('');
       setGoal('');
       setIntervalMin('');
+      setEgressHosts('');
       await load();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Could not create the trigger.');
@@ -112,7 +133,11 @@ export default function TriggersPage() {
         />
         <div className="mt-3 flex flex-wrap items-center gap-4 text-xs">
           <label className="flex cursor-pointer items-center gap-1.5 opacity-80">
-            <input type="checkbox" checked={noShell} onChange={(e) => setNoShell(e.target.checked)} />
+            <input
+              type="checkbox"
+              checked={noShell}
+              onChange={(e) => setNoShell(e.target.checked)}
+            />
             No shell
           </label>
           <label className="flex cursor-pointer items-center gap-1.5 opacity-80">
@@ -145,12 +170,27 @@ export default function TriggersPage() {
           </label>
           <button
             type="submit"
-            disabled={busy || name.trim().length < 1 || goal.trim().length < 4}
+            disabled={
+              busy ||
+              name.trim().length < 1 ||
+              goal.trim().length < 4 ||
+              (allowNetwork && !egressHosts.trim())
+            }
             className="ml-auto rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-blue-500 disabled:opacity-40"
           >
             Save trigger
           </button>
         </div>
+        {allowNetwork && (
+          <input
+            required
+            aria-label="Allowed destination hosts"
+            value={egressHosts}
+            onChange={(e) => setEgressHosts(e.target.value)}
+            placeholder="Required destinations (comma-separated)"
+            className="mt-3 w-full rounded-lg border border-black/10 bg-transparent px-3 py-1.5 text-xs outline-none focus:border-blue-500/60 dark:border-white/15"
+          />
+        )}
         {error && <p className="mt-2 text-sm text-red-600 dark:text-red-400">{error}</p>}
       </form>
 
@@ -167,14 +207,13 @@ export default function TriggersPage() {
               <p className="text-sm font-medium">{t.name}</p>
               <p className="line-clamp-2 text-xs opacity-60">{t.goal}</p>
               <p className="mt-1 text-[11px] opacity-40">
-                fired {t.fire_count}×
-                {t.interval_minutes && ` · every ${t.interval_minutes}m`}
+                fired {t.fire_count}×{t.interval_minutes && ` · every ${t.interval_minutes}m`}
                 {t.require_approval && ' · approval'}
                 {t.allow_egress && ' · network'}
                 {t.allowed_tools && ' · files-only'}
               </p>
               <p className="mt-1 truncate font-mono text-[10px] opacity-30" title="Webhook URL">
-                POST /api/v1/triggers/{t.id}/fire?secret={t.secret}
+                POST /hooks/triggers/{t.id} · X-Trigger-Secret: {t.secret}
               </p>
             </div>
             <div className="flex shrink-0 gap-2 text-xs">

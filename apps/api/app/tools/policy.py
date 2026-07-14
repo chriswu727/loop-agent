@@ -10,10 +10,9 @@ verdicts so the loop can decide what to do with it:
                      the user.
   * DENY           — matches a destructive/exfiltration pattern; never runs.
 
-This is a denylist-plus-allowlist, not a true jail: it stops the obvious
-foot-guns (wiping the disk, fork bombs, piping the internet into a shell) and
-keeps work confined by running everything from the workspace directory. Real
-isolation (containers) is a later milestone, documented in docs/loop.md.
+This policy is defense in depth, not a jail. Production isolation comes from the
+required short-lived sandbox backend; the explicit local host mode remains
+reduced isolation.
 """
 
 from __future__ import annotations

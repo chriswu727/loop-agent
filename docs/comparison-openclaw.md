@@ -2,15 +2,32 @@
 
 # Loop vs OpenClaw: The Honest Comparison
 
+> **Current status (2026-07-14):** the original point-in-time analysis below is
+> retained as an audit record, not as current product documentation. Since it was
+> written, Loop added `loop.capabilities/v1`, subject/project isolation, GitHub OAuth
+>
+> - PKCE, owner-scoped memory/idempotency/Triggers, Redis Streams leases/reclaim/
+>   retries/DLQ, atomic task and scheduler claims, SSE, Kubernetes Job shell isolation,
+>   separate executor/verifier providers, `loop.receipt/v1` criteria mappings and
+>   provenance, API/CLI replay, and a reusable GitHub Receipt-verification Action.
+>   Production is fail-closed for sandbox and provider tools. It now also has an
+>   isolated credential-bearing Provider Gateway, short-lived audience-bound
+>   authority tokens, and a destination-enforcing egress proxy with private-address
+>   rejection, DNS pinning and Receipt audit. Ecosystem and real-world adoption
+>   remain unproven; provider-protocol egress separation and durable proxy audit are
+>   still deployment hardening work.
+>
 > **Update (2026-07-04, after this comparison):** several concrete weaknesses this
 > analysis found were then fixed (and adversarially re-audited — the fixes had their
 > own bugs, since fixed). No longer accurate as written:
+>
 > - "The Receipt isn't signed" → optional **ed25519 signing** now exists
 >   (`AGENT_RECEIPT_SIGNING_KEY`); `verify_receipt` also re-hashes output files vs the
 >   manifest and cross-checks the DB anchor, and the offline script verifies the
->   signature with `--pubkey`. Tamper-*proof*, not just evident, when a key is set.
-> - "Egress is all-or-nothing" → a per-task **`egress_hosts`** allowlist now exists,
->   settable from the publish form.
+>   signature with `--pubkey`. Tamper-_proof_, not just evident, when a key is set.
+> - "Egress is all-or-nothing" → `net.shell`/`net.browser` require explicit
+>   **`egress_hosts`**; sandbox traffic can leave only through a token-verifying proxy
+>   that enforces the host at the network boundary.
 > - "A tautological check earns execution-verified" → the verifier now judges whether
 >   checks substantiate the goal; if not, the run degrades to judgment.
 > - "Receipts aren't literally on every terminal outcome" / "a crashed worker strands
@@ -32,7 +49,7 @@ _Original point-in-time analysis (unedited) follows._
 
 ## Bottom line
 
-Loop is a two-week-old, single-author, high-assurance agent runtime with real shipped machinery for *proving a task is done* and *running with least authority* — an independent re-execution verifier, content-addressed Receipts, a hash-chained ledger, ed25519-signed skills, and an ephemeral `--network none` Docker sandbox, all funneled through one enforced tool choke point. OpenClaw (as characterized in Loop's own `docs/STRATEGY.md`, an unaudited partisan source) is a mature, adopted, reach-first assistant that lives on 20+ chat surfaces with a ~5,400-skill ecosystem and a 48h unattended loop, but with no completion semantics and its busiest path running on the host. **The real trade-off: Loop can mechanically re-prove and tightly contain a narrow, check-expressible slice of work that nobody has adopted yet; OpenClaw actually reaches users and covers the long tail, but you have to trust that "done" means "the model stopped talking."**
+Loop is a two-week-old, single-author, high-assurance agent runtime with real shipped machinery for _proving a task is done_ and _running with least authority_ — an independent re-execution verifier, content-addressed Receipts, a hash-chained ledger, ed25519-signed skills, and an ephemeral `--network none` Docker sandbox, all funneled through one enforced tool choke point. OpenClaw (as characterized in Loop's own `docs/STRATEGY.md`, an unaudited partisan source) is a mature, adopted, reach-first assistant that lives on 20+ chat surfaces with a ~5,400-skill ecosystem and a 48h unattended loop, but with no completion semantics and its busiest path running on the host. **The real trade-off: Loop can mechanically re-prove and tightly contain a narrow, check-expressible slice of work that nobody has adopted yet; OpenClaw actually reaches users and covers the long tail, but you have to trust that "done" means "the model stopped talking."**
 
 ---
 
@@ -44,7 +61,7 @@ Loop is a two-week-old, single-author, high-assurance agent runtime with real sh
 
 **Loop (actual code):** Every category OpenClaw is known for exists in the repo today, not as a plan. File I/O via `tools/workspace.py` (jailed to task dir, path-escape refused); office work by shelling `run_command` into preinstalled openpyxl/python-docx/pandas (no native doc editor); signed skills via `services/skills.py` `SkillStore`; cross-task memory via `services/memory.py` (`MEMORY.md` + `topics/*.md`); a real MCP client (`tools/mcp/browser.py`); Playwright browser (opt-in `use_browser`); SMTP/IMAP email (`tools/email.py`, approval-gated); CalDAV calendar (`tools/calendar.py`); `services/scheduler.py` + `services/trigger.py`; and a channel-agnostic chat seam (`services/chat.py::run_chat_turn`) fronted by Telegram + HTTP `/chat`. 25 test files cover these.
 
-**Call:** Split by axis. On **category parity**, Loop essentially ties — the doc's "missing" labels are stale. On **breadth/reach**, OpenClaw wins and it is not close: ~2 chat inlets (Telegram + HTTP) vs 20+; exactly **one** bundled skill (`hello-report`) vs 5,400; interval+webhook triggers vs cron/Pub-Sub; a deliberately bounded run vs a 48h loop. Loop has the correct *shape* for reach but an empty *catalog*.
+**Call:** Split by axis. On **category parity**, Loop essentially ties — the doc's "missing" labels are stale. On **breadth/reach**, OpenClaw wins and it is not close: ~2 chat inlets (Telegram + HTTP) vs 20+; exactly **one** bundled skill (`hello-report`) vs 5,400; interval+webhook triggers vs cron/Pub-Sub; a deliberately bounded run vs a 48h loop. Loop has the correct _shape_ for reach but an empty _catalog_.
 
 **Where parity is only partial:** memory is flat-file concatenation with tail-truncation in a **single shared store** (no per-user/per-task scoping, no hybrid search); the MCP layer only wires the Playwright server; the scheduler is `interval_minutes` only (**not** cron, despite STRATEGY saying so); WhatsApp/Discord/Slack are asserted "same shape" with no code. Loop's side of "20+ surfaces" is vaporware today.
 
@@ -57,6 +74,7 @@ Loop is a two-week-old, single-author, high-assurance agent runtime with real sh
 **Call:** Loop wins decisively on the narrow axis of "can a third party mechanically re-confirm this task is done." A chat log has nothing to re-run.
 
 **But read the fine print — "verified" is narrower than the marketing:**
+
 - **Judgment fallback:** with no attached checks, `verified_by="judgment"` is an LLM grading the file tree + the agent's own prose; the verifier never opens a file.
 - **The agent writes its own checks:** a tautological check (`echo hi`, expect exit 0) passes on a clean copy and yields `verified_by="execution"`. Execution-verified means "the checks the agent chose passed," not "the goal was met."
 - **Plan-vs-code gap:** STRATEGY's "every rubric criterion maps to a passing check" is **not implemented** in `_handle_finish`.
@@ -68,9 +86,10 @@ Loop is a two-week-old, single-author, high-assurance agent runtime with real sh
 
 **Loop (actual code, security tests pass):** Hard-enforced layer that genuinely exists: ed25519 detached-signature verification before a skill loads (`SkillStore._verify`; unsigned/tampered ⇒ task FAILED); ephemeral container (`tools/sandbox.py`: `--rm`, `--network none` by default, `--read-only`, `--cap-drop ALL`, `--security-opt no-new-privileges`, `--user 10001`, only workspace bind-mounted); capability envelope enforced at the single choke point `ToolExecutor.execute` (task ∩ skill, narrower wins); workspace jail refusing `..`/absolute/symlink escape; host env scrubbing (`shell.py::_safe_env`); secret redaction at one choke point (`core/redaction.py`); and an explicit `[DATA]` trust-boundary framing for all untrusted input.
 
-**Call:** Loop wins. Skill signing is a structural capability OpenClaw cannot retrofit without rebuilding its extension model, and Loop declines *by design* the exact inbound→outbound attack OpenClaw enables. Loop also simply has a smaller exfiltration surface.
+**Call:** Loop wins. Skill signing is a structural capability OpenClaw cannot retrofit without rebuilding its extension model, and Loop declines _by design_ the exact inbound→outbound attack OpenClaw enables. Loop also simply has a smaller exfiltration surface.
 
 **But the STRATEGY doc oversells several as done:**
+
 - **Containment is conditional:** `agent_sandbox` defaults to `"auto"` and silently **downgrades to host inline execution** when Docker is absent. On that path, `run_command` is fenced by a regex denylist but **not jailed** — a shell command can still `cat /etc/hosts`.
 - **Envelope is coarse:** today it's a tool-set frozenset + one egress boolean. The per-subpath / per-host / per-command-class sub-budgets STRATEGY calls "the headline killer feature" are **declared, not built**.
 - **Egress is all-or-nothing:** granted egress gives full bridge networking, not the promised per-host allowlist.
@@ -105,7 +124,7 @@ Loop is a two-week-old, single-author, high-assurance agent runtime with real sh
 - **Verifiable completion is narrow.** It's materially valuable only for code/file/script tasks that were already CI-shaped. On natural-language assistant work it silently becomes "the model said it looks done."
 - **Containment is conditional and coarse.** `auto` downgrades to reduced-isolation host inline when Docker is missing; inline `run_command` is fenced but not jailed; egress deny is only real in container mode; email/calendar bypass the sandbox namespace entirely.
 - **The envelope's headline feature isn't built.** Per-subpath/per-host/per-command sub-budgets and typed approval gates are declared, not enforced. Approval gates default to auto (off).
-- **The Receipt isn't signed.** Tamper-*evident* against a naive editor, not tamper-*proof* against anyone with workspace write access.
+- **The Receipt isn't signed.** Tamper-_evident_ against a naive editor, not tamper-_proof_ against anyone with workspace write access.
 - **Operability is written but unexercised.** Non-durable worker queue, worker tasks never reconciled after a crash, `/readyz` was broken until the latest commit, no load/chaos/SLO evidence.
 - **The security thesis partly rests on having less reach**, and structurally erodes as Loop chases parity — every surface/trigger it adds reintroduces the inbound→outbound loop that gates (with their approval fatigue) only mitigate. Loop's own docs say prompt injection is unsolved.
 
@@ -119,8 +138,8 @@ Every OpenClaw claim above comes from Loop's own `docs/STRATEGY.md` — a self-a
 
 ## So what — who should pick which, today
 
-**Pick Loop if** you need a task to be *mechanically re-provable* and *tightly contained*: CI/CD-style code, file, and script automation where a third party must re-confirm "done" with zero app dependencies (`scripts/verify_receipt.py`, exit 0/1), where you run untrusted extensions and want ed25519 signature enforcement and an ephemeral `--network none` sandbox, and where a tamper-evident audit trail matters more than breadth. It fits a high-assurance, single-operator, code-shaped niche — and you must have Docker for the isolation guarantee to hold.
+**Pick Loop if** you need a task to be _mechanically re-provable_ and _tightly contained_: CI/CD-style code, file, and script automation where a third party must re-confirm "done" with zero app dependencies (`scripts/verify_receipt.py`, exit 0/1), where you run untrusted extensions and want ed25519 signature enforcement and an ephemeral `--network none` sandbox, and where a tamper-evident audit trail matters more than breadth. It fits a high-assurance, single-operator, code-shaped niche — and you must have Docker for the isolation guarantee to hold.
 
-**Pick OpenClaw if** you want an assistant that *reaches users where they already are*, covers the long tail through a large skill ecosystem, runs unattended for long horizons, and installs with zero container setup — and you accept host-run exposure, unsigned extensions, and that "done" is defined by the model deciding to reply rather than by any independent check.
+**Pick OpenClaw if** you want an assistant that _reaches users where they already are_, covers the long tail through a large skill ecosystem, runs unattended for long horizons, and installs with zero container setup — and you accept host-run exposure, unsigned extensions, and that "done" is defined by the model deciding to reply rather than by any independent check.
 
-They are optimized for opposite things: Loop for *auditable, contained, provable* work on a narrow surface; OpenClaw for *broad, convenient, adopted* presence. Loop's differentiators are real and shipped, but they buy assurance on a slice of tasks, not reach — and reach is the axis with an actual user base behind it today.
+They are optimized for opposite things: Loop for _auditable, contained, provable_ work on a narrow surface; OpenClaw for _broad, convenient, adopted_ presence. Loop's differentiators are real and shipped, but they buy assurance on a slice of tasks, not reach — and reach is the axis with an actual user base behind it today.

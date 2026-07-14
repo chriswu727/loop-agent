@@ -1,17 +1,24 @@
 version: 2
 updates:
   - package-ecosystem: npm
-    directory: "/"
+    directory: '/'
     schedule: { interval: weekly }
     groups:
-      js-dependencies:
-        patterns: ["*"]
+      js-major-updates:
+        patterns: ['*']
+        update-types: ['major']
+      js-compatible-updates:
+        patterns: ['*']
+        update-types: ['minor', 'patch']
   - package-ecosystem: pip
-    directory: "/apps/api"
+    directory: '/apps/api'
+    schedule: { interval: weekly }
+  - package-ecosystem: npm
+    directory: '/apps/provider-gateway-runtime'
     schedule: { interval: weekly }
   - package-ecosystem: github-actions
-    directory: "/"
+    directory: '/'
     schedule: { interval: weekly }
   - package-ecosystem: docker
-    directory: "/infra/docker"
+    directory: '/infra/docker'
     schedule: { interval: weekly }
