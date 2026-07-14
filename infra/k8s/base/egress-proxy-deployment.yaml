@@ -47,6 +47,10 @@ spec:
               value: 'true'
             - name: EGRESS_PROXY_AUDIT_DATABASE_PATH
               value: /var/lib/loop-egress/audit.sqlite3
+            - name: EGRESS_PROXY_REQUIRE_DURABLE_REVOCATIONS
+              value: 'true'
+            - name: EGRESS_PROXY_REVOCATION_DATABASE_PATH
+              value: /var/lib/loop-egress/audit.sqlite3
           resources:
             requests:
               cpu: 100m

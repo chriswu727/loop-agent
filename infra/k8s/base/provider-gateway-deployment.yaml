@@ -23,6 +23,8 @@ spec:
         runAsNonRoot: true
         runAsUser: 10001
         runAsGroup: 10001
+        fsGroup: 10001
+        fsGroupChangePolicy: OnRootMismatch
         seccompProfile:
           type: RuntimeDefault
       containers:
@@ -38,6 +40,10 @@ spec:
           env:
             - name: PROVIDER_GATEWAY_REQUIRE_AUTHORITY_KEY
               value: 'true'
+            - name: PROVIDER_GATEWAY_REQUIRE_DURABLE_REVOCATIONS
+              value: 'true'
+            - name: PROVIDER_GATEWAY_REVOCATION_DATABASE_PATH
+              value: /var/lib/loop-provider/authority.sqlite3
             - name: PROVIDER_GATEWAY_EGRESS_PROXY_URL
               value: http://egress-proxy:8080
             - name: HOME
@@ -67,6 +73,11 @@ spec:
           volumeMounts:
             - name: tmp
               mountPath: /tmp
+            - name: state
+              mountPath: /var/lib/loop-provider
       volumes:
         - name: tmp
           emptyDir: { sizeLimit: 256Mi }
+        - name: state
+          persistentVolumeClaim:
+            claimName: provider-gateway-state

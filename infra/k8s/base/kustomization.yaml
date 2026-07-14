@@ -17,6 +17,7 @@ resources:
   - sandbox-rbac.yaml
   - data-pvc.yaml
   - egress-proxy-audit-pvc.yaml
+  - provider-gateway-state-pvc.yaml
   - configmap.yaml
   - api-deployment.yaml
   - api-service.yaml

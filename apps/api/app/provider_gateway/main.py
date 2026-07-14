@@ -1,15 +1,19 @@
 from __future__ import annotations
 
 import logging
+import uuid
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
+from app.domain.authority_revocation import AuthorityRevocationStore
 from app.domain.authority_token import (
+    AUTHORITY_CONTROL_AUDIENCE,
     EGRESS_PROXY_AUDIENCE,
     PROVIDER_GATEWAY_AUDIENCE,
     AuthorityGrant,
@@ -30,39 +34,57 @@ class InvokeRequest(BaseModel):
 def create_app(settings: ProviderGatewaySettings | None = None) -> FastAPI:
     config = settings or ProviderGatewaySettings()
     runtime = ProviderGatewayRuntime(config)
+    revocations = AuthorityRevocationStore(config.revocation_database_path)
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
-        key = config.public_key_pem()
-        if config.require_authority_key and not key:
+        keys = config.public_keyring()
+        if config.require_authority_key and not keys:
             raise RuntimeError("Provider gateway requires an Ed25519 authority verification key")
-        if key:
+        if config.require_durable_revocations and not revocations.durable:
+            raise RuntimeError("Provider gateway requires durable authority revocations")
+        for key in keys.values():
             validate_authority_public_key(key)
         yield
         await runtime.close_all()
 
     application = FastAPI(title="Loop Provider Gateway", version="1", lifespan=lifespan)
     application.state.runtime = runtime
+    application.state.revocations = revocations
     application.state.settings = config
 
-    def grant(request: Request) -> AuthorityGrant:
+    async def grant(request: Request) -> AuthorityGrant:
         authorization = request.headers.get("authorization", "")
         scheme, _, token = authorization.partition(" ")
-        key = config.public_key_pem()
-        if scheme.lower() != "bearer" or not token or not key:
+        keys = config.public_keyring()
+        if scheme.lower() != "bearer" or not token or not keys:
             raise HTTPException(status_code=401, detail="A signed authority token is required")
         try:
-            return verify_authority_token(token, key, audience=PROVIDER_GATEWAY_AUDIENCE)
+            authority = verify_authority_token(token, keys, audience=PROVIDER_GATEWAY_AUDIENCE)
+        except AuthorityTokenError as exc:
+            raise HTTPException(status_code=403, detail=str(exc)) from exc
+        if await revocations.is_revoked(authority.run_id):
+            raise HTTPException(status_code=403, detail="Authority run has been revoked")
+        return authority
+
+    def control_grant(request: Request) -> AuthorityGrant:
+        authorization = request.headers.get("authorization", "")
+        scheme, _, token = authorization.partition(" ")
+        keys = config.public_keyring()
+        if scheme.lower() != "bearer" or not token or not keys:
+            raise HTTPException(status_code=401, detail="A signed control token is required")
+        try:
+            return verify_authority_token(token, keys, audience=AUTHORITY_CONTROL_AUDIENCE)
         except AuthorityTokenError as exc:
             raise HTTPException(status_code=403, detail=str(exc)) from exc
 
     def verified_egress_token(authority: AuthorityGrant, token: str | None) -> str | None:
         if not token:
             return None
-        key = config.public_key_pem()
-        if not key:
+        keys = config.public_keyring()
+        if not keys:
             raise AuthorityTokenError("Authority verification key is unavailable")
-        proxy_grant = verify_authority_token(token, key, audience=EGRESS_PROXY_AUDIENCE)
+        proxy_grant = verify_authority_token(token, keys, audience=EGRESS_PROXY_AUDIENCE)
         same_identity = (
             proxy_grant.task_id,
             proxy_grant.owner_id,
@@ -87,8 +109,29 @@ def create_app(settings: ProviderGatewaySettings | None = None) -> FastAPI:
         return {
             "status": "ok",
             "service": "provider-gateway",
-            "authority_key_configured": bool(config.public_key_pem()),
+            "authority_key_configured": bool(config.public_keyring()),
+            "authority_key_count": len(config.public_keyring()),
+            "revocations_durable": revocations.durable,
             "providers": runtime.configured_providers(),
+        }
+
+    @application.post("/v1/revocations")
+    async def revoke(authority: AuthorityGrant = Depends(control_grant)) -> dict[str, Any]:
+        await revocations.revoke(authority.run_id, authority.expires_at)
+        await runtime.close(authority.run_id)
+        return {
+            "revoked": True,
+            "audit": {
+                "id": str(uuid.uuid4()),
+                "at": datetime.now(UTC).isoformat(),
+                "kind": "authority",
+                "decision": "revoked",
+                "task_id": authority.task_id,
+                "owner_id": authority.owner_id,
+                "project_id": authority.project_id,
+                "run_id": authority.run_id,
+                "service": "provider-gateway",
+            },
         }
 
     @application.get("/v1/tools")

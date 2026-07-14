@@ -10,6 +10,7 @@ from app.domain.authority_token import (
     EGRESS_PROXY_AUDIENCE,
     PROVIDER_GATEWAY_AUDIENCE,
     AuthorityTokenError,
+    authority_key_id,
     intersect_host_policies,
     issue_authority_token,
     normalize_host,
@@ -77,6 +78,73 @@ def test_authority_token_rejects_wrong_audience_and_tampering(
     corrupted = ".".join((header, payload, corrupted_signature))
     with pytest.raises(AuthorityTokenError):
         verify_authority_token(corrupted, public, audience=PROVIDER_GATEWAY_AUDIENCE)
+
+
+def test_authority_keyring_accepts_active_and_retiring_signing_keys() -> None:
+    first_private = (
+        Ed25519PrivateKey.generate()
+        .private_bytes(Encoding.PEM, PrivateFormat.PKCS8, NoEncryption())
+        .decode()
+    )
+    second_private = (
+        Ed25519PrivateKey.generate()
+        .private_bytes(Encoding.PEM, PrivateFormat.PKCS8, NoEncryption())
+        .decode()
+    )
+    public_keys = [public_key_pem(first_private), public_key_pem(second_private)]
+    keyring = {authority_key_id(key): key for key in public_keys}
+
+    for private in (first_private, second_private):
+        token = issue_authority_token(
+            private,
+            audience=PROVIDER_GATEWAY_AUDIENCE,
+            task_id="task-1",
+            owner_id="owner-1",
+            project_id="project-1",
+            run_id="task-1:1",
+            capabilities=[Capability.EMAIL_READ],
+            egress_hosts=[],
+            ttl_seconds=120,
+        )
+        assert (
+            verify_authority_token(token, keyring, audience=PROVIDER_GATEWAY_AUDIENCE).run_id
+            == "task-1:1"
+        )
+
+
+def test_authority_keyring_rejects_unknown_or_mislabeled_keys(
+    authority_keys: tuple[str, str],
+) -> None:
+    private, public = authority_keys
+    token = issue_authority_token(
+        private,
+        audience=PROVIDER_GATEWAY_AUDIENCE,
+        task_id="task-1",
+        owner_id="owner-1",
+        project_id="project-1",
+        run_id="task-1:1",
+        capabilities=[],
+        egress_hosts=[],
+        ttl_seconds=120,
+    )
+    unrelated_private = (
+        Ed25519PrivateKey.generate()
+        .private_bytes(Encoding.PEM, PrivateFormat.PKCS8, NoEncryption())
+        .decode()
+    )
+    unrelated_public = public_key_pem(unrelated_private)
+    with pytest.raises(AuthorityTokenError, match="unknown signing key"):
+        verify_authority_token(
+            token,
+            {authority_key_id(unrelated_public): unrelated_public},
+            audience=PROVIDER_GATEWAY_AUDIENCE,
+        )
+    with pytest.raises(AuthorityTokenError, match="does not match"):
+        verify_authority_token(
+            token,
+            {"ed25519:wrong": public},
+            audience=PROVIDER_GATEWAY_AUDIENCE,
+        )
 
 
 def test_authority_token_expiry_is_enforced(authority_keys: tuple[str, str]) -> None:

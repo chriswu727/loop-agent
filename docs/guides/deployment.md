@@ -32,6 +32,15 @@ PEM only in `authority-issuer-secrets` for the worker, and the public PEM in
 `authority-verifier-secrets` for the Provider Gateway and egress proxy. Never give
 the issuer key to either enforcement service.
 
+Rotate authority keys without invalidating in-flight runs in this order:
+
+1. Add both old and new public PEMs, keyed by the `kid` printed by
+   `make authority-keygen`, to `PROVIDER_GATEWAY_AUTHORITY_PUBLIC_KEYS` and
+   `EGRESS_PROXY_AUTHORITY_PUBLIC_KEYS` as JSON maps; roll out both verifiers.
+2. Switch the worker's `AGENT_AUTHORITY_SIGNING_KEY` to the new private key.
+3. Wait at least `AGENT_AUTHORITY_TOKEN_TTL_SECONDS` (maximum 15 minutes), then
+   remove the old public key from both keyrings.
+
 Put SMTP/IMAP/CalDAV/provider-vision credentials only in
 `provider-gateway-secrets`. LLM credentials remain worker credentials. The example
 Secret file shows the required object/key split; use an external secret manager in
@@ -39,10 +48,11 @@ production rather than applying that example.
 Set `AGENT_SANDBOX_IMAGE_DIGEST=sha256:...` in the production ConfigMap after
 publishing the sandbox image; production rejects mutable tag-only execution.
 
-The egress proxy keeps a bounded SQLite WAL on its dedicated `egress-proxy-audit`
-PVC, while browser sessions live in gateway memory. Both base deployments therefore
-use one replica: audit survives a proxy pod restart, but horizontal proxy or gateway
-session HA still requires shared external stores.
+The egress proxy keeps audit and revocations on its dedicated `egress-proxy-audit`
+PVC. Provider revocations use `provider-gateway-state`, while browser sessions remain
+in gateway memory. Both base deployments therefore use one replica: security state
+survives a pod restart, but horizontal proxy or gateway session HA still requires
+shared external stores.
 
 ## 4. Apply
 

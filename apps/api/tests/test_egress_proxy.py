@@ -4,17 +4,21 @@ import asyncio
 import base64
 import socket
 
+import httpx
 import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from cryptography.hazmat.primitives.serialization import Encoding, NoEncryption, PrivateFormat
 
+from app.domain.authority_revocation import AuthorityRevocationStore
 from app.domain.authority_token import (
+    AUTHORITY_CONTROL_AUDIENCE,
     EGRESS_PROXY_AUDIENCE,
     AuthorityTokenError,
     issue_authority_token,
     public_key_pem,
 )
 from app.domain.capability import Capability
+from app.egress_proxy.admin import create_admin_app
 from app.egress_proxy.audit import AuditStore
 from app.egress_proxy.config import EgressProxySettings
 from app.egress_proxy.proxy import EgressProxy, resolve_public_destination
@@ -29,10 +33,16 @@ def _keys() -> tuple[str, str]:
     return private, public_key_pem(private)
 
 
-def _token(private: str, hosts: list[str], *, ttl_seconds: int = 120) -> str:
+def _token(
+    private: str,
+    hosts: list[str],
+    *,
+    ttl_seconds: int = 120,
+    audience: str = EGRESS_PROXY_AUDIENCE,
+) -> str:
     return issue_authority_token(
         private,
-        audience=EGRESS_PROXY_AUDIENCE,
+        audience=audience,
         task_id="task-1",
         owner_id="owner-1",
         project_id="project-1",
@@ -253,6 +263,69 @@ async def test_proxy_closes_existing_tunnel_when_authority_expires() -> None:
             events = await audit.list("task-1:1")
         assert [event["decision"] for event in events] == ["allowed", "blocked"]
         assert events[-1]["reason"] == "authority_expired"
+        writer.close()
+        await writer.wait_closed()
+    finally:
+        server.close()
+        upstream.close()
+        await server.wait_closed()
+        await upstream.wait_closed()
+
+
+async def test_signed_revocation_closes_tunnel_and_blocks_run(tmp_path) -> None:
+    private, public = _keys()
+
+    async def hold_open(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+        await reader.read()
+        writer.close()
+        await writer.wait_closed()
+
+    upstream = await asyncio.start_server(hold_open, "127.0.0.1", 0)
+    upstream_port = int(upstream.sockets[0].getsockname()[1])
+
+    async def resolver(_host: str, _port: int) -> tuple[int, str]:
+        return socket.AF_INET, "127.0.0.1"
+
+    settings = EgressProxySettings(
+        authority_public_key=public,
+        allowed_ports=str(upstream_port),
+    )
+    audit = AuditStore()
+    revocations = AuthorityRevocationStore(tmp_path / "revocations.sqlite3")
+    proxy = EgressProxy(settings, audit, resolver=resolver, revocations=revocations)
+    server = await asyncio.start_server(proxy.handle, "127.0.0.1", 0)
+    proxy_port = int(server.sockets[0].getsockname()[1])
+    token = _token(private, ["browser.example"])
+    control = _token(
+        private,
+        ["browser.example"],
+        audience=AUTHORITY_CONTROL_AUDIENCE,
+    )
+    admin = create_admin_app(settings, audit, revocations, proxy.revoke)
+    try:
+        reader, writer = await _connect(
+            proxy_port,
+            token,
+            f"browser.example:{upstream_port}",
+        )
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=admin), base_url="http://admin"
+        ) as client:
+            revoked = await client.post(
+                "/v1/revocations",
+                headers={"Authorization": f"Bearer {control}"},
+            )
+        assert revoked.status_code == 200
+        assert revoked.json()["audit"]["decision"] == "revoked"
+        assert await asyncio.wait_for(reader.read(), timeout=1) == b""
+        blocked = await _request(
+            proxy_port,
+            token,
+            f"http://browser.example:{upstream_port}/resource",
+        )
+        assert b"403 Forbidden" in blocked
+        assert b"revoked" in blocked
+        assert await revocations.is_revoked("task-1:1")
         writer.close()
         await writer.wait_closed()
     finally:

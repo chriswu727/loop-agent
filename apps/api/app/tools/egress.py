@@ -9,7 +9,7 @@ from urllib.parse import quote, urlsplit, urlunsplit
 
 import httpx
 
-from app.domain.authority_token import EGRESS_PROXY_AUDIENCE
+from app.domain.authority_token import AUTHORITY_CONTROL_AUDIENCE, EGRESS_PROXY_AUDIENCE
 
 ProxyResolver = Callable[[str, int], Awaitable[str]]
 
@@ -82,3 +82,16 @@ class EgressAuditClient:
             self._seen.add(event_id)
             events.append(event)
         return events
+
+    async def revoke(self) -> dict[str, Any]:
+        async with httpx.AsyncClient(timeout=10) as client:
+            response = await client.post(
+                f"{self.base_url}/v1/revocations",
+                headers={
+                    "Authorization": f"Bearer {self.token_factory(AUTHORITY_CONTROL_AUDIENCE)}"
+                },
+            )
+        body = response.json()
+        response.raise_for_status()
+        audit = body.get("audit")
+        return audit if isinstance(audit, dict) else {}

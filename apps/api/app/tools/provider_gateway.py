@@ -7,7 +7,11 @@ from typing import Any
 
 import httpx
 
-from app.domain.authority_token import EGRESS_PROXY_AUDIENCE, PROVIDER_GATEWAY_AUDIENCE
+from app.domain.authority_token import (
+    AUTHORITY_CONTROL_AUDIENCE,
+    EGRESS_PROXY_AUDIENCE,
+    PROVIDER_GATEWAY_AUDIENCE,
+)
 from app.domain.capability import Capability
 from app.tools.vision import _mime_for
 from app.tools.workspace import Workspace
@@ -82,6 +86,16 @@ class ProviderGatewayClient:
                 )
         finally:
             await self.client.aclose()
+
+    async def revoke(self) -> dict[str, Any]:
+        response = await self.client.post(
+            f"{self.base_url}/v1/revocations",
+            headers={"Authorization": f"Bearer {self.token_factory(AUTHORITY_CONTROL_AUDIENCE)}"},
+        )
+        body = response.json()
+        response.raise_for_status()
+        audit = body.get("audit")
+        return audit if isinstance(audit, dict) else {}
 
     def specs(self, capability_prefix: str) -> str:
         return "\n".join(

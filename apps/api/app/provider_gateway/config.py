@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+from app.domain.authority_token import authority_key_id, authority_public_keyring
 
 
 class ProviderGatewaySettings(BaseSettings):
@@ -19,6 +22,18 @@ class ProviderGatewaySettings(BaseSettings):
     )
     authority_public_key_file: str | None = Field(
         default=None, validation_alias="PROVIDER_GATEWAY_AUTHORITY_PUBLIC_KEY_FILE"
+    )
+    authority_public_keys: dict[str, str] = Field(
+        default_factory=dict, validation_alias="PROVIDER_GATEWAY_AUTHORITY_PUBLIC_KEYS"
+    )
+    authority_public_keys_file: str | None = Field(
+        default=None, validation_alias="PROVIDER_GATEWAY_AUTHORITY_PUBLIC_KEYS_FILE"
+    )
+    revocation_database_path: str | None = Field(
+        default=None, validation_alias="PROVIDER_GATEWAY_REVOCATION_DATABASE_PATH"
+    )
+    require_durable_revocations: bool = Field(
+        default=False, validation_alias="PROVIDER_GATEWAY_REQUIRE_DURABLE_REVOCATIONS"
     )
     egress_proxy_url: str | None = Field(
         default=None, validation_alias="PROVIDER_GATEWAY_EGRESS_PROXY_URL"
@@ -57,6 +72,26 @@ class ProviderGatewaySettings(BaseSettings):
             except OSError:
                 return None
         return None
+
+    def public_keyring(self) -> dict[str, str]:
+        keys = dict(self.authority_public_keys)
+        if self.authority_public_keys_file:
+            try:
+                raw = json.loads(Path(self.authority_public_keys_file).read_text())
+            except OSError as exc:
+                raise ValueError(
+                    "Provider Gateway authority keyring file could not be read"
+                ) from exc
+            if not isinstance(raw, dict) or not all(
+                isinstance(key, str) and isinstance(value, str) for key, value in raw.items()
+            ):
+                raise ValueError("Provider Gateway authority keyring file must contain a JSON map")
+            keys.update(raw)
+        if public := self.public_key_pem():
+            keys[authority_key_id(public)] = public
+        if keys:
+            authority_public_keyring(keys)
+        return keys
 
     @property
     def email_configured(self) -> bool:

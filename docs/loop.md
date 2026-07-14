@@ -186,6 +186,10 @@ internet route: an audience-bound short-lived token authenticates them to the eg
 proxy, which re-checks the capability and host/port, rejects non-public addresses,
 pins DNS resolution, and records the decision for the task and Receipt. Command
 pattern guards remain defense in depth, not the network security boundary.
+Tokens select a verifier through their Ed25519 `kid`, allowing overlap during key
+rotation. When a run becomes terminal, the worker signs a control-audience revocation;
+the gateway and proxy persist it, reject remaining run tokens, and close live browser
+and proxy connections.
 
 **The step ledger is hash-chained (tamper-evident).** Each step stores
 `hash = sha256(prev_hash + canonical(step))`, anchored at a genesis derived from

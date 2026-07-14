@@ -31,6 +31,10 @@ not prompt instructions.
   carry the task/owner/project/run identity, exact capabilities, explicit destination
   hosts, and a short expiry. Provider Gateway and proxy processes have only the
   public verifier, so a compromised enforcement service cannot mint wider grants.
+- Verification uses the token's derived Ed25519 `kid` against a configured keyring.
+  A terminal run sends a separately audience-bound control token to both enforcement
+  services; they persist the run revocation, reject its remaining tokens, close its
+  browser session, and tear down established proxy connections.
 
 ## Sandbox and network
 
@@ -66,8 +70,8 @@ not prompt instructions.
   authenticated proxy. A gateway-local loopback relay refreshes short-lived proxy
   authority without exposing it to Chromium, and the proxy closes established
   connections when that authority expires. The gateway pod also needs direct
-  protocol egress for SMTP/IMAP/CalDAV/vision APIs; standard Kubernetes NetworkPolicy cannot express
-  DNS-name policy for those connections. Deployments that need equivalent L4
+  protocol egress for SMTP/IMAP/CalDAV/vision APIs; standard Kubernetes NetworkPolicy
+  cannot express DNS-name policy for those connections. Deployments that need equivalent L4
   separation should split browser and protocol providers into separate gateways or
   use a CNI/service mesh with FQDN policy.
 - Proxy audit is a bounded SQLite WAL on a dedicated persistent volume, so a proxy
@@ -75,6 +79,10 @@ not prompt instructions.
   Receipt. The base deployment intentionally has one replica because this local
   store is not a horizontally shared log. Use an external append-only audit sink if
   the deployment needs multi-replica proxy HA or compliance-ledger retention.
+- Revocation prevents new calls and closes browser/proxy connections, but cannot roll
+  back a completed side effect or guarantee interruption of an SMTP/CalDAV operation
+  already executing in an upstream library. API cancellation is observed between
+  agent steps, then the worker publishes the signed revocation at the terminal boundary.
 
 ## Receipts and provenance
 

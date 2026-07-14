@@ -86,4 +86,7 @@ jobs:
           grep -q 'name: egress-proxy' /tmp/loop-k8s-prod.yaml
           grep -q 'claimName: egress-proxy-audit' /tmp/loop-k8s-prod.yaml
           grep -q 'name: EGRESS_PROXY_REQUIRE_DURABLE_AUDIT' /tmp/loop-k8s-prod.yaml
+          grep -q 'name: EGRESS_PROXY_REQUIRE_DURABLE_REVOCATIONS' /tmp/loop-k8s-prod.yaml
+          grep -q 'claimName: provider-gateway-state' /tmp/loop-k8s-prod.yaml
+          grep -q 'name: PROVIDER_GATEWAY_REQUIRE_DURABLE_REVOCATIONS' /tmp/loop-k8s-prod.yaml
           grep -q 'loop.openai.com/egress: proxied' /tmp/loop-k8s-prod.yaml

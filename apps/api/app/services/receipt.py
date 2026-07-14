@@ -194,6 +194,28 @@ def build_receipt(
     return receipt_hash, receipt
 
 
+def refresh_receipt_authority(workspace: Workspace, authority_audit: list[dict[str, Any]]) -> str:
+    receipt = json.loads(workspace.read(RECEIPT_JSON))
+    if not isinstance(receipt, dict) or not isinstance(receipt.get("authority"), dict):
+        raise ValueError("Receipt authority record is malformed")
+    receipt["authority"]["audit"] = authority_audit
+    signer = _signing_key()
+    if signer is not None:
+        receipt["signature_key_id"] = _signing_key_id(signer)
+    else:
+        receipt.pop("signature_key_id", None)
+    body = {key: value for key, value in receipt.items() if key not in _NON_BODY_KEYS}
+    receipt_hash = _canonical_hash(body)
+    receipt["receipt_hash"] = receipt_hash
+    if signer is not None:
+        receipt["signature"] = signer.sign(receipt_hash.encode()).hex()
+    else:
+        receipt.pop("signature", None)
+    workspace.write(RECEIPT_JSON, json.dumps(receipt, indent=2, ensure_ascii=False))
+    workspace.write(RECEIPT_MD, _render_markdown(receipt))
+    return receipt_hash
+
+
 def _canonical_hash(body: dict[str, Any]) -> str:
     canonical = json.dumps(body, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
