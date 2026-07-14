@@ -53,7 +53,7 @@ from app.repositories.task import TaskRepository
 from app.services.ledger import genesis_hash, step_hash
 from app.services.memory import MemoryStore, scoped_memory_root
 from app.services.prompts import plan_prompts, understand_prompts, verify_prompts
-from app.services.receipt import RECEIPT_SCHEMA, build_receipt
+from app.services.receipt import RECEIPT_SCHEMA, build_receipt, refresh_receipt_authority
 from app.services.skills import SkillStore
 from app.services.verification import checks_summary, execution_coverage_complete, run_checks
 from app.tools import VALID_TOOLS, CapabilityEnvelope, ToolExecutor, ToolStatus, Workspace
@@ -604,6 +604,48 @@ class AgentReactService:
         finally:
             if browser is not None:
                 await browser.stop()
+            if needs_authority_token and task.status in {
+                TaskStatus.COMPLETED.value,
+                TaskStatus.CANCELLED.value,
+                TaskStatus.FAILED.value,
+            }:
+                revocation_events: list[dict[str, Any]] = []
+                for service, client in (
+                    ("provider-gateway", provider_gateway),
+                    ("egress-proxy", egress_audit),
+                ):
+                    if client is None:
+                        continue
+                    try:
+                        event = await client.revoke()
+                        if event:
+                            revocation_events.append(event)
+                    except Exception as exc:
+                        revocation_events.append(
+                            {
+                                "kind": "authority",
+                                "decision": "revocation_unavailable",
+                                "run_id": run_id,
+                                "service": service,
+                                "error": type(exc).__name__,
+                            }
+                        )
+                if revocation_events:
+                    task.authority_audit = [
+                        *(task.authority_audit or []),
+                        *revocation_events,
+                    ][-200:]
+                    if task.receipt_hash and task.workspace_path:
+                        try:
+                            task.receipt_hash = refresh_receipt_authority(
+                                Workspace(Path(task.workspace_path)), task.authority_audit
+                            )
+                        except Exception:
+                            log.warning(
+                                "agent.receipt_authority_refresh_failed",
+                                task_id=str(task.id),
+                            )
+                    await self._commit()
             if provider_gateway is not None:
                 await provider_gateway.stop()
 

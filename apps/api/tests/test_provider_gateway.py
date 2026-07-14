@@ -13,6 +13,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from cryptography.hazmat.primitives.serialization import Encoding, NoEncryption, PrivateFormat
 
 from app.domain.authority_token import (
+    AUTHORITY_CONTROL_AUDIENCE,
     EGRESS_PROXY_AUDIENCE,
     PROVIDER_GATEWAY_AUDIENCE,
     AuthorityGrant,
@@ -124,6 +125,48 @@ async def test_gateway_rejects_unsigned_requests() -> None:
     async with httpx.AsyncClient(transport=transport, base_url="http://gateway") as client:
         response = await client.get("/v1/tools")
     assert response.status_code == 401
+
+
+async def test_gateway_revokes_run_with_signed_control_token(tmp_path) -> None:
+    private, public = _keys()
+    app = create_app(
+        ProviderGatewaySettings(
+            authority_public_key=public,
+            browser_enabled=False,
+            smtp_host="smtp.example.com",
+            smtp_user="me@example.com",
+            smtp_password="secret",
+            revocation_database_path=str(tmp_path / "revocations.sqlite3"),
+        )
+    )
+    provider_token = _token(private, [Capability.EMAIL_READ])
+    control_token = _token(
+        private,
+        [Capability.EMAIL_READ],
+        audience=AUTHORITY_CONTROL_AUDIENCE,
+    )
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://gateway") as client:
+        before = await client.get(
+            "/v1/tools", headers={"Authorization": f"Bearer {provider_token}"}
+        )
+        revoked = await client.post(
+            "/v1/revocations",
+            headers={"Authorization": f"Bearer {control_token}"},
+        )
+        after = await client.get("/v1/tools", headers={"Authorization": f"Bearer {provider_token}"})
+        wrong_audience = await client.post(
+            "/v1/revocations",
+            headers={"Authorization": f"Bearer {provider_token}"},
+        )
+
+    assert before.status_code == 200
+    assert revoked.status_code == 200
+    assert revoked.json()["audit"]["decision"] == "revoked"
+    assert after.status_code == 403
+    assert after.json()["detail"] == "Authority run has been revoked"
+    assert wrong_audience.status_code == 403
+    assert app.state.revocations.durable
 
 
 async def test_gateway_rejects_egress_grant_from_another_run() -> None:

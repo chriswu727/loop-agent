@@ -210,28 +210,29 @@ immutable image digests, and fail-closed isolation.
 
 See [`.env.example`](./.env.example). Key knobs:
 
-| Variable                                                                    | Purpose                                                                                                                                                    |
-| --------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `ANTHROPIC_API_KEY` / `DEEPSEEK_API_KEY` / `GEMINI_API_KEY` / `GLM_API_KEY` | LLM providers (at least one). A retryable failure is retried, then cascades to the next provider.                                                          |
-| `LLM_DEFAULT_PROVIDER`                                                      | which provider to try first.                                                                                                                               |
-| `OLLAMA_BASE_URL`                                                           | run on a fully-local model via Ollama (no API key).                                                                                                        |
-| `API_TOKEN`                                                                 | optional bearer-token gate on the whole API.                                                                                                               |
-| `WEB_AUTH_REQUIRED` / `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET`           | GitHub OAuth + PKCE login. The web tier mints an HTTP-only, short-lived user JWT; task, trigger, memory, idempotency, and Receipt access are owner-scoped. |
-| `LLM_VERIFIER_PROVIDER`                                                     | optional verifier provider, kept separate from the executor model.                                                                                         |
-| `TELEGRAM_BOT_TOKEN` / `TELEGRAM_ALLOWED_CHAT_IDS`                          | enable the Telegram inlet + restrict who can use it.                                                                                                       |
-| `SLACK_BOT_TOKEN` / `SLACK_SIGNING_SECRET` / `SLACK_ALLOWED_CHANNELS`       | enable the Slack `/slack/events` inlet + its channel allowlist.                                                                                            |
-| `SMTP_*` / `IMAP_HOST` / `CALDAV_*`                                         | email send/read + calendar (use a Gmail app password).                                                                                                     |
-| `EXECUTION_MODE`                                                            | `inline` (run in the API process) or `worker` (enqueue to Redis).                                                                                          |
-| `DATABASE_URL`                                                              | `postgresql+asyncpg://…` or `sqlite+aiosqlite:///./loop.db`.                                                                                               |
-| `AGENT_APPROVAL_MODE`                                                       | `auto` or `manual` (pause non-allowlisted commands).                                                                                                       |
-| `AGENT_SKILLS_ROOT` / `AGENT_SKILL_TRUST_PUBLIC_KEY`                        | signed-skills folder + the ed25519 key signatures must verify against.                                                                                     |
-| `AGENT_RECEIPT_SIGNING_KEY`                                                 | ed25519 key for signed Receipts (`make receipt-keygen`); required in production, optional hash-only mode in development.                                   |
-| `AGENT_AUTHORITY_SIGNING_KEY` / `AGENT_AUTHORITY_PUBLIC_KEY`                | worker-only Ed25519 issuer key and gateway/proxy-only verifier key (`make authority-keygen`).                                                              |
-| `AGENT_PROVIDER_GATEWAY_URL`                                                | isolated browser/email/calendar/vision service; required for those capabilities in production.                                                             |
-| `AGENT_EGRESS_PROXY_URL` / `AGENT_EGRESS_PROXY_AUDIT_URL`                   | authenticated data-plane proxy and worker-only audit endpoint; required in production.                                                                     |
-| `AGENT_MEMORY_ROOT`                                                         | cross-task memory store.                                                                                                                                   |
-| `AGENT_SANDBOX` / `AGENT_SANDBOX_BACKEND`                                   | `required` fails closed; production selects short-lived Kubernetes Jobs. `preferred` is the explicitly labeled local fallback.                             |
-| `AGENT_SANDBOX_IMAGE_DIGEST`                                                | immutable sandbox image digest; required in production and recorded in every isolated Receipt.                                                             |
+| Variable                                                                        | Purpose                                                                                                                                                    |
+| ------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ANTHROPIC_API_KEY` / `DEEPSEEK_API_KEY` / `GEMINI_API_KEY` / `GLM_API_KEY`     | LLM providers (at least one). A retryable failure is retried, then cascades to the next provider.                                                          |
+| `LLM_DEFAULT_PROVIDER`                                                          | which provider to try first.                                                                                                                               |
+| `OLLAMA_BASE_URL`                                                               | run on a fully-local model via Ollama (no API key).                                                                                                        |
+| `API_TOKEN`                                                                     | optional bearer-token gate on the whole API.                                                                                                               |
+| `WEB_AUTH_REQUIRED` / `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET`               | GitHub OAuth + PKCE login. The web tier mints an HTTP-only, short-lived user JWT; task, trigger, memory, idempotency, and Receipt access are owner-scoped. |
+| `LLM_VERIFIER_PROVIDER`                                                         | optional verifier provider, kept separate from the executor model.                                                                                         |
+| `TELEGRAM_BOT_TOKEN` / `TELEGRAM_ALLOWED_CHAT_IDS`                              | enable the Telegram inlet + restrict who can use it.                                                                                                       |
+| `SLACK_BOT_TOKEN` / `SLACK_SIGNING_SECRET` / `SLACK_ALLOWED_CHANNELS`           | enable the Slack `/slack/events` inlet + its channel allowlist.                                                                                            |
+| `SMTP_*` / `IMAP_HOST` / `CALDAV_*`                                             | email send/read + calendar (use a Gmail app password).                                                                                                     |
+| `EXECUTION_MODE`                                                                | `inline` (run in the API process) or `worker` (enqueue to Redis).                                                                                          |
+| `DATABASE_URL`                                                                  | `postgresql+asyncpg://…` or `sqlite+aiosqlite:///./loop.db`.                                                                                               |
+| `AGENT_APPROVAL_MODE`                                                           | `auto` or `manual` (pause non-allowlisted commands).                                                                                                       |
+| `AGENT_SKILLS_ROOT` / `AGENT_SKILL_TRUST_PUBLIC_KEY`                            | signed-skills folder + the ed25519 key signatures must verify against.                                                                                     |
+| `AGENT_RECEIPT_SIGNING_KEY`                                                     | ed25519 key for signed Receipts (`make receipt-keygen`); required in production, optional hash-only mode in development.                                   |
+| `AGENT_AUTHORITY_SIGNING_KEY` / `AGENT_AUTHORITY_PUBLIC_KEY`                    | worker-only Ed25519 issuer key and gateway/proxy-only verifier key (`make authority-keygen`).                                                              |
+| `PROVIDER_GATEWAY_AUTHORITY_PUBLIC_KEYS` / `EGRESS_PROXY_AUTHORITY_PUBLIC_KEYS` | optional `kid` → public-PEM JSON keyrings for zero-downtime issuer rotation.                                                                               |
+| `AGENT_PROVIDER_GATEWAY_URL`                                                    | isolated browser/email/calendar/vision service; required for those capabilities in production.                                                             |
+| `AGENT_EGRESS_PROXY_URL` / `AGENT_EGRESS_PROXY_AUDIT_URL`                       | authenticated data-plane proxy and worker-only audit endpoint; required in production.                                                                     |
+| `AGENT_MEMORY_ROOT`                                                             | cross-task memory store.                                                                                                                                   |
+| `AGENT_SANDBOX` / `AGENT_SANDBOX_BACKEND`                                       | `required` fails closed; production selects short-lived Kubernetes Jobs. `preferred` is the explicitly labeled local fallback.                             |
+| `AGENT_SANDBOX_IMAGE_DIGEST`                                                    | immutable sandbox image digest; required in production and recorded in every isolated Receipt.                                                             |
 
 Per-task safety is set at publish time through the versioned `capabilities` list;
 legacy `allowed_tools` / `allow_egress` fields remain migration inputs. A signed
@@ -294,8 +295,8 @@ scheduler, SSE live view, provider registry, a **local Ollama provider**, an **M
 client with a headless browser**, **container isolation**, **multi-agent delegation**
 (`spawn` → a tree of verified sub-agents), **email + calendar**, **conversational
 sessions** with a web chat page, **Telegram + Slack chat inlets**, and a
-**channel-agnostic `/chat` API**, an isolated **Provider Gateway**, renewable
-short-lived capability tokens, and **network-layer destination enforcement** with
+**channel-agnostic `/chat` API**, an isolated **Provider Gateway**, renewable and
+revocable short-lived capability tokens, and **network-layer destination enforcement** with
 durable, bounded audit records and DNS-pinned proxy routing.
 
 **Next:** broaden the signed skill catalog and channel ecosystem, split

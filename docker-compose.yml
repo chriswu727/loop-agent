@@ -142,10 +142,19 @@ services:
   data-init:
     image: alpine:3.22
     user: '0:0'
-    command: ['chown', '-R', '10001:10001', '/var/lib/loop', '/var/lib/loop-egress']
+    command:
+      [
+        'chown',
+        '-R',
+        '10001:10001',
+        '/var/lib/loop',
+        '/var/lib/loop-egress',
+        '/var/lib/loop-provider',
+      ]
     volumes:
       - loopdata:/var/lib/loop
       - egressaudit:/var/lib/loop-egress
+      - providerstate:/var/lib/loop-provider
     restart: 'no'
 
   provider-gateway:
@@ -157,6 +166,9 @@ services:
     environment:
       PROVIDER_GATEWAY_REQUIRE_AUTHORITY_KEY: 'true'
       PROVIDER_GATEWAY_AUTHORITY_PUBLIC_KEY: ${AGENT_AUTHORITY_PUBLIC_KEY:-}
+      PROVIDER_GATEWAY_AUTHORITY_PUBLIC_KEYS: ${AGENT_AUTHORITY_PUBLIC_KEYS:-{}}
+      PROVIDER_GATEWAY_REQUIRE_DURABLE_REVOCATIONS: 'true'
+      PROVIDER_GATEWAY_REVOCATION_DATABASE_PATH: /var/lib/loop-provider/authority.sqlite3
       PROVIDER_GATEWAY_EGRESS_PROXY_URL: http://egress-proxy:8080
       PROVIDER_GATEWAY_GEMINI_API_KEY: ${PROVIDER_GATEWAY_GEMINI_API_KEY:-}
       SMTP_HOST: ${SMTP_HOST:-}
@@ -172,6 +184,10 @@ services:
       CALDAV_CALENDAR: ${CALDAV_CALENDAR:-}
     volumes:
       - ./apps/api:/app:ro
+      - providerstate:/var/lib/loop-provider
+    depends_on:
+      data-init:
+        condition: service_completed_successfully
     healthcheck:
       test:
         [
@@ -195,8 +211,11 @@ services:
     environment:
       EGRESS_PROXY_REQUIRE_AUTHORITY_KEY: 'true'
       EGRESS_PROXY_AUTHORITY_PUBLIC_KEY: ${AGENT_AUTHORITY_PUBLIC_KEY:-}
+      EGRESS_PROXY_AUTHORITY_PUBLIC_KEYS: ${AGENT_AUTHORITY_PUBLIC_KEYS:-{}}
       EGRESS_PROXY_REQUIRE_DURABLE_AUDIT: 'true'
       EGRESS_PROXY_AUDIT_DATABASE_PATH: /var/lib/loop-egress/audit.sqlite3
+      EGRESS_PROXY_REQUIRE_DURABLE_REVOCATIONS: 'true'
+      EGRESS_PROXY_REVOCATION_DATABASE_PATH: /var/lib/loop-egress/audit.sqlite3
     volumes:
       - egressaudit:/var/lib/loop-egress
     depends_on:
@@ -282,6 +301,7 @@ volumes:
   redisdata:
   loopdata:
   egressaudit:
+  providerstate:
 
 networks:
   sandbox-egress:

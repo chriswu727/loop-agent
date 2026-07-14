@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+from app.domain.authority_token import authority_key_id, authority_public_keyring
 
 
 class EgressProxySettings(BaseSettings):
@@ -26,11 +29,23 @@ class EgressProxySettings(BaseSettings):
     authority_public_key_file: str | None = Field(
         default=None, validation_alias="EGRESS_PROXY_AUTHORITY_PUBLIC_KEY_FILE"
     )
+    authority_public_keys: dict[str, str] = Field(
+        default_factory=dict, validation_alias="EGRESS_PROXY_AUTHORITY_PUBLIC_KEYS"
+    )
+    authority_public_keys_file: str | None = Field(
+        default=None, validation_alias="EGRESS_PROXY_AUTHORITY_PUBLIC_KEYS_FILE"
+    )
     audit_database_path: str | None = Field(
         default=None, validation_alias="EGRESS_PROXY_AUDIT_DATABASE_PATH"
     )
     require_durable_audit: bool = Field(
         default=False, validation_alias="EGRESS_PROXY_REQUIRE_DURABLE_AUDIT"
+    )
+    revocation_database_path: str | None = Field(
+        default=None, validation_alias="EGRESS_PROXY_REVOCATION_DATABASE_PATH"
+    )
+    require_durable_revocations: bool = Field(
+        default=False, validation_alias="EGRESS_PROXY_REQUIRE_DURABLE_REVOCATIONS"
     )
     audit_max_events_per_run: int = Field(
         default=200,
@@ -54,6 +69,24 @@ class EgressProxySettings(BaseSettings):
             except OSError:
                 return None
         return None
+
+    def public_keyring(self) -> dict[str, str]:
+        keys = dict(self.authority_public_keys)
+        if self.authority_public_keys_file:
+            try:
+                raw = json.loads(Path(self.authority_public_keys_file).read_text())
+            except OSError as exc:
+                raise ValueError("Egress proxy authority keyring file could not be read") from exc
+            if not isinstance(raw, dict) or not all(
+                isinstance(key, str) and isinstance(value, str) for key, value in raw.items()
+            ):
+                raise ValueError("Egress proxy authority keyring file must contain a JSON map")
+            keys.update(raw)
+        if public := self.public_key_pem():
+            keys[authority_key_id(public)] = public
+        if keys:
+            authority_public_keyring(keys)
+        return keys
 
     def allowed_port_set(self) -> set[int]:
         ports: set[int] = set()

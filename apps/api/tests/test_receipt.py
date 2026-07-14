@@ -118,6 +118,31 @@ def test_signed_receipt_verifies_and_forgery_is_signature_invalid(
     assert verify_receipt_full(forged, workspace=ws)["signature"] == "invalid"
 
 
+def test_refresh_authority_audit_reanchors_and_resigns_receipt(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from cryptography.hazmat.primitives import serialization as s
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
+    from app.services.receipt import refresh_receipt_authority, verify_receipt_full
+
+    private = Ed25519PrivateKey.generate()
+    pem = private.private_bytes(s.Encoding.PEM, s.PrivateFormat.PKCS8, s.NoEncryption()).decode()
+    monkeypatch.setattr(settings, "agent_receipt_signing_key", pem)
+    workspace, original_hash, _ = _build(tmp_path)
+    events = [{"kind": "authority", "decision": "revoked", "run_id": "t1:1"}]
+
+    refreshed_hash = refresh_receipt_authority(workspace, events)
+    refreshed = json.loads(workspace.read("receipt.json"))
+
+    assert refreshed_hash != original_hash
+    assert refreshed["authority"]["audit"] == events
+    assert (
+        verify_receipt_full(refreshed, workspace=workspace, db_anchor=refreshed_hash)["valid"]
+        is True
+    )
+
+
 async def test_receipt_roundtrip_produces_and_verifies(
     session: AsyncSession, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

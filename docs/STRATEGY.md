@@ -6,7 +6,7 @@
 > document uploads, owner/project memory, browser/email/calendar adapters, triggers,
 > SSE, Telegram/Slack, GitHub OAuth, durable Redis Streams workers, and required
 > Kubernetes Job shell isolation. It now also ships an isolated, credential-bearing
-> Provider Gateway; short-lived audience-bound authority grants; and a network-layer
+> Provider Gateway; rotatable, revocable audience-bound authority grants; and a network-layer
 > egress proxy that requires explicit hosts, rejects private resolution, pins DNS,
 > and records durable per-run audit events. Remaining work that cannot honestly be
 > marked done: a meaningful skill marketplace, broader channels, horizontally shared

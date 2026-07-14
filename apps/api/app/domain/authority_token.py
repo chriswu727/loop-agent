@@ -6,7 +6,7 @@ import hashlib
 import ipaddress
 import re
 import uuid
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -26,6 +26,7 @@ from app.domain.capability import Capability, parse_capabilities, sorted_capabil
 AUTHORITY_TOKEN_SCHEMA = "loop.authority-token/v1"
 PROVIDER_GATEWAY_AUDIENCE = "loop-provider-gateway"
 EGRESS_PROXY_AUDIENCE = "loop-egress-proxy"
+AUTHORITY_CONTROL_AUDIENCE = "loop-authority-control"
 _HOST_LABEL = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$")
 
 
@@ -101,6 +102,30 @@ def public_key_pem(private_key_pem: str) -> str:
     return key.public_key().public_bytes(Encoding.PEM, PublicFormat.SubjectPublicKeyInfo).decode()
 
 
+def authority_key_id(public_key_pem_value: str) -> str:
+    key = _load_public_key(public_key_pem_value)
+    public = key.public_bytes(Encoding.Raw, PublicFormat.Raw)
+    return f"ed25519:{hashlib.sha256(public).hexdigest()[:24]}"
+
+
+def authority_public_keyring(
+    keys: str | Mapping[str, str],
+) -> dict[str, Ed25519PublicKey]:
+    values = {authority_key_id(keys): keys} if isinstance(keys, str) else dict(keys)
+    if not values:
+        raise AuthorityTokenError("Authority verification keyring is empty")
+    parsed: dict[str, Ed25519PublicKey] = {}
+    for configured_id, pem in values.items():
+        key = _load_public_key(pem)
+        actual_id = authority_key_id(pem)
+        if configured_id != actual_id:
+            raise AuthorityTokenError(
+                f"Authority key id {configured_id!r} does not match its public key"
+            )
+        parsed[actual_id] = key
+    return parsed
+
+
 def validate_authority_public_key(public_key_pem_value: str) -> None:
     _load_public_key(public_key_pem_value)
 
@@ -144,12 +169,12 @@ def issue_authority_token(
 
 def verify_authority_token(
     token: str,
-    public_key_pem_value: str,
+    public_keys: str | Mapping[str, str],
     *,
     audience: str,
     now: datetime | None = None,
 ) -> AuthorityGrant:
-    key = _load_public_key(public_key_pem_value)
+    keyring = authority_public_keyring(public_keys)
     options: Options = {
         "require": [
             "schema",
@@ -171,9 +196,13 @@ def verify_authority_token(
         options["verify_exp"] = False
         options["verify_nbf"] = False
     try:
+        header = jwt.get_unverified_header(token)
+        key_id = header.get("kid")
+        if not isinstance(key_id, str) or key_id not in keyring:
+            raise AuthorityTokenError("Authority token references an unknown signing key")
         claims = jwt.decode(
             token,
-            key,
+            keyring[key_id],
             algorithms=["EdDSA"],
             audience=audience,
             issuer="loop-agent",

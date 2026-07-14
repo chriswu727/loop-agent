@@ -10,6 +10,7 @@ from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 from urllib.parse import unquote, urlsplit
 
+from app.domain.authority_revocation import AuthorityRevocationStore
 from app.domain.authority_token import (
     EGRESS_PROXY_AUDIENCE,
     AuthorityGrant,
@@ -41,10 +42,13 @@ class EgressProxy:
         audit: AuditStore,
         *,
         resolver: Resolver = resolve_public_destination,
+        revocations: AuthorityRevocationStore | None = None,
     ) -> None:
         self.settings = settings
         self.audit = audit
         self.resolver = resolver
+        self.revocations = revocations or AuthorityRevocationStore()
+        self._active_writers: dict[str, set[asyncio.StreamWriter]] = {}
 
     async def handle(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         grant: AuthorityGrant | None = None
@@ -53,10 +57,13 @@ class EgressProxy:
             raw = await asyncio.wait_for(reader.readuntil(b"\r\n\r\n"), timeout=10)
             request_line, headers = _parse_request(raw)
             token = _proxy_token(headers)
-            key = self.settings.public_key_pem()
-            if not token or not key:
+            keys = self.settings.public_keyring()
+            if not token or not keys:
                 raise AuthorityTokenError("A signed proxy authority token is required")
-            grant = verify_authority_token(token, key, audience=EGRESS_PROXY_AUDIENCE)
+            grant = verify_authority_token(token, keys, audience=EGRESS_PROXY_AUDIENCE)
+            self._active_writers.setdefault(grant.run_id, set()).add(writer)
+            if await self.revocations.is_revoked(grant.run_id):
+                raise AuthorityTokenError("Authority run has been revoked")
             if not grant.permits(Capability.NET_SHELL) and not grant.permits(
                 Capability.NET_BROWSER
             ):
@@ -79,6 +86,9 @@ class EgressProxy:
                 timeout=self.settings.connect_timeout_seconds,
             )
             assert upstream_writer is not None
+            self._active_writers.setdefault(grant.run_id, set()).add(upstream_writer)
+            if await self.revocations.is_revoked(grant.run_id):
+                raise AuthorityTokenError("Authority run has been revoked")
             await self._record(grant, host, port, method, "allowed", None, address=address)
             if method.upper() == "CONNECT":
                 writer.write(f"{version} 200 Connection Established\r\n\r\n".encode())
@@ -102,11 +112,27 @@ class EgressProxy:
                 await self._record(grant, None, None, None, "blocked", type(exc).__name__)
             await _respond_error(writer, 502, "Upstream connection failed")
         finally:
+            if grant is not None:
+                active = self._active_writers.get(grant.run_id)
+                if active is not None:
+                    active.discard(writer)
+                    if upstream_writer is not None:
+                        active.discard(upstream_writer)
+                    if not active:
+                        self._active_writers.pop(grant.run_id, None)
             if upstream_writer is not None:
                 upstream_writer.close()
                 with contextlib.suppress(Exception):
                     await upstream_writer.wait_closed()
             writer.close()
+            with contextlib.suppress(Exception):
+                await writer.wait_closed()
+
+    async def revoke(self, run_id: str) -> None:
+        writers = list(self._active_writers.get(run_id, ()))
+        for writer in writers:
+            writer.close()
+        for writer in writers:
             with contextlib.suppress(Exception):
                 await writer.wait_closed()
 

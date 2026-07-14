@@ -65,7 +65,7 @@ receipt-keygen: ## Generate a Receipt signing key -> receipt_signing_key.pem (se
 
 .PHONY: authority-keygen
 authority-keygen: ## Generate Worker authority issuer + gateway/proxy verifier keys
-	cd apps/api && . .venv/bin/activate && python -c "from pathlib import Path; from app.services.skills import generate_keypair; priv,pub=generate_keypair(); p=Path('authority_signing_key.pem'); p.write_text(priv); p.chmod(0o600); Path('authority_public_key.pem').write_text(pub); print('wrote apps/api/authority_signing_key.pem (0600) and apps/api/authority_public_key.pem')"
+	cd apps/api && . .venv/bin/activate && python -c "from pathlib import Path; from app.domain.authority_token import authority_key_id; from app.services.skills import generate_keypair; priv,pub=generate_keypair(); p=Path('authority_signing_key.pem'); p.write_text(priv); p.chmod(0o600); Path('authority_public_key.pem').write_text(pub); print('wrote apps/api/authority_signing_key.pem (0600) and apps/api/authority_public_key.pem'); print('authority key id:', authority_key_id(pub))"
 
 .PHONY: skill-keygen
 skill-keygen: ## Generate a skill signing keypair: make skill-keygen out=.
