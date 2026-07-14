@@ -5,8 +5,10 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from app.core.config import settings
+from app.domain.authority_token import AuthorityTokenError, normalize_hosts
 from app.domain.capability import Capability
 from app.schemas.task import LimitsIn
 
@@ -19,10 +21,31 @@ class TriggerCreate(BaseModel):
     allowed_tools: list[str] | None = None
     capabilities: list[Capability] | None = None
     allow_egress: bool = False
+    egress_hosts: list[str] | None = None
     require_approval: bool = False
     skill: str | None = None
     # Fire automatically every N minutes; omit for manual/webhook-only.
     interval_minutes: int | None = Field(default=None, ge=1)
+
+    @model_validator(mode="after")
+    def validate_network_authority(self) -> TriggerCreate:
+        requested = set(self.capabilities or [])
+        if (
+            settings.agent_require_egress_hosts
+            and (
+                self.allow_egress
+                or Capability.NET_SHELL in requested
+                or Capability.NET_BROWSER in requested
+            )
+            and not self.egress_hosts
+        ):
+            raise ValueError("Shell/browser network authority requires egress_hosts")
+        if self.egress_hosts:
+            try:
+                self.egress_hosts = sorted(normalize_hosts(self.egress_hosts))
+            except AuthorityTokenError as exc:
+                raise ValueError(str(exc)) from exc
+        return self
 
 
 class TriggerRead(BaseModel):
@@ -41,6 +64,7 @@ class TriggerRead(BaseModel):
     allowed_tools: list[str] | None
     capabilities: list[str] | None
     allow_egress: bool
+    egress_hosts: list[str] | None
     require_approval: bool
     skill: str | None
     interval_minutes: int | None

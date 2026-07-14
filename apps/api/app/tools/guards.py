@@ -65,9 +65,15 @@ def make_egress_guard(
                 )
             return None
 
-        # Egress is granted; if it's restricted to an allowlist, block any named
-        # destination host that isn't on it (best-effort — container mode is
-        # all-or-nothing; a host we can't see statically still passes).
+        if reason is not None and not envelope.egress_hosts:
+            return ToolResult(
+                "Network authority has no destination allowlist. Re-publish the task "
+                "with explicit egress_hosts; unrestricted egress is not supported.",
+                ToolStatus.BLOCKED,
+            )
+
+        # Static inspection is defense in depth. The sandbox is also routed through
+        # the authenticated proxy, which resolves and pins the actual destination.
         if envelope.egress_hosts and reason is not None:
             targets = destination_hosts("\n".join(texts))
             disallowed = sorted(h for h in targets if not envelope.egress_host_allowed(h))

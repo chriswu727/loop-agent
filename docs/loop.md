@@ -41,7 +41,7 @@ password; Google Calendar needs OAuth (future). Dispatches through the same
 With `use_email` (and SMTP/IMAP creds configured), the agent gets two tools:
 `read_inbox` (IMAP, read-only — its output is framed as `[DATA]` like any
 observation) and `send_email` (SMTP). Because sending is irreversible and
-external, the loop *always* routes `send_email` through the human approval gate —
+external, the loop _always_ routes `send_email` through the human approval gate —
 it pauses with an "about to send to X" summary and only sends after a recorded
 yes (reusing the same restart-safe pending_action path as command approval).
 Email tools dispatch through the same `ToolExecutor` as any built-in tool, so the
@@ -53,16 +53,16 @@ the executor consults, so adding the next one is one more entry.
 ## Multi-agent delegation (spawn)
 
 A task can call `spawn` to delegate a self-contained sub-goal to a fresh
-sub-agent. The child runs the *same* engine recursively — its own bounded loop,
+sub-agent. The child runs the _same_ engine recursively — its own bounded loop,
 its own workspace, its own sandbox/container, its own verifier and Receipt — and
 its result (status, score, summary) plus its output files come back as the
 parent's observation; the child's output workspace is copied into
 `parent_ws/subtasks/<id>/` so the parent can compose deliverables. Guards: the
-child's token budget is capped by the parent's *remaining* budget and its tokens
+child's token budget is capped by the parent's _remaining_ budget and its tokens
 are folded back into the parent's `tokens_used`, so the global ceiling still
 holds; delegation is depth-limited (`AGENT_MAX_SPAWN_DEPTH`, default 2) and
 `spawn` is only offered in the planner prompt while depth remains. Each sub-agent
-is independently verified, so a decomposed task is a *tree* of Receipts, not one
+is independently verified, so a decomposed task is a _tree_ of Receipts, not one
 unverifiable blob. Verified live: a parent delegated "write add.py" and "write
 mul.py" to two sub-agents (depth 1), both finished with their own score-100
 Receipts, and their files landed under the parent's `subtasks/`.
@@ -105,8 +105,8 @@ Loop is an **autonomous ReAct agent with a hard budget and a verifier**. You
 give it a goal; it plans one action at a time, uses tools (write files, run
 commands) inside a sandbox, observes results, and repeats until a verifier
 agrees the goal is met — or a limit stops it. The product values are: it
-genuinely *does* things, it *finishes* (not stops early, not loops forever), and
-it stays *within the limit*.
+genuinely _does_ things, it _finishes_ (not stops early, not loops forever), and
+it stays _within the limit_.
 
 The loop (`services/agent_react.py`):
 
@@ -139,15 +139,15 @@ printing 13 numbers instead of 12 and sent it back — that gap is the whole poi
 
 **The verifier re-executes; it doesn't trust prose (the Receipt).** `finish` can
 carry machine-checkable `checks` (a command + expected exit/stdout, file-exists,
-file-contains). The verifier re-runs every check on a *fresh copy* of the
+file-contains). The verifier re-runs every check on a _fresh copy_ of the
 workspace (`services/verification.py`) through the same command policy, and a run
 with checks is accepted only if its checks actually pass — a failed check
-overrides an LLM `met=true`. Every *terminal* task writes a content-addressed
+overrides an LLM `met=true`. Every _terminal_ task writes a content-addressed
 **Receipt** (`receipt.json` + `RECEIPT.md`, `services/receipt.py`): goal, rubric,
 per-check verdict, score, `verified_by` (execution|judgment), run accounting, and
 a sha256 of every output file. Goals with no runnable check fall back to
 judgment, labelled `verified_by=judgment` so it's never mistaken for proof. A task
-that *didn't* reach an accepted result (a step/budget limit, a stuck loop, or a
+that _didn't_ reach an accepted result (a step/budget limit, a stuck loop, or a
 crash) still gets a Receipt — marked `verified_by=unverified` — so a failure is
 auditable too, not a blank. This
 is differentiator #1 — Loop's "done" is a replayable fact, and it closed Loop's
@@ -179,16 +179,13 @@ a way to approve `rm -rf /`). This is "autonomy requires a human gate for
 privilege escalation" — and unlike OpenClaw's unattended triggers, the gate is
 restart-safe because the pause survives a process restart.
 
-**Network egress is default-deny (differentiator #3).** A task cannot reach the
-network through the shell unless it declares `allow_egress`. A before-tool guard
-(`tools/guards.py`) blocks commands that match network patterns
-(`curl`/`wget`/`pip install`/`git clone`/`ssh`/…, see `policy.network_command_reason`)
-when the envelope doesn't grant egress, and the planner is told network is off so
-it works offline. The UI's "Allow network" toggle opts a task in. Honest caveat:
-this is pattern-based v1 — a determined command could still open a socket;
-real enforcement (network-namespace deny) arrives with container execution. It
-stops the obvious exfiltration path that burned OpenClaw, where outbound channels
-plus curl meant an injected "send X out" had a route off the box.
+**Network egress is destination-bound (differentiator #3).** A task cannot reach
+the network through shell or browser unless it declares the corresponding capability
+and at least one explicit `egress_hosts` destination. Sandboxes have no direct
+internet route: an audience-bound short-lived token authenticates them to the egress
+proxy, which re-checks the capability and host/port, rejects non-public addresses,
+pins DNS resolution, and records the decision for the task and Receipt. Command
+pattern guards remain defense in depth, not the network security boundary.
 
 **The step ledger is hash-chained (tamper-evident).** Each step stores
 `hash = sha256(prev_hash + canonical(step))`, anchored at a genesis derived from
@@ -212,17 +209,18 @@ toward the stuck limit, so a model that ignores everything still terminates.
 (web fetch, edit-in-place) is a new entry in `tools/registry.py` and one line in
 the prompt's `TOOL_SPECS`. The loop never changes.
 
-**The safety model is two-layered and honest about its limits:**
-- *Files* are jailed: `tools/workspace.py` resolves every path inside the task's
+**The safety model is layered and honest about its limits:**
+
+- _Files_ are jailed: `tools/workspace.py` resolves every path inside the task's
   directory and refuses `..`, absolute paths, and symlink escapes. The file
   tools genuinely cannot touch the rest of the disk.
-- *Shell* is fenced, not jailed: `tools/policy.py` hard-blocks destructive and
-  exfiltration patterns and runs everything from the workspace with a timeout
-  and output cap, but a determined command can still read outside the workspace.
-  Real isolation needs a container/VM and is a later milestone. This is stated
-  plainly so nobody mistakes guardrails for a sandbox jail. Default
-  `approval_mode=auto` runs allowlisted + unknown commands and blocks dangerous
-  ones; `manual` additionally holds unknown commands for a human.
+- _Shell_ runs in a fresh hardened Docker container locally or Kubernetes Job in
+  production: non-root, read-only root, capabilities dropped, no service-account
+  token, resource/time limits, and only the task workspace mounted. Production is
+  fail-closed; explicitly selected inline development remains reduced isolation.
+- _Provider tools_ run in an isolated gateway that owns email/calendar/browser/vision
+  credentials. The worker carries none of them and grants each call through a
+  short-lived signed token verified independently by the gateway.
 
 **Limits clamped in the service.** `TaskService._resolve_limits` applies defaults
 then clamps to caps. The "within the limit" guarantee lives in one place,
@@ -238,7 +236,7 @@ infra, SQLite-friendly); `worker` enqueues to Redis for a separate process.
 
 **Human-in-the-loop is a resumable loop, not a held-open coroutine.** When the
 agent calls `ask_user`, the run records the question, sets `awaiting_input`, and
-*returns* — it does not block a worker waiting. `POST /respond` writes the answer
+_returns_ — it does not block a worker waiting. `POST /respond` writes the answer
 onto the ask_user step, flips the task back to `pending`, and re-triggers the
 run. `run()` is resume-aware: it rebuilds working memory from the persisted
 steps, skips `understand` if the rubric already exists, and continues from
@@ -251,7 +249,7 @@ background/worker agent opens its own session and would otherwise not see the ro
 or the new status. Keep those commits.
 
 **Always refresh after a server-side onupdate.** `updated_at` is a server
-`onupdate`, so after a commit it is *expired*; serializing it then triggers a
+`onupdate`, so after a commit it is _expired_; serializing it then triggers a
 lazy load in a sync context and 500s (`MissingGreenlet`). Every mutation that
 returns a task (`publish` via create-refresh, `cancel`, `respond`) refreshes
 before returning. If you add another, do the same.
@@ -347,10 +345,13 @@ agent create the file, run it, self-correct, and finish).
 
 - **Cancellation is checked between steps**, so a cancel during a long command
   or LLM call takes effect at the next step boundary.
-- **Shell isolation is pattern-based, not a true jail** — the honest gap above.
-  Container/VM execution is the next safety milestone.
+- **Local inline execution is reduced isolation.** Production and the full Compose
+  worker profile fail closed on container/Job isolation.
 - **One task per worker process.** Concurrency scales by adding worker replicas.
-- **No auth/multi-user.** The starter's auth seam is untouched; scope tasks by
-  subject when this becomes multi-tenant.
-- **Roadmap:** Telegram/WhatsApp transports (one agent core, many chat inlets),
-  Electron packaging, web-research tool, cross-task memory.
+- **Provider protocol egress is not uniformly FQDN-enforced at L4.** Shell and browser
+  traffic use the proxy; SMTP/IMAP/CalDAV/vision calls originate in the isolated
+  gateway, whose Kubernetes network identity currently also has direct egress.
+- **Proxy audit is bounded and in-memory.** Events are persisted into tasks after
+  calls, but a proxy restart in that interval can lose them.
+- **Roadmap:** broader transports, signed-skill ecosystem, durable audit, hardened
+  provider network identities, and measured production/adversarial evidence.

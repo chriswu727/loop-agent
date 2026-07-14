@@ -21,6 +21,7 @@ class SkillRead(BaseModel):
     allowed_tools: list[str] | None
     capabilities: list[str] | None
     allow_egress: bool
+    egress_hosts: list[str] | None
 
 
 @router.get("", response_model=list[SkillRead], summary="List installed skills")
@@ -35,6 +36,7 @@ async def list_skills() -> list[SkillRead]:
             allowed_tools=s.manifest.allowed_tools,
             capabilities=s.manifest.capabilities,
             allow_egress=s.manifest.allow_egress,
+            egress_hosts=s.manifest.egress_hosts,
         )
         for s in store.list_skills()
     ]

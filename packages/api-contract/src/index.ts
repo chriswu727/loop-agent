@@ -5,20 +5,10 @@
  */
 
 export type TaskStatus =
-  | 'pending'
-  | 'running'
-  | 'awaiting_input'
-  | 'completed'
-  | 'cancelled'
-  | 'failed';
+  'pending' | 'running' | 'awaiting_input' | 'completed' | 'cancelled' | 'failed';
 
 export type StopReason =
-  | 'goal_achieved'
-  | 'max_steps'
-  | 'budget_exhausted'
-  | 'stuck'
-  | 'cancelled'
-  | 'error';
+  'goal_achieved' | 'max_steps' | 'budget_exhausted' | 'stuck' | 'cancelled' | 'error';
 
 export type StepStatus = 'ok' | 'error' | 'blocked';
 
@@ -43,6 +33,21 @@ export interface Authority {
   resolved: Capability[];
   egress_hosts: string[];
   sandbox: string | null;
+  enforcement: {
+    provider_gateway: boolean;
+    egress_proxy: boolean;
+  };
+  audit: Array<{
+    id?: string;
+    at?: string;
+    kind: 'provider' | 'egress' | 'audit';
+    decision: 'allowed' | 'blocked' | 'unavailable';
+    tool?: string | null;
+    target?: string | null;
+    host?: string | null;
+    port?: number | null;
+    reason?: string | null;
+  }>;
 }
 
 export interface Limits {
@@ -117,6 +122,7 @@ export interface SkillInfo {
   allowed_tools: string[] | null;
   capabilities: Capability[] | null;
   allow_egress: boolean;
+  egress_hosts: string[] | null;
 }
 
 export interface Trigger {
@@ -133,6 +139,7 @@ export interface Trigger {
   allowed_tools: string[] | null;
   capabilities: Capability[] | null;
   allow_egress: boolean;
+  egress_hosts: string[] | null;
   require_approval: boolean;
   skill: string | null;
   interval_minutes: number | null;

@@ -24,6 +24,7 @@ import json
 import re
 import shutil
 import uuid
+from collections.abc import Callable
 from datetime import date
 from pathlib import Path
 from typing import Any
@@ -33,6 +34,13 @@ from app.core.llm import LLMClient, LLMError
 from app.core.logging import get_logger
 from app.core.redaction import redact_secrets
 from app.db.models.task import TaskModel
+from app.domain.authority_token import (
+    EGRESS_PROXY_AUDIENCE,
+    AuthorityTokenError,
+    intersect_host_policies,
+    issue_authority_token,
+    normalize_hosts,
+)
 from app.domain.capability import (
     Capability,
     legacy_capabilities,
@@ -50,10 +58,12 @@ from app.services.skills import SkillStore
 from app.services.verification import checks_summary, execution_coverage_complete, run_checks
 from app.tools import VALID_TOOLS, CapabilityEnvelope, ToolExecutor, ToolStatus, Workspace
 from app.tools.calendar import CalendarTools
+from app.tools.egress import EgressAuditClient
 from app.tools.email import EmailTools
 from app.tools.guards import make_egress_guard
 from app.tools.mcp import McpBrowser
 from app.tools.policy import Verdict, evaluate_command
+from app.tools.provider_gateway import ProviderGatewayClient
 from app.tools.registry import CALENDAR_SPEC, EMAIL_SPEC, VISION_SPEC
 from app.tools.sandbox import docker_available, image_present
 from app.tools.vision import VisionTools
@@ -174,6 +184,7 @@ class AgentReactService:
         self._sandbox_image: str | None = None  # container image for run_command, or None
         self._sandbox_backend: str | None = None
         self._egress_allowed = False  # resolved egress; verification checks mirror it
+        self._authority_token_factory: Callable[[str], str] | None = None
 
     async def run(self, task_id: uuid.UUID) -> None:
         """Run, or resume, a task. A task is resumable when it was paused on an
@@ -188,6 +199,11 @@ class AgentReactService:
                 log.info("agent.skip_non_pending", task_id=str(task_id), status=existing.status)
             return
 
+        self._authority_token_factory = None
+        self._sandbox_image = None
+        self._sandbox_backend = None
+        self._egress_allowed = False
+
         workspace = Workspace(
             Path(task.workspace_path or settings.agent_workspaces_root)
             / ("" if task.workspace_path else str(task.id))
@@ -199,6 +215,7 @@ class AgentReactService:
         # Load the signed skill (if any) BEFORE anything runs. A skill that can't
         # be verified is refused outright — provenance is not optional.
         skill_capabilities: frozenset[Capability] | None = None
+        skill_egress_hosts: list[str] | None = None
         self._skill_instructions = ""
         self._mcp_tools = set()
         self._browser_specs = ""
@@ -222,6 +239,7 @@ class AgentReactService:
                 log.warning("agent.skill_refused", task_id=str(task.id), skill=task.skill)
                 return
             self._skill_instructions = skill.manifest.instructions
+            skill_egress_hosts = skill.manifest.egress_hosts
             skill_capabilities = (
                 parse_capabilities(skill.manifest.capabilities)
                 if skill.manifest.capabilities is not None
@@ -251,11 +269,25 @@ class AgentReactService:
             if skill_capabilities is None
             else requested_capabilities & skill_capabilities
         )
+        try:
+            requested_egress_hosts = normalize_hosts(task.egress_hosts or [])
+            resolved_egress_hosts = (
+                requested_egress_hosts
+                if skill_egress_hosts is None
+                else intersect_host_policies(requested_egress_hosts, skill_egress_hosts)
+            )
+        except AuthorityTokenError as exc:
+            task.status = TaskStatus.FAILED.value
+            task.stop_reason = StopReason.ERROR.value
+            task.error = f"Invalid destination authority: {exc}"
+            task.workspace_path = str(workspace.root)
+            self._ensure_unverified_receipt(task)
+            await self._commit()
+            return
+        task.egress_hosts = sorted(resolved_egress_hosts)
         envelope = CapabilityEnvelope.from_capabilities(
             resolved_capabilities,
-            egress_hosts=(
-                task.egress_hosts if Capability.NET_SHELL in resolved_capabilities else None
-            ),
+            egress_hosts=task.egress_hosts,
         )
         task.resolved_capabilities = sorted_capabilities(resolved_capabilities)
         provider_capabilities = {
@@ -266,8 +298,22 @@ class AgentReactService:
             Capability.CALENDAR_WRITE,
             Capability.VISION,
         }
+        destination_capabilities = {Capability.NET_SHELL, Capability.NET_BROWSER}
+        if (
+            settings.agent_require_egress_hosts
+            and resolved_capabilities & destination_capabilities
+            and not envelope.egress_hosts
+        ):
+            task.status = TaskStatus.FAILED.value
+            task.stop_reason = StopReason.ERROR.value
+            task.error = "Shell/browser network authority requires explicit egress_hosts."
+            task.workspace_path = str(workspace.root)
+            self._ensure_unverified_receipt(task)
+            await self._commit()
+            return
         if (
             resolved_capabilities & provider_capabilities
+            and not settings.agent_provider_gateway_url
             and not settings.agent_allow_host_providers
         ):
             task.status = TaskStatus.FAILED.value
@@ -295,6 +341,86 @@ class AgentReactService:
         self._sandbox_image = sandbox_image
         self._sandbox_backend = sandbox_backend
         task.sandbox = sandbox_label
+        if Capability.NET_SHELL in resolved_capabilities and (
+            sandbox_label == "inline"
+            or not settings.agent_egress_proxy_url
+            or not settings.agent_egress_proxy_audit_url
+        ):
+            task.status = TaskStatus.FAILED.value
+            task.stop_reason = StopReason.ERROR.value
+            task.error = (
+                "Shell network authority requires an isolated sandbox and "
+                "destination-enforcing egress proxy."
+            )
+            task.workspace_path = str(workspace.root)
+            self._ensure_unverified_receipt(task)
+            await self._commit()
+            return
+
+        uses_gateway = bool(
+            resolved_capabilities & provider_capabilities and settings.agent_provider_gateway_url
+        )
+        needs_authority_token = uses_gateway or Capability.NET_SHELL in resolved_capabilities
+        authority_key = settings.authority_signing_key_pem()
+        if needs_authority_token and not authority_key:
+            task.status = TaskStatus.FAILED.value
+            task.stop_reason = StopReason.ERROR.value
+            task.error = "Isolated network/provider execution requires an authority signing key."
+            task.workspace_path = str(workspace.root)
+            self._ensure_unverified_receipt(task)
+            await self._commit()
+            return
+
+        run_id = f"{task.id}:{task.attempt}"
+
+        def token_factory(audience: str) -> str:
+            if not authority_key:
+                raise RuntimeError("Authority signing key is unavailable")
+            return issue_authority_token(
+                authority_key,
+                audience=audience,
+                task_id=str(task.id),
+                owner_id=task.owner_id,
+                project_id=task.project_id,
+                run_id=run_id,
+                capabilities=resolved_capabilities,
+                egress_hosts=task.egress_hosts or [],
+                ttl_seconds=settings.agent_authority_token_ttl_seconds,
+            )
+
+        self._authority_token_factory = token_factory if needs_authority_token else None
+        provider_gateway: ProviderGatewayClient | None = None
+        egress_audit = (
+            EgressAuditClient(settings.agent_egress_proxy_audit_url, token_factory)
+            if resolved_capabilities & destination_capabilities
+            and settings.agent_egress_proxy_audit_url
+            else None
+        )
+        if not isinstance(task.authority_audit, list):
+            task.authority_audit = []
+
+        async def collect_authority_audit(tool: str, _args: dict[str, Any], _result: Any) -> None:
+            events: list[dict[str, Any]] = []
+            if provider_gateway is not None:
+                events.extend(provider_gateway.drain_audit())
+            network_tool = tool == "run_command" or (
+                provider_gateway is not None and tool in provider_gateway.tool_names
+            )
+            if network_tool and egress_audit is not None:
+                try:
+                    events.extend(await egress_audit.fetch_new())
+                except Exception as exc:
+                    events.append(
+                        {
+                            "kind": "audit",
+                            "decision": "unavailable",
+                            "run_id": run_id,
+                            "error": type(exc).__name__,
+                        }
+                    )
+            if events:
+                task.authority_audit = [*(task.authority_audit or []), *events][-200:]
+
         executor = ToolExecutor(
             workspace,
             approval_mode=settings.agent_approval_mode,
@@ -302,30 +428,92 @@ class AgentReactService:
             output_limit=settings.agent_command_output_limit,
             envelope=envelope,
             before_tool=make_egress_guard(envelope, workspace),
+            after_tool=collect_authority_audit,
             sandbox_image=sandbox_image,
             sandbox_backend=sandbox_backend,
             sandbox_memory=settings.agent_sandbox_memory,
             sandbox_cpus=settings.agent_sandbox_cpus,
+            egress_proxy_url=settings.agent_egress_proxy_url,
+            egress_network=settings.agent_egress_docker_network,
+            egress_token_factory=(
+                lambda: (
+                    token_factory(EGRESS_PROXY_AUDIENCE)
+                    if Capability.NET_SHELL in resolved_capabilities
+                    else ""
+                )
+            ),
+            docker_workspace_volume=settings.agent_docker_workspace_volume,
+            docker_workspace_mount=settings.agent_docker_workspace_mount,
         )
 
-        browser = await self._start_browser(envelope)
-        if browser is not None:
-            executor.mcp = browser
-            self._browser_specs = browser.specs()
-            self._mcp_tools |= set(browser.tool_names)
-        elif envelope.permits_capability(Capability.NET_BROWSER):
-            task.status = TaskStatus.FAILED.value
-            task.stop_reason = StopReason.ERROR.value
-            task.error = "The requested browser capability is unavailable."
-            task.workspace_path = str(workspace.root)
-            self._ensure_unverified_receipt(task)
-            await self._commit()
-            return
+        browser: McpBrowser | None = None
+        if uses_gateway:
+            provider_gateway = ProviderGatewayClient(
+                settings.agent_provider_gateway_url or "",
+                workspace,
+                token_factory,
+                timeout_seconds=settings.agent_command_timeout_seconds + 15,
+            )
+            try:
+                await provider_gateway.start()
+            except Exception as exc:
+                task.status = TaskStatus.FAILED.value
+                task.stop_reason = StopReason.ERROR.value
+                task.error = f"Provider Gateway is unavailable: {str(exc)[:300]}"
+                task.workspace_path = str(workspace.root)
+                self._ensure_unverified_receipt(task)
+                await self._commit()
+                return
+            executor.provider_gateway = provider_gateway
+            self._mcp_tools |= provider_gateway.tool_names
+            self._browser_specs = provider_gateway.specs("net.browser")
+            self._email_specs = provider_gateway.specs("email.")
+            self._calendar_specs = provider_gateway.specs("calendar.")
+            self._vision_specs = provider_gateway.specs("vision")
+            required_tools = {
+                Capability.EMAIL_READ: "read_inbox",
+                Capability.EMAIL_SEND: "send_email",
+                Capability.CALENDAR_READ: "list_events",
+                Capability.CALENDAR_WRITE: "create_event",
+                Capability.VISION: "see_image",
+            }
+            missing = [
+                capability.value
+                for capability, tool in required_tools.items()
+                if capability in resolved_capabilities and tool not in provider_gateway.tool_names
+            ]
+            if Capability.NET_BROWSER in resolved_capabilities and not self._browser_specs.strip():
+                missing.append(Capability.NET_BROWSER.value)
+            if missing:
+                await provider_gateway.stop()
+                task.status = TaskStatus.FAILED.value
+                task.stop_reason = StopReason.ERROR.value
+                task.error = f"Provider Gateway lacks requested capabilities: {', '.join(missing)}"
+                task.workspace_path = str(workspace.root)
+                self._ensure_unverified_receipt(task)
+                await self._commit()
+                return
+        else:
+            browser = await self._start_browser(envelope)
+            if browser is not None:
+                executor.mcp = browser
+                self._browser_specs = browser.specs()
+                self._mcp_tools |= set(browser.tool_names)
+            elif envelope.permits_capability(Capability.NET_BROWSER):
+                task.status = TaskStatus.FAILED.value
+                task.stop_reason = StopReason.ERROR.value
+                task.error = "The requested browser capability is unavailable."
+                task.workspace_path = str(workspace.root)
+                self._ensure_unverified_receipt(task)
+                await self._commit()
+                return
 
         wants_email = envelope.permits_capability(
             Capability.EMAIL_READ
         ) or envelope.permits_capability(Capability.EMAIL_SEND)
-        if wants_email and settings.email_configured:
+        if provider_gateway is not None:
+            pass
+        elif wants_email and settings.email_configured:
             executor.email = EmailTools()
             self._mcp_tools |= EmailTools.tool_names
             self._email_specs = EMAIL_SPEC
@@ -343,7 +531,9 @@ class AgentReactService:
         wants_calendar = envelope.permits_capability(
             Capability.CALENDAR_READ
         ) or envelope.permits_capability(Capability.CALENDAR_WRITE)
-        if wants_calendar and settings.calendar_configured:
+        if provider_gateway is not None:
+            pass
+        elif wants_calendar and settings.calendar_configured:
             executor.calendar = CalendarTools()
             self._mcp_tools |= CalendarTools.tool_names
             self._calendar_specs = CALENDAR_SPEC
@@ -372,7 +562,9 @@ class AgentReactService:
                 "approval; never email or export secrets or workspace credentials.\n"
             )
 
-        if envelope.permits_capability(Capability.VISION) and settings.gemini_api_key:
+        if provider_gateway is not None:
+            pass
+        elif envelope.permits_capability(Capability.VISION) and settings.gemini_api_key:
             executor.vision = VisionTools(workspace)
             self._mcp_tools |= VisionTools.tool_names
             self._vision_specs = VISION_SPEC
@@ -412,6 +604,8 @@ class AgentReactService:
         finally:
             if browser is not None:
                 await browser.stop()
+            if provider_gateway is not None:
+                await provider_gateway.stop()
 
     def _resolve_sandbox(self) -> tuple[str | None, str, str | None]:
         """(image, label): which sandbox to use for run_command, and how to label
@@ -838,6 +1032,32 @@ class AgentReactService:
             )
         parent_capabilities = parse_capabilities(task.resolved_capabilities or [])
         child_capabilities = child_requested & parent_capabilities
+        raw_hosts = args.get("egress_hosts")
+        try:
+            requested_hosts = normalize_hosts(
+                (str(value) for value in raw_hosts) if isinstance(raw_hosts, list) else []
+            )
+        except ValueError:
+            requested_hosts = frozenset()
+        parent_hosts = frozenset(task.egress_hosts or [])
+        child_hosts = sorted(
+            host
+            for host in requested_hosts
+            if any(host == allowed or host.endswith(f".{allowed}") for allowed in parent_hosts)
+        )
+        if child_capabilities & {Capability.NET_SHELL, Capability.NET_BROWSER} and not child_hosts:
+            await self._record_step(
+                task,
+                number,
+                thought,
+                "spawn",
+                args,
+                "Blocked: a networked sub-agent requires egress_hosts within the "
+                "parent task's destination allowlist.",
+                ToolStatus.BLOCKED,
+                plan_tokens,
+            )
+            return
         child = await self.tasks.create(
             goal=goal,
             owner_id=task.owner_id,
@@ -847,9 +1067,10 @@ class AgentReactService:
             requested_capabilities=sorted_capabilities(child_capabilities),
             resolved_capabilities=[],
             allowed_tools=allowed if isinstance(allowed, list) else None,
-            allow_egress=bool(args.get("allow_egress", False)),
+            allow_egress=Capability.NET_SHELL in child_capabilities,
+            egress_hosts=child_hosts or None,
             require_approval=task.require_approval,
-            use_browser=bool(args.get("use_browser", False)),
+            use_browser=Capability.NET_BROWSER in child_capabilities,
             skill=None,
             parent_id=task.id,
             depth=task.depth + 1,
@@ -998,6 +1219,17 @@ class AgentReactService:
                 egress_hosts=task.egress_hosts,
             ),
             criterion_count=len(task.rubric or []),
+            egress_proxy_url=settings.agent_egress_proxy_url,
+            egress_network=settings.agent_egress_docker_network,
+            egress_token_factory=(
+                lambda: (
+                    self._authority_token_factory(EGRESS_PROXY_AUDIENCE)
+                    if self._authority_token_factory is not None
+                    else ""
+                )
+            ),
+            docker_workspace_volume=settings.agent_docker_workspace_volume,
+            docker_workspace_mount=settings.agent_docker_workspace_mount,
         )
         checks_passed = all(r.passed for r in check_results) if check_results else None
         coverage_complete = execution_coverage_complete(check_results, len(task.rubric or []))

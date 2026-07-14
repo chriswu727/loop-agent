@@ -38,5 +38,6 @@ class TriggerModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     allowed_tools: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
     capabilities: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
     allow_egress: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    egress_hosts: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
     require_approval: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     skill: Mapped[str | None] = mapped_column(String(100), nullable=True)

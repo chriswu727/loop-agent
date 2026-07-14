@@ -17,12 +17,17 @@ TEST_RECEIPT_KEY = (
 def production(**overrides: object) -> Settings:
     values: dict[str, object] = {
         "environment": "production",
+        "OTEL_SERVICE_NAME": "worker",
         "auth_required": True,
         "secret_key": "a-production-secret-that-is-at-least-32-bytes",
         "agent_sandbox": "required",
         "agent_sandbox_image_digest": "sha256:" + "a" * 64,
         "agent_allow_host_providers": False,
         "agent_receipt_signing_key": TEST_RECEIPT_KEY,
+        "agent_authority_signing_key": TEST_RECEIPT_KEY,
+        "agent_provider_gateway_url": "http://provider-gateway:8090",
+        "agent_egress_proxy_url": "http://egress-proxy:8080",
+        "agent_egress_proxy_audit_url": "http://egress-proxy:8081",
     }
     values.update(overrides)
     return Settings(_env_file=None, **values)
@@ -41,6 +46,11 @@ def test_secure_production_settings_are_accepted() -> None:
         {"agent_sandbox": "preferred"},
         {"agent_sandbox_image_digest": None},
         {"agent_allow_host_providers": True},
+        {"agent_provider_gateway_url": None},
+        {"agent_egress_proxy_url": None},
+        {"agent_egress_proxy_audit_url": None},
+        {"agent_authority_signing_key": None},
+        {"agent_authority_signing_key": "not-a-key"},
         {"agent_receipt_signing_key": None},
         {"agent_receipt_signing_key": "not-a-key"},
     ],

@@ -44,10 +44,15 @@ export function PublishForm({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const idempotencyKey = useRef(crypto.randomUUID());
+  const needsDestinations = allowNetwork || useBrowser;
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     if (goal.trim().length < 4 || submitting) return;
+    if (needsDestinations && !egressHosts.trim()) {
+      setError('Shell and browser network access require at least one destination host.');
+      return;
+    }
     setSubmitting(true);
     setError(null);
     try {
@@ -70,7 +75,7 @@ export function PublishForm({
         limits,
         capabilities,
         egress_hosts:
-          allowNetwork && egressHosts.trim()
+          needsDestinations && egressHosts.trim()
             ? egressHosts
                 .split(',')
                 .map((h) => h.trim())
@@ -140,12 +145,19 @@ export function PublishForm({
           />
         </label>
         {files.map((f) => (
-          <span key={f.name} className="rounded-full bg-blue-500/10 px-2 py-1 text-blue-600 dark:text-blue-400">
+          <span
+            key={f.name}
+            className="rounded-full bg-blue-500/10 px-2 py-1 text-blue-600 dark:text-blue-400"
+          >
             {f.name}
           </span>
         ))}
         {files.length > 0 && (
-          <button type="button" onClick={() => setFiles([])} className="opacity-50 hover:opacity-100">
+          <button
+            type="button"
+            onClick={() => setFiles([])}
+            className="opacity-50 hover:opacity-100"
+          >
             clear
           </button>
         )}
@@ -217,12 +229,14 @@ export function PublishForm({
         )}
       </div>
 
-      {allowNetwork && (
+      {needsDestinations && (
         <input
           type="text"
+          aria-label="Allowed destination hosts"
           value={egressHosts}
           onChange={(e) => setEgressHosts(e.target.value)}
-          placeholder="Restrict to hosts (comma-separated, e.g. api.github.com, pypi.org) — blank = any host"
+          required
+          placeholder="Required destinations (comma-separated, e.g. api.github.com, pypi.org)"
           className="mt-3 w-full rounded-lg border border-black/10 bg-transparent px-3 py-1.5 text-xs outline-none focus:border-blue-500/60 dark:border-white/15"
         />
       )}
@@ -256,7 +270,9 @@ export function PublishForm({
         </p>
         <button
           type="submit"
-          disabled={goal.trim().length < 4 || submitting}
+          disabled={
+            goal.trim().length < 4 || submitting || (needsDestinations && !egressHosts.trim())
+          }
           className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-40"
         >
           {submitting ? 'Starting…' : 'Run the agent'}

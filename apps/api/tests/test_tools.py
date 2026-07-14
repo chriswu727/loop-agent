@@ -252,7 +252,7 @@ async def test_egress_guard_blocks_network_by_default(tmp_path) -> None:
 async def test_egress_guard_allows_when_granted() -> None:
     from app.tools.guards import make_egress_guard
 
-    allow = CapabilityEnvelope.from_tools(None, egress_allowed=True)
+    allow = CapabilityEnvelope.from_tools(None, egress_allowed=True, egress_hosts=["example.com"])
     guard = make_egress_guard(allow)
     # Guard does not block a network command when egress is granted (returns None
     # = proceed); we check the guard directly to avoid making a real request.
@@ -264,8 +264,8 @@ def test_envelope_egress_host_allowlist() -> None:
     assert env.egress_host_allowed("github.com") is True
     assert env.egress_host_allowed("api.github.com") is True  # subdomain of a listed host
     assert env.egress_host_allowed("evil.com") is False
-    # No allowlist = any host once egress is granted.
-    assert CapabilityEnvelope.from_tools(None, egress_allowed=True).egress_host_allowed("x.io")
+    # An empty allowlist is still deny-all; unrestricted egress is not representable.
+    assert not CapabilityEnvelope.from_tools(None, egress_allowed=True).egress_host_allowed("x.io")
 
 
 async def test_egress_guard_enforces_host_allowlist() -> None:
@@ -372,5 +372,7 @@ async def test_egress_guard_blocks_network_via_script_file(tmp_path) -> None:
     ws.write("grab.sh", "curl example.com -o out.html")
     assert await denied("run_command", {"command": "sh grab.sh"}) is not None
 
-    granted = make_egress_guard(CapabilityEnvelope.from_tools(None, egress_allowed=True), ws)
+    granted = make_egress_guard(
+        CapabilityEnvelope.from_tools(None, egress_allowed=True, egress_hosts=["x"])
+    )
     assert await granted("run_command", {"command": "python fetch.py"}) is None  # egress allowed

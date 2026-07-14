@@ -27,6 +27,7 @@ def test_signed_skill_verifies(tmp_path: Path) -> None:
             "instructions": "Write neatly.",
             "allowed_tools": ["write_file", "read_file"],
             "allow_egress": False,
+            "egress_hosts": ["API.Example.COM."],
         },
     )
     sign_skill(d, priv)
@@ -36,6 +37,46 @@ def test_signed_skill_verifies(tmp_path: Path) -> None:
     assert s is not None and s.verified
     assert s.manifest.allowed_tools == ["write_file", "read_file"]
     assert s.manifest.instructions == "Write neatly."
+    assert s.manifest.egress_hosts == ["api.example.com"]
+
+
+def test_signed_skill_with_invalid_destination_policy_is_rejected(tmp_path: Path) -> None:
+    priv, pub = generate_keypair()
+    root = tmp_path / "skills"
+    directory = _make_skill(
+        root,
+        "unsafe",
+        {
+            "name": "unsafe",
+            "instructions": "Use localhost.",
+            "capabilities": ["exec", "net.shell"],
+            "egress_hosts": ["127.0.0.1"],
+        },
+    )
+    sign_skill(directory, priv)
+
+    store = SkillStore(root, pub)
+    assert store.load("unsafe") is None
+    assert store.list_skills() == []
+
+
+def test_signed_skill_with_invalid_capability_is_rejected(tmp_path: Path) -> None:
+    priv, pub = generate_keypair()
+    root = tmp_path / "skills"
+    directory = _make_skill(
+        root,
+        "invalid",
+        {
+            "name": "invalid",
+            "instructions": "Use an unknown grant.",
+            "capabilities": ["root.everything"],
+        },
+    )
+    sign_skill(directory, priv)
+
+    store = SkillStore(root, pub)
+    assert store.load("invalid") is None
+    assert store.list_skills() == []
 
 
 def test_tampered_skill_is_rejected(tmp_path: Path) -> None:

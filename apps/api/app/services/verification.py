@@ -18,6 +18,7 @@ import asyncio
 import re
 import shutil
 import uuid
+from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
@@ -75,6 +76,11 @@ async def run_checks(
     egress_allowed: bool = False,
     envelope: CapabilityEnvelope | None = None,
     criterion_count: int = 0,
+    egress_proxy_url: str | None = None,
+    egress_network: str | None = None,
+    egress_token_factory: Callable[[], str] | None = None,
+    docker_workspace_volume: str | None = None,
+    docker_workspace_mount: str | None = None,
 ) -> list[CheckResult]:
     """Re-run each check on a fresh copy of the workspace. Never raises — a bad
     check definition becomes a failed result the verifier can act on."""
@@ -105,6 +111,11 @@ async def run_checks(
             sandbox_backend=sandbox_backend,
             sandbox_memory=sandbox_memory,
             sandbox_cpus=sandbox_cpus,
+            egress_proxy_url=egress_proxy_url,
+            egress_network=egress_network,
+            egress_token_factory=egress_token_factory,
+            docker_workspace_volume=docker_workspace_volume,
+            docker_workspace_mount=docker_workspace_mount,
         )
         results: list[CheckResult] = []
         for index, check in enumerate(checks, start=1):

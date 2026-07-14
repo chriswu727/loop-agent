@@ -104,15 +104,15 @@ the two axes a chat-log agent can't retrofit:
   data (tool output, files, memory) is framed so the agent never obeys instructions
   hidden inside it.
 
-| Differentiator                | What it means                                                                                                                            |
-| ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| **Re-execution Receipt**      | the verifier re-runs the agent's checks; a failed check overrides the model's "I'm done"                                                 |
-| **Tamper-evident ledger**     | each step is hash-chained from a genesis; edit any step and `GET /tasks/{id}/ledger` reports it                                          |
-| **Signed skills**             | a skill bundle's ed25519 signature must verify or it won't load — supply-chain safety                                                    |
-| **Typed capability contract** | `loop.capabilities/v1` separates filesystem, execution, shell network, browser, email, calendar, memory, vision, and delegation          |
-| **Default-deny egress**       | a task can't `curl` / `pip install` / `git clone` unless it declares `net.shell`; an optional host allowlist adds policy-layer narrowing |
-| **Approval gate**             | `require_approval` pauses non-allowlisted commands until you say yes; restart-safe                                                       |
-| **Injection quarantine**      | tool output, files and memory are `[DATA]`, never commands                                                                               |
+| Differentiator                | What it means                                                                                                                   |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| **Re-execution Receipt**      | the verifier re-runs the agent's checks; a failed check overrides the model's "I'm done"                                        |
+| **Tamper-evident ledger**     | each step is hash-chained from a genesis; edit any step and `GET /tasks/{id}/ledger` reports it                                 |
+| **Signed skills**             | a skill bundle's ed25519 signature must verify or it won't load — supply-chain safety                                           |
+| **Typed capability contract** | `loop.capabilities/v1` separates filesystem, execution, shell network, browser, email, calendar, memory, vision, and delegation |
+| **Destination-bound egress**  | network tools require explicit hosts; sandbox traffic can leave only through a token-verifying, DNS-pinning proxy               |
+| **Approval gate**             | `require_approval` pauses non-allowlisted commands until you say yes; restart-safe                                              |
+| **Injection quarantine**      | tool output, files and memory are `[DATA]`, never commands                                                                      |
 
 ## Capabilities
 
@@ -130,8 +130,9 @@ the two axes a chat-log agent can't retrofit:
 - **Cross-task memory** — a `remember` tool + transparent Markdown storage scoped
   by authenticated owner and project, so one tenant never receives another's memory.
 - **Browse the web** — grant `net.browser` and the agent drives a real
-  headless browser via an MCP server it spawns (`@playwright/mcp`): navigate, read,
-  click, type, extract. Browser authority does not grant shell egress.
+  headless browser through the isolated Provider Gateway (`@playwright/mcp`):
+  navigate, read, click, type, extract. Browser authority does not grant shell
+  egress, and every destination must be declared before the task starts.
 - **Email & calendar** — `use_email` reads the inbox (IMAP, read-only, quarantined)
   and sends (SMTP); `use_calendar` lists and creates events (CalDAV). Anything that
   sends or writes pauses for your approval first.
@@ -196,10 +197,14 @@ docker build -f apps/api/sandbox.Dockerfile -t loop-sandbox:latest .
 
 Open http://localhost:3000 and try _"Write a Python script that prints the first 12
 Fibonacci numbers, then run it to confirm."_ — watch it write, run, verify, and
-produce a Receipt. For the full Docker stack, `cp .env.example .env`, add a key, and
-`make up`. The Compose worker is a local-development reduced-isolation path
-(`AGENT_SANDBOX=off` inside its own container); use the Kubernetes production
-profile for per-command Jobs, tenant-scoped PVC mounts, and fail-closed isolation.
+produce a Receipt. For the full Docker stack, `cp .env.example .env`, add a key,
+run `make authority-keygen`, point `AGENT_AUTHORITY_SIGNING_KEY_FILE` at the private
+file and place the public PEM in `AGENT_AUTHORITY_PUBLIC_KEY`, then use `make up`.
+Compose builds the sandbox image first; the worker then launches a fresh
+locked-down sibling container for every shell command. Networked commands join only
+the internal sandbox network and can leave through the destination-enforcing proxy.
+Use the Kubernetes production profile for per-command Jobs, tenant-scoped PVC mounts,
+immutable image digests, and fail-closed isolation.
 
 ## Configuration
 
@@ -220,15 +225,19 @@ See [`.env.example`](./.env.example). Key knobs:
 | `DATABASE_URL`                                                              | `postgresql+asyncpg://…` or `sqlite+aiosqlite:///./loop.db`.                                                                                               |
 | `AGENT_APPROVAL_MODE`                                                       | `auto` or `manual` (pause non-allowlisted commands).                                                                                                       |
 | `AGENT_SKILLS_ROOT` / `AGENT_SKILL_TRUST_PUBLIC_KEY`                        | signed-skills folder + the ed25519 key signatures must verify against.                                                                                     |
-| `AGENT_RECEIPT_SIGNING_KEY`                                                 | ed25519 key for signed Receipts (`make receipt-keygen`); required in production, optional hash-only mode in development.                                  |
+| `AGENT_RECEIPT_SIGNING_KEY`                                                 | ed25519 key for signed Receipts (`make receipt-keygen`); required in production, optional hash-only mode in development.                                   |
+| `AGENT_AUTHORITY_SIGNING_KEY` / `AGENT_AUTHORITY_PUBLIC_KEY`                | worker-only Ed25519 issuer key and gateway/proxy-only verifier key (`make authority-keygen`).                                                              |
+| `AGENT_PROVIDER_GATEWAY_URL`                                                | isolated browser/email/calendar/vision service; required for those capabilities in production.                                                             |
+| `AGENT_EGRESS_PROXY_URL` / `AGENT_EGRESS_PROXY_AUDIT_URL`                   | authenticated data-plane proxy and worker-only audit endpoint; required in production.                                                                     |
 | `AGENT_MEMORY_ROOT`                                                         | cross-task memory store.                                                                                                                                   |
 | `AGENT_SANDBOX` / `AGENT_SANDBOX_BACKEND`                                   | `required` fails closed; production selects short-lived Kubernetes Jobs. `preferred` is the explicitly labeled local fallback.                             |
-| `AGENT_SANDBOX_IMAGE_DIGEST`                                                 | immutable sandbox image digest; required in production and recorded in every isolated Receipt.                                                            |
+| `AGENT_SANDBOX_IMAGE_DIGEST`                                                | immutable sandbox image digest; required in production and recorded in every isolated Receipt.                                                             |
 
 Per-task safety is set at publish time through the versioned `capabilities` list;
 legacy `allowed_tools` / `allow_egress` fields remain migration inputs. A signed
 skill can only narrow the requested authority. The UI and Receipt show the resolved
-intersection that actually ran.
+intersection that actually ran. `net.shell` and `net.browser` also require explicit
+`egress_hosts`; an empty list never means unrestricted access.
 Defaults/caps live in `app/core/config.py`.
 
 ## Architecture
@@ -241,7 +250,9 @@ test with a fake model.
 ```
 apps/api/app/
 ├── core/llm/          # provider registry (Anthropic/DeepSeek/Gemini/GLM/Ollama) + cascade
-├── tools/             # workspace sandbox, command policy, egress guard, capability envelope, vision, executor
+├── provider_gateway/  # credential-isolated browser/email/calendar/vision service
+├── egress_proxy/      # destination enforcement, DNS pinning, per-run audit
+├── tools/             # workspace sandbox, gateway/proxy clients, capability envelope, executor
 ├── services/
 │   ├── agent_react.py # THE ENGINE: understand → plan → act → observe → verify
 │   ├── verification.py# re-execution of finish checks on a workspace copy
@@ -283,12 +294,16 @@ scheduler, SSE live view, provider registry, a **local Ollama provider**, an **M
 client with a headless browser**, **container isolation**, **multi-agent delegation**
 (`spawn` → a tree of verified sub-agents), **email + calendar**, **conversational
 sessions** with a web chat page, **Telegram + Slack chat inlets**, and a
-**channel-agnostic `/chat` API**.
+**channel-agnostic `/chat` API**, an isolated **Provider Gateway**, short-lived
+capability tokens, and **network-layer destination enforcement** with auditable,
+DNS-pinned proxy routing.
 
-**Next:** an isolated production gateway for stateful browser/email/calendar
-providers, network-layer per-host egress enforcement, more chat channels, and a
-signed skill registry. Production currently fails provider capabilities closed
-when that isolated gateway is absent; it never silently runs them in the worker pod.
+**Next:** broaden the signed skill catalog and channel ecosystem, persist proxy
+audit events outside process memory, split protocol-specific provider egress into
+separate network identities where deployments require L4 enforcement, and accumulate
+real production/adversarial evidence. Loop's core trust architecture is implemented;
+its remaining gap versus mature assistants is ecosystem and operational proof, not
+another missing safety layer.
 
 ## License
 

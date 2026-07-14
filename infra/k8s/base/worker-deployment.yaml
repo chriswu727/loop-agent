@@ -17,7 +17,7 @@ spec:
         app.kubernetes.io/name: worker
         app.kubernetes.io/component: worker
     spec:
-      serviceAccountName: app
+      serviceAccountName: worker
       automountServiceAccountToken: true
       securityContext:
         runAsNonRoot: true
@@ -31,13 +31,17 @@ spec:
         - name: worker
           image: app-api:latest
           imagePullPolicy: IfNotPresent
-          command: ["python", "-m", "app.workers.worker"]
+          command: ['python', '-m', 'app.workers.worker']
           envFrom:
             - configMapRef:
                 name: app-config
             - secretRef:
                 name: app-secrets
+            - secretRef:
+                name: authority-issuer-secrets
           env:
+            - name: OTEL_SERVICE_NAME
+              value: worker
             - name: AGENT_KUBERNETES_NAMESPACE
               valueFrom:
                 fieldRef:
@@ -47,13 +51,13 @@ spec:
               cpu: 100m
               memory: 256Mi
             limits:
-              cpu: "1"
+              cpu: '1'
               memory: 512Mi
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
             capabilities:
-              drop: ["ALL"]
+              drop: ['ALL']
           volumeMounts:
             - name: tmp
               mountPath: /tmp

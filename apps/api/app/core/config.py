@@ -181,6 +181,25 @@ class Settings(BaseSettings):
                 return None
         return None
 
+    # Separate Ed25519 issuer for short-lived task authority. The worker holds
+    # this private key; Provider Gateway and egress proxy receive only its public
+    # key, so neither the model nor a sandbox can mint broader authority.
+    agent_authority_signing_key: str | None = None
+    agent_authority_signing_key_file: str | None = None
+    agent_authority_token_ttl_seconds: int = Field(default=300, ge=30, le=900)
+
+    def authority_signing_key_pem(self) -> str | None:
+        if self.agent_authority_signing_key:
+            return self.agent_authority_signing_key
+        if self.agent_authority_signing_key_file:
+            try:
+                from pathlib import Path
+
+                return Path(self.agent_authority_signing_key_file).read_text()
+            except OSError:
+                return None
+        return None
+
     agent_command_timeout_seconds: int = 60
     agent_command_output_limit: int = 4_000  # chars of command output kept
     agent_max_upload_bytes: int = Field(default=10_000_000, ge=1_024, le=1_000_000_000)
@@ -256,6 +275,15 @@ class Settings(BaseSettings):
     agent_browser_enabled: bool = True
     agent_allow_host_providers: bool = True
     agent_browser_command: str = "npx -y @playwright/mcp@0.0.78 --headless --isolated"
+    agent_provider_gateway_url: str | None = None
+
+    # Destination-enforcing proxy used by shell and isolated browser runtimes.
+    # The sandbox joins an internal-only network where this proxy is the sole
+    # route out; short-lived authority tokens carry the exact host allowlist.
+    agent_egress_proxy_url: str | None = None
+    agent_egress_proxy_audit_url: str | None = None
+    agent_egress_docker_network: str = "loop_sandbox-egress"
+    agent_require_egress_hosts: bool = True
 
     # ---- Sandbox: run the agent's shell commands in an ephemeral container ----
     # required = fail the task if isolation is unavailable; preferred = use a
@@ -269,6 +297,8 @@ class Settings(BaseSettings):
     agent_sandbox_memory: str = "512m"
     agent_sandbox_cpus: str = "1"
     agent_sandbox_backend: Literal["auto", "docker", "kubernetes"] = "auto"
+    agent_docker_workspace_volume: str | None = None
+    agent_docker_workspace_mount: str = "/var/lib/loop"
     agent_kubernetes_namespace: str = "loop"
     agent_kubernetes_data_pvc: str = "loop-data"
     agent_kubernetes_data_mount: str = "/var/lib/loop"
@@ -287,6 +317,20 @@ class Settings(BaseSettings):
             raise ValueError("production requires an immutable sandbox image digest")
         if self.agent_allow_host_providers:
             raise ValueError("production host providers must be disabled")
+        if not self.agent_provider_gateway_url:
+            raise ValueError("production requires an isolated Provider Gateway")
+        if not self.agent_egress_proxy_url or not self.agent_egress_proxy_audit_url:
+            raise ValueError("production requires a destination-enforcing egress proxy")
+        if self.service_name == "worker":
+            authority_key = self.authority_signing_key_pem()
+            if not authority_key:
+                raise ValueError("production worker requires an Ed25519 authority signing key")
+            try:
+                from app.domain.authority_token import public_key_pem
+
+                public_key_pem(authority_key)
+            except ValueError as exc:
+                raise ValueError("Authority signing key must be a valid Ed25519 PEM key") from exc
         receipt_key = self.receipt_signing_key_pem()
         if not receipt_key:
             raise ValueError("production requires an Ed25519 Receipt signing key")

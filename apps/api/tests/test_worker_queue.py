@@ -46,6 +46,10 @@ async def failing_handler(_payload: dict[str, Any]) -> None:
     raise RuntimeError("transient failure")
 
 
+async def successful_handler(payload: dict[str, Any]) -> None:
+    assert payload == {"task_id": "task-1"}
+
+
 async def test_failed_job_is_requeued_with_incremented_attempt(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -85,3 +89,43 @@ async def test_exhausted_job_moves_to_dead_letter_stream(
     assert xadd[1][0] == worker.DEAD_KEY
     assert xadd[1][1]["source_id"] == "2-0"
     assert "transient failure" in xadd[1][1]["error"]
+
+
+async def test_successful_job_is_acknowledged_and_removed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setitem(worker.HANDLERS, "test-success", successful_handler)
+    redis = FakeRedis()
+
+    await worker._process(
+        redis,  # type: ignore[arg-type]
+        "3-0",
+        {"type": "test-success", "payload": '{"task_id":"task-1"}', "attempt": "1"},
+        reclaimed=False,
+    )
+
+    assert [action[0] for action in redis.actions] == ["xack", "xdel"]
+
+
+async def test_reclaimed_job_reconciles_stale_tasks_before_execution(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    reconciled = False
+
+    async def reconcile() -> None:
+        nonlocal reconciled
+        reconciled = True
+
+    monkeypatch.setattr(worker, "_reset_stale_tasks", reconcile)
+    monkeypatch.setitem(worker.HANDLERS, "test-success", successful_handler)
+    redis = FakeRedis()
+
+    await worker._process(
+        redis,  # type: ignore[arg-type]
+        "4-0",
+        {"type": "test-success", "payload": '{"task_id":"task-1"}', "attempt": "1"},
+        reclaimed=True,
+    )
+
+    assert reconciled
+    assert [action[0] for action in redis.actions] == ["xack", "xdel"]

@@ -9,9 +9,10 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.core.config import settings
+from app.domain.authority_token import AuthorityTokenError, normalize_hosts
 from app.domain.capability import CAPABILITY_SCHEMA_VERSION, Capability
 from app.schemas.file import FileEntry
 from app.schemas.step import LedgerStatus, StepRead
@@ -38,8 +39,8 @@ class TaskCreate(BaseModel):
     capabilities: list[Capability] | None = None
     # Network egress is default-deny; set true only if the task needs the network.
     allow_egress: bool = False
-    # Optional egress allowlist: if set (and allow_egress is true), only these hosts
-    # are reachable (e.g. ["api.github.com", "pypi.org"]); empty/None = any host.
+    # Required destination allowlist for shell/browser networking. Provider-specific
+    # endpoints (SMTP, CalDAV, vision) remain separately capability-bound.
     egress_hosts: list[str] | None = None
     # When true, non-allowlisted commands pause for the user to approve before running.
     require_approval: bool = False
@@ -56,6 +57,24 @@ class TaskCreate(BaseModel):
     skill: str | None = None
     idempotency_key: str | None = Field(default=None, min_length=8, max_length=128)
 
+    @model_validator(mode="after")
+    def validate_network_authority(self) -> TaskCreate:
+        requested = set(self.capabilities or [])
+        shell_network = self.allow_egress or Capability.NET_SHELL in requested
+        browser_network = self.use_browser or Capability.NET_BROWSER in requested
+        if (
+            settings.agent_require_egress_hosts
+            and (shell_network or browser_network)
+            and not self.egress_hosts
+        ):
+            raise ValueError("Shell/browser network authority requires egress_hosts")
+        if self.egress_hosts:
+            try:
+                self.egress_hosts = sorted(normalize_hosts(self.egress_hosts))
+            except AuthorityTokenError as exc:
+                raise ValueError(str(exc)) from exc
+        return self
+
 
 class RespondIn(BaseModel):
     """The user's answer to an ask_user question, which resumes the run."""
@@ -68,6 +87,11 @@ class LimitsRead(BaseModel):
     token_budget: int
 
 
+class AuthorityEnforcementRead(BaseModel):
+    provider_gateway: bool
+    egress_proxy: bool
+
+
 class AuthorityRead(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
@@ -78,6 +102,8 @@ class AuthorityRead(BaseModel):
     resolved: list[str]
     egress_hosts: list[str]
     sandbox: str | None
+    audit: list[dict[str, object]]
+    enforcement: AuthorityEnforcementRead
 
 
 class TaskRead(BaseModel):
@@ -138,6 +164,11 @@ class TaskRead(BaseModel):
                 resolved=m.resolved_capabilities or [],  # type: ignore[attr-defined]
                 egress_hosts=m.egress_hosts or [],  # type: ignore[attr-defined]
                 sandbox=m.sandbox,  # type: ignore[attr-defined]
+                audit=m.authority_audit or [],  # type: ignore[attr-defined]
+                enforcement=AuthorityEnforcementRead(
+                    provider_gateway=bool(settings.agent_provider_gateway_url),
+                    egress_proxy=bool(settings.agent_egress_proxy_url),
+                ),
             ),
             allow_egress=m.allow_egress,  # type: ignore[attr-defined]
             egress_hosts=m.egress_hosts,  # type: ignore[attr-defined]

@@ -150,6 +150,11 @@ def build_receipt(
             "requested": requested_capabilities,
             "resolved": resolved_capabilities,
             "egress_hosts": egress_hosts,
+            "audit": task.authority_audit if isinstance(task.authority_audit, list) else [],
+            "enforcement": {
+                "provider_gateway": bool(settings.agent_provider_gateway_url),
+                "egress_proxy": bool(settings.agent_egress_proxy_url),
+            },
         },
         "provenance": {
             "producer": {"name": "loop-agent", "version": settings.version},

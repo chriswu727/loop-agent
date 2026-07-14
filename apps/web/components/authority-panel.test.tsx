@@ -18,6 +18,8 @@ const baseTask: Task = {
     resolved: ['net.browser'],
     egress_hosts: [],
     sandbox: 'required',
+    enforcement: { provider_gateway: true, egress_proxy: true },
+    audit: [],
   },
   allow_egress: false,
   egress_hosts: null,
@@ -70,5 +72,25 @@ describe('AuthorityPanel', () => {
     );
 
     expect(screen.getByText('Shell network: api.example.com')).toBeInTheDocument();
+    expect(screen.getByText('Destination proxy enforced')).toBeInTheDocument();
+  });
+
+  it('summarizes runtime enforcement decisions', () => {
+    render(
+      <AuthorityPanel
+        task={{
+          ...baseTask,
+          authority: {
+            ...baseTask.authority,
+            audit: [
+              { kind: 'provider', decision: 'allowed', tool: 'browser_navigate' },
+              { kind: 'egress', decision: 'blocked', host: 'evil.example' },
+            ],
+          },
+        }}
+      />,
+    );
+
+    expect(screen.getByText('Runtime decisions: 1 allowed / 1 blocked')).toBeInTheDocument();
   });
 });

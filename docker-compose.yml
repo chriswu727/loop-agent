@@ -42,6 +42,7 @@ services:
     env_file:
       - path: .env
         required: false
+    user: '10001:10001'
     environment:
       DATABASE_URL: postgresql+asyncpg://app:app@postgres:5432/app
       REDIS_URL: redis://redis:6379/0
@@ -50,6 +51,14 @@ services:
       EXECUTION_MODE: worker
       AGENT_WORKSPACES_ROOT: /var/lib/loop/workspaces
       AGENT_MEMORY_ROOT: /var/lib/loop/memory
+      SMTP_HOST: ''
+      SMTP_USER: ''
+      SMTP_PASSWORD: ''
+      IMAP_HOST: ''
+      CALDAV_URL: ''
+      CALDAV_USER: ''
+      CALDAV_PASSWORD: ''
+      PROVIDER_GATEWAY_GEMINI_API_KEY: ''
     ports:
       - '${LOOP_API_PORT:-8000}:8000'
     volumes:
@@ -60,6 +69,8 @@ services:
         condition: service_completed_successfully
       redis:
         condition: service_healthy
+      data-init:
+        condition: service_completed_successfully
     healthcheck:
       test:
         [
@@ -80,6 +91,7 @@ services:
       dockerfile: infra/docker/api.Dockerfile
       target: dev
     command: ['python', '-m', 'app.workers.worker']
+    user: '10001:10001'
     env_file:
       - path: .env
         required: false
@@ -88,18 +100,124 @@ services:
       REDIS_URL: redis://redis:6379/0
       LOG_FORMAT: console
       EXECUTION_MODE: worker
-      AGENT_SANDBOX: 'off'
+      AGENT_SANDBOX: 'required'
+      AGENT_SANDBOX_BACKEND: docker
+      AGENT_DOCKER_WORKSPACE_VOLUME: '${COMPOSE_PROJECT_NAME:-loop}_loopdata'
+      AGENT_DOCKER_WORKSPACE_MOUNT: /var/lib/loop
+      AGENT_PROVIDER_GATEWAY_URL: http://provider-gateway:8090
+      AGENT_EGRESS_PROXY_URL: http://egress-proxy:8080
+      AGENT_EGRESS_PROXY_AUDIT_URL: http://egress-proxy:8081
+      AGENT_EGRESS_DOCKER_NETWORK: '${COMPOSE_PROJECT_NAME:-loop}_sandbox-egress'
       AGENT_WORKSPACES_ROOT: /var/lib/loop/workspaces
       AGENT_MEMORY_ROOT: /var/lib/loop/memory
+      SMTP_HOST: ''
+      SMTP_USER: ''
+      SMTP_PASSWORD: ''
+      IMAP_HOST: ''
+      CALDAV_URL: ''
+      CALDAV_USER: ''
+      CALDAV_PASSWORD: ''
+      PROVIDER_GATEWAY_GEMINI_API_KEY: ''
     volumes:
       - ./apps/api:/app:ro
       - loopdata:/var/lib/loop
+      - /var/run/docker.sock:/var/run/docker.sock
+    group_add:
+      - '0'
     depends_on:
       migrate:
         condition: service_completed_successfully
       redis:
         condition: service_healthy
+      provider-gateway:
+        condition: service_healthy
+      egress-proxy:
+        condition: service_healthy
+      sandbox-image:
+        condition: service_completed_successfully
+      data-init:
+        condition: service_completed_successfully
     restart: unless-stopped
+
+  data-init:
+    image: alpine:3.22
+    user: '0:0'
+    command: ['chown', '-R', '10001:10001', '/var/lib/loop']
+    volumes:
+      - loopdata:/var/lib/loop
+    restart: 'no'
+
+  provider-gateway:
+    build:
+      context: .
+      dockerfile: infra/docker/api.Dockerfile
+      target: provider-gateway
+    command: ['uvicorn', 'app.provider_gateway.main:app', '--host', '0.0.0.0', '--port', '8090']
+    environment:
+      PROVIDER_GATEWAY_REQUIRE_AUTHORITY_KEY: 'true'
+      PROVIDER_GATEWAY_AUTHORITY_PUBLIC_KEY: ${AGENT_AUTHORITY_PUBLIC_KEY:-}
+      PROVIDER_GATEWAY_EGRESS_PROXY_URL: http://egress-proxy:8080
+      PROVIDER_GATEWAY_GEMINI_API_KEY: ${PROVIDER_GATEWAY_GEMINI_API_KEY:-}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_STARTTLS: ${SMTP_STARTTLS:-true}
+      IMAP_HOST: ${IMAP_HOST:-}
+      EMAIL_FROM: ${EMAIL_FROM:-}
+      CALDAV_URL: ${CALDAV_URL:-}
+      CALDAV_USER: ${CALDAV_USER:-}
+      CALDAV_PASSWORD: ${CALDAV_PASSWORD:-}
+      CALDAV_CALENDAR: ${CALDAV_CALENDAR:-}
+    volumes:
+      - ./apps/api:/app:ro
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'python',
+          '-c',
+          "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8090/healthz').status==200 else 1)",
+        ]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+
+  egress-proxy:
+    build:
+      context: .
+      dockerfile: infra/docker/api.Dockerfile
+      target: runtime
+    command: ['python', '-m', 'app.egress_proxy']
+    environment:
+      EGRESS_PROXY_REQUIRE_AUTHORITY_KEY: 'true'
+      EGRESS_PROXY_AUTHORITY_PUBLIC_KEY: ${AGENT_AUTHORITY_PUBLIC_KEY:-}
+    networks:
+      - default
+      - sandbox-egress
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'python',
+          '-c',
+          "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8081/healthz').status==200 else 1)",
+        ]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+
+  sandbox-image:
+    image: loop-sandbox:latest
+    build:
+      context: .
+      dockerfile: apps/api/sandbox.Dockerfile
+    command: ['true']
+    restart: 'no'
 
   migrate:
     build:
@@ -154,3 +272,7 @@ volumes:
   pgdata:
   redisdata:
   loopdata:
+
+networks:
+  sandbox-egress:
+    internal: true

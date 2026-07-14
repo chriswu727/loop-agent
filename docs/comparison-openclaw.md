@@ -10,9 +10,12 @@
 >   retries/DLQ, atomic task and scheduler claims, SSE, Kubernetes Job shell isolation,
 >   separate executor/verifier providers, `loop.receipt/v1` criteria mappings and
 >   provenance, API/CLI replay, and a reusable GitHub Receipt-verification Action.
->   Production is fail-closed for sandbox and host-side provider tools. The remaining
->   security gaps are destination-aware network-layer egress and an isolated stateful
->   browser/email/calendar gateway; ecosystem and real-world adoption remain unproven.
+>   Production is fail-closed for sandbox and provider tools. It now also has an
+>   isolated credential-bearing Provider Gateway, short-lived audience-bound
+>   authority tokens, and a destination-enforcing egress proxy with private-address
+>   rejection, DNS pinning and Receipt audit. Ecosystem and real-world adoption
+>   remain unproven; provider-protocol egress separation and durable proxy audit are
+>   still deployment hardening work.
 >
 > **Update (2026-07-04, after this comparison):** several concrete weaknesses this
 > analysis found were then fixed (and adversarially re-audited — the fixes had their
@@ -22,8 +25,9 @@
 >   (`AGENT_RECEIPT_SIGNING_KEY`); `verify_receipt` also re-hashes output files vs the
 >   manifest and cross-checks the DB anchor, and the offline script verifies the
 >   signature with `--pubkey`. Tamper-_proof_, not just evident, when a key is set.
-> - "Egress is all-or-nothing" → a per-task **`egress_hosts`** allowlist now exists,
->   settable from the publish form.
+> - "Egress is all-or-nothing" → `net.shell`/`net.browser` require explicit
+>   **`egress_hosts`**; sandbox traffic can leave only through a token-verifying proxy
+>   that enforces the host at the network boundary.
 > - "A tautological check earns execution-verified" → the verifier now judges whether
 >   checks substantiate the goal; if not, the run degrades to judgment.
 > - "Receipts aren't literally on every terminal outcome" / "a crashed worker strands

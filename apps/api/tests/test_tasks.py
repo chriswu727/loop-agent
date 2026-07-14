@@ -39,6 +39,35 @@ async def test_goal_too_short_is_validation_error(client: AsyncClient) -> None:
     assert resp.json()["code"] == "validation_error"
 
 
+async def test_network_authority_requires_valid_destination_hosts(client: AsyncClient) -> None:
+    missing = await client.post(
+        "/api/v1/tasks",
+        json={"goal": "fetch a remote document", "capabilities": ["exec", "net.shell"]},
+    )
+    assert missing.status_code == 422
+
+    private = await client.post(
+        "/api/v1/tasks",
+        json={
+            "goal": "fetch a remote document",
+            "capabilities": ["exec", "net.shell"],
+            "egress_hosts": ["169.254.169.254"],
+        },
+    )
+    assert private.status_code == 422
+
+    accepted = await client.post(
+        "/api/v1/tasks",
+        json={
+            "goal": "fetch a remote document",
+            "capabilities": ["exec", "net.shell"],
+            "egress_hosts": ["API.Example.COM."],
+        },
+    )
+    assert accepted.status_code == 201
+    assert accepted.json()["authority"]["egress_hosts"] == ["api.example.com"]
+
+
 async def test_list_get_and_steps(client: AsyncClient) -> None:
     created = (await client.post("/api/v1/tasks", json={"goal": "summarise a paragraph"})).json()
     task_id = created["id"]

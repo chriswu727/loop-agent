@@ -72,3 +72,45 @@ async def test_fire_unknown_trigger_404(client: AsyncClient) -> None:
     )
     assert resp.status_code == 404
     assert resp.json()["code"] == "not_found"
+
+
+async def test_network_trigger_requires_and_preserves_destinations(client: AsyncClient) -> None:
+    denied = await client.post(
+        "/api/v1/triggers",
+        json={
+            "name": "network hook",
+            "goal": "fetch the service status",
+            "allow_egress": True,
+        },
+    )
+    assert denied.status_code == 422
+
+    created = await client.post(
+        "/api/v1/triggers",
+        json={
+            "name": "network hook",
+            "goal": "fetch the service status",
+            "allow_egress": True,
+            "egress_hosts": ["status.example.com"],
+        },
+    )
+    assert created.status_code == 201
+    trigger = created.json()
+    fired = await client.post(
+        f"/api/v1/triggers/{trigger['id']}/fire",
+        headers={"X-Trigger-Secret": trigger["secret"]},
+    )
+    assert fired.status_code == 200
+    assert fired.json()["egress_hosts"] == ["status.example.com"]
+
+
+async def test_browser_trigger_requires_destinations(client: AsyncClient) -> None:
+    denied = await client.post(
+        "/api/v1/triggers",
+        json={
+            "name": "browser hook",
+            "goal": "check the dashboard",
+            "capabilities": ["net.browser"],
+        },
+    )
+    assert denied.status_code == 422

@@ -108,6 +108,7 @@ class TaskService:
             token_budget=token_budget,
             summary=None,
             verification_score=0,
+            authority_audit=[],
             steps_used=0,
             tokens_used=0,
             workspace_path=None,

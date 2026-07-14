@@ -48,8 +48,9 @@ SPAWN_SPEC = (
     "- spawn: delegate a self-contained sub-goal to a fresh sub-agent that runs its "
     "own verified loop in its own sandbox and returns a summary + its output files. "
     'args: {"goal": "...", "max_steps": 8, "token_budget": 20000, '
-    '"allow_egress": false, "use_browser": false}. Use for big tasks that split '
-    "into independent pieces; its token use counts against your budget."
+    '"allow_egress": false, "use_browser": false, "egress_hosts": []}. '
+    "Use for big tasks that split into independent pieces; its token use counts "
+    "against your budget."
 )
 
 # Offered only when the task opts into email and creds are configured.
@@ -107,6 +108,12 @@ class ToolExecutor:
         sandbox_backend: str | None = None,
         sandbox_memory: str = "512m",
         sandbox_cpus: str = "1",
+        egress_proxy_url: str | None = None,
+        egress_network: str | None = None,
+        egress_token_factory: Callable[[], str] | None = None,
+        provider_gateway: Any = None,
+        docker_workspace_volume: str | None = None,
+        docker_workspace_mount: str | None = None,
     ) -> None:
         self.workspace = workspace
         self.approval_mode = approval_mode
@@ -118,6 +125,11 @@ class ToolExecutor:
         self.sandbox_backend = sandbox_backend or ("docker" if sandbox_image else None)
         self.sandbox_memory = sandbox_memory
         self.sandbox_cpus = sandbox_cpus
+        self.egress_proxy_url = egress_proxy_url
+        self.egress_network = egress_network
+        self.egress_token_factory = egress_token_factory
+        self.docker_workspace_volume = docker_workspace_volume
+        self.docker_workspace_mount = docker_workspace_mount
         # The single point where the task's declared authority is enforced.
         self.envelope = (
             envelope if envelope is not None else CapabilityEnvelope.from_capabilities([])
@@ -131,9 +143,16 @@ class ToolExecutor:
         self.email = email
         self.calendar = calendar
         self.vision = vision
+        self.provider_gateway = provider_gateway
 
     def _provider_for(self, tool: str) -> Any:
-        for provider in (self.mcp, self.email, self.calendar, self.vision):
+        for provider in (
+            self.provider_gateway,
+            self.mcp,
+            self.email,
+            self.calendar,
+            self.vision,
+        ):
             if provider is not None and tool in provider.tool_names:
                 return provider
         return None
@@ -197,6 +216,10 @@ class ToolExecutor:
                 f"Blocked by safety policy ({reason}). Try a safer approach.", ToolStatus.BLOCKED
             )
         if self.sandbox_image is not None:
+            network = self.envelope.permits_capability(Capability.NET_SHELL)
+            egress_token = (
+                self.egress_token_factory() if network and self.egress_token_factory else None
+            )
             if self.sandbox_backend == "kubernetes":
                 from app.tools.kubernetes_sandbox import run_command_in_kubernetes
 
@@ -204,7 +227,9 @@ class ToolExecutor:
                     command,
                     self.workspace.root,
                     image=self.sandbox_image,
-                    network=self.envelope.permits_capability(Capability.NET_SHELL),
+                    network=network,
+                    egress_proxy_url=self.egress_proxy_url,
+                    egress_token=egress_token,
                     timeout_seconds=self.command_timeout,
                     output_limit=self.output_limit,
                     memory=self.sandbox_memory,
@@ -214,7 +239,12 @@ class ToolExecutor:
                 command,
                 self.workspace.root,
                 image=self.sandbox_image,
-                network=self.envelope.permits_capability(Capability.NET_SHELL),
+                network=network,
+                egress_proxy_url=self.egress_proxy_url,
+                egress_token=egress_token,
+                egress_network=self.egress_network,
+                workspace_volume=self.docker_workspace_volume,
+                workspace_volume_mount=self.docker_workspace_mount,
                 timeout_seconds=self.command_timeout,
                 output_limit=self.output_limit,
                 memory=self.sandbox_memory,

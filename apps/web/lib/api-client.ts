@@ -136,14 +136,11 @@ export const tasksApi = {
   files: (id: string) => apiFetch<FileEntry[]>(`/api/v1/tasks/${id}/files`),
   fileContent: (id: string, path: string) =>
     apiFetch<FileContent>(`/api/v1/tasks/${id}/files/${path}`),
-  downloadUrl: (id: string, path: string) =>
-    `${apiBaseUrl()}/api/v1/tasks/${id}/download/${path}`,
+  downloadUrl: (id: string, path: string) => `${apiBaseUrl()}/api/v1/tasks/${id}/download/${path}`,
   publish: (body: PublishBody) =>
     apiFetch<Task>('/api/v1/tasks', { method: 'POST', body: JSON.stringify(body) }),
-  cancel: (id: string) =>
-    apiFetch<Task>(`/api/v1/tasks/${id}/cancel`, { method: 'POST' }),
-  retry: (id: string) =>
-    apiFetch<Task>(`/api/v1/tasks/${id}/retry`, { method: 'POST' }),
+  cancel: (id: string) => apiFetch<Task>(`/api/v1/tasks/${id}/cancel`, { method: 'POST' }),
+  retry: (id: string) => apiFetch<Task>(`/api/v1/tasks/${id}/retry`, { method: 'POST' }),
   upload: uploadFile,
   start: (id: string) => apiFetch<Task>(`/api/v1/tasks/${id}/start`, { method: 'POST' }),
   respond: (id: string, answer: string) =>
@@ -164,6 +161,7 @@ export interface TriggerCreateBody {
   allowed_tools?: string[] | null;
   capabilities?: import('@repo/api-contract').Capability[] | null;
   allow_egress?: boolean;
+  egress_hosts?: string[] | null;
   require_approval?: boolean;
   skill?: string | null;
   interval_minutes?: number | null;
@@ -180,6 +178,5 @@ export const triggersApi = {
       method: 'POST',
       headers: { 'X-Trigger-Secret': secret },
     }),
-  remove: (id: string) =>
-    apiFetch<void>(`/api/v1/triggers/${id}`, { method: 'DELETE' }),
+  remove: (id: string) => apiFetch<void>(`/api/v1/triggers/${id}`, { method: 'DELETE' }),
 };

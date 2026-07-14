@@ -40,9 +40,7 @@ class TaskModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     allowed_tools: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
     # Network egress is default-deny; True lets the task reach the network.
     allow_egress: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
-    # If egress is allowed, an optional allowlist of destination hosts. Empty/None =
-    # any host; a non-empty list restricts egress to just those hosts (best-effort
-    # at the policy layer; container mode is all-or-nothing).
+    # Explicit shell/browser destination allowlist, enforced again by the egress proxy.
     egress_hosts: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
     # When True, non-allowlisted commands pause for the user to approve.
     require_approval: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
@@ -75,6 +73,10 @@ class TaskModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     verified_by: Mapped[str | None] = mapped_column(String(20), nullable=True)  # execution|judgment
     receipt_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     receipt_schema: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    # Destination/provider decisions returned by isolated enforcement services.
+    authority_audit: Mapped[list[dict[str, Any]]] = mapped_column(
+        JSON, nullable=False, default=list
+    )
     # How shell commands were isolated: "container", "kubernetes", or "inline".
     sandbox: Mapped[str | None] = mapped_column(String(20), nullable=True)
     steps_used: Mapped[int] = mapped_column(Integer, nullable=False, default=0)

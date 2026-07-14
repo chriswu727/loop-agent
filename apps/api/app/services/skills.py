@@ -35,6 +35,9 @@ from cryptography.hazmat.primitives.serialization import (
     load_pem_public_key,
 )
 
+from app.domain.authority_token import normalize_hosts
+from app.domain.capability import parse_capabilities, sorted_capabilities
+
 MANIFEST = "skill.json"
 SIGNATURE = "skill.json.sig"
 
@@ -47,16 +50,45 @@ class SkillManifest:
     allowed_tools: list[str] | None  # None = no extra tool restriction
     allow_egress: bool
     capabilities: list[str] | None
+    egress_hosts: list[str] | None
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> SkillManifest:
+        name = data.get("name")
+        if not isinstance(name, str) or not name.strip():
+            raise ValueError("skill name must be a non-empty string")
+        raw_tools = data.get("allowed_tools")
+        if raw_tools is not None and (
+            not isinstance(raw_tools, list) or any(not isinstance(tool, str) for tool in raw_tools)
+        ):
+            raise ValueError("skill allowed_tools must be a list of tool names")
+        raw_capabilities = data.get("capabilities")
+        if raw_capabilities is not None and (
+            not isinstance(raw_capabilities, list)
+            or any(not isinstance(capability, str) for capability in raw_capabilities)
+        ):
+            raise ValueError("skill capabilities must be a list of capability names")
+        capabilities = (
+            sorted_capabilities(parse_capabilities(raw_capabilities))
+            if raw_capabilities is not None
+            else None
+        )
+        raw_allow_egress = data.get("allow_egress", False)
+        if not isinstance(raw_allow_egress, bool):
+            raise ValueError("skill allow_egress must be a boolean")
+        raw_hosts = data.get("egress_hosts")
+        if raw_hosts is not None and (
+            not isinstance(raw_hosts, list) or any(not isinstance(host, str) for host in raw_hosts)
+        ):
+            raise ValueError("skill egress_hosts must be a list of public DNS names")
         return cls(
-            name=str(data.get("name", "")).strip(),
+            name=name.strip(),
             description=str(data.get("description", "")),
             instructions=str(data.get("instructions", "")),
-            allowed_tools=data.get("allowed_tools"),
-            allow_egress=bool(data.get("allow_egress", False)),
-            capabilities=data.get("capabilities"),
+            allowed_tools=raw_tools,
+            allow_egress=raw_allow_egress,
+            capabilities=capabilities,
+            egress_hosts=(sorted(normalize_hosts(raw_hosts)) if raw_hosts is not None else None),
         )
 
 
@@ -101,7 +133,7 @@ class SkillStore:
         manifest_bytes = (d / MANIFEST).read_bytes()
         try:
             manifest = SkillManifest.from_dict(json.loads(manifest_bytes))
-        except json.JSONDecodeError:
+        except (json.JSONDecodeError, TypeError, ValueError):
             return None
         verified, reason = self._verify(d, manifest_bytes)
         return Skill(manifest=manifest, verified=verified, reason=reason)

@@ -5,9 +5,12 @@
 > capability grants, re-execution Receipts and offline replay, signed skills,
 > document uploads, owner/project memory, browser/email/calendar adapters, triggers,
 > SSE, Telegram/Slack, GitHub OAuth, durable Redis Streams workers, and required
-> Kubernetes Job shell isolation. Remaining work that cannot honestly be marked done:
-> a production-isolated stateful provider gateway, network-layer per-host egress,
-> a skill marketplace, broader channels, and production/adoption evidence.
+> Kubernetes Job shell isolation. It now also ships an isolated, credential-bearing
+> Provider Gateway; short-lived audience-bound authority grants; and a network-layer
+> egress proxy that requires explicit hosts, rejects private resolution, pins DNS,
+> and records per-run audit events. Remaining work that cannot honestly be marked
+> done: a meaningful skill marketplace, broader channels, durable proxy audit,
+> protocol-level provider network separation, and production/adoption evidence.
 
 _Synthesized by a multi-agent research workflow (2026-06): 4 verified OpenClaw research dimensions + repo analysis + a 6-lens differentiation panel. Two research dimensions (capabilities, ecosystem) failed structured-output validation and were covered indirectly via the panel; treat those areas as lower-confidence until re-verified._
 
@@ -25,17 +28,28 @@ Turn Loop's seed verifier into the product spine. Today _handle_finish in agent_
 
 ### 2. Least-authority by construction: one declared, enforced capability envelope per task and per signed skill _(effort: L)_
 
+**Shipped.** The task/skill intersection is enforced in the executor and delegated
+to isolated services through short-lived signed grants; the task and Receipt retain
+the resolved grant and enforcement audit.
+
 Define every task and every skill to run under a single machine-readable envelope — allowed tools (of the 6), workspace subpaths, egress hosts, command-prefix classes, and step/token sub-budget — enforced as a hard ceiling at the two points Loop already owns: ToolExecutor.execute (tools/registry.py) and TaskService._resolve_limits (services/task.py). Skills ship as signed bundles whose detached signature is verified against a trust root before load; the prose can ask for anything, the runtime grants only what the signature vouched for and the manifest declared. The user sees and approves the envelope up front.
 
 **Why it beats OpenClaw / why it's ours:** OpenClaw's most-used path runs on the host and its extension model is 5,400+ unsigned prose files injected into the system prompt — prompt-injection-as-a-feature with no provenance or capability bound, across a tool surface with no single enforcement point. Loop is the only one of the two with the structure (single choke point + single clamp) to make a malicious or hijacked skill structurally unable to exceed its declared envelope. This is the headline killer feature.
 
 ### 3. Default-deny network egress (the exfiltration firewall) _(effort: M)_
 
+**Shipped for shell and browser traffic.** Sandboxes have no direct internet route;
+the authenticated proxy enforces explicit destination hosts and ports, rejects
+non-public resolution, pins the approved IP, and emits a per-run audit trail.
+
 Promote egress to a first-class declared capability enforced at the network-namespace/proxy layer, not by regex. The task container blocks all network by default; the task/skill manifest lists allowed hosts; run_command and any future web/MCP tool can only reach declared destinations. Ship an opt-in profile pre-allowlisting PyPI/npm so normal installs still work.
 
 **Why it beats OpenClaw / why it's ours:** OpenClaw's reach IS its exfiltration surface — it can send out over six-plus chat channels plus curl while inbound messages feed memory, so an injected 'send X to this chat' has a real path off the box. Loop has no outbound channels yet and policy.py already denies piping the network into a shell, so it can adopt default-deny cleanly. Exfiltration in Loop would require a destination the user pre-approved.
 
 ### 4. Universal ephemeral containment, default-on (including the primary path) _(effort: L)_
+
+**Shipped in production and the full Compose worker profile.** Production refuses
+inline fallback and launches one hardened Kubernetes Job per shell command.
 
 Ship per-task ephemeral containers (Docker default; gVisor/Firecracker as a hardened option) as the default for every task, with only the task workspace bind-mounted and a read-only rootfs. Keep the zero-infra inline mode as an explicit, clearly-labeled reduced-isolation downgrade rather than the silent default.
 

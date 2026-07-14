@@ -105,7 +105,7 @@ class CapabilityEnvelope:
         if not self.egress_allowed:
             return False
         if not self.egress_hosts:
-            return True
+            return False
         normalized = host.strip().lower().rstrip(".")
         return any(
             normalized == allowed or normalized.endswith("." + allowed)

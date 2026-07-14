@@ -65,6 +65,7 @@ class TriggerService:
                 else None
             ),
             allow_egress=payload.allow_egress,
+            egress_hosts=payload.egress_hosts,
             require_approval=payload.require_approval,
             skill=payload.skill,
             interval_minutes=payload.interval_minutes,
@@ -127,6 +128,7 @@ class TriggerService:
                     else None
                 ),
                 allow_egress=claimed.allow_egress,
+                egress_hosts=claimed.egress_hosts,
                 require_approval=claimed.require_approval,
                 skill=claimed.skill,
                 idempotency_key=f"trigger:{claimed.id}:{claimed.fire_count}",

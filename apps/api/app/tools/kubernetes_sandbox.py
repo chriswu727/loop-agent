@@ -11,6 +11,7 @@ from typing import Any, cast
 from app.core.config import settings
 from app.core.logging import get_logger
 from app.tools.base import ToolResult, ToolStatus
+from app.tools.egress import authenticated_proxy_url
 from app.tools.shell import format_result
 
 log = get_logger("kubernetes-sandbox")
@@ -36,11 +37,18 @@ async def run_command_in_kubernetes(
     *,
     image: str,
     network: bool,
+    egress_proxy_url: str | None = None,
+    egress_token: str | None = None,
     timeout_seconds: int,
     output_limit: int,
     memory: str,
     cpus: str,
 ) -> ToolResult:
+    if network and (not egress_proxy_url or not egress_token):
+        return ToolResult(
+            "Network authority requires the destination-enforcing egress proxy.",
+            ToolStatus.BLOCKED,
+        )
     mount, workspace, subpath = _resolve_workspace_scope(workspace_root)
     if subpath is None:
         return ToolResult(
@@ -60,7 +68,7 @@ async def run_command_in_kubernetes(
     labels = {
         "app.kubernetes.io/name": "loop-sandbox",
         "app.kubernetes.io/component": "sandbox",
-        "loop.openai.com/egress": "allowed" if network else "denied",
+        "loop.openai.com/egress": "proxied" if network else "denied",
     }
     body: dict[str, Any] = {
         "apiVersion": "batch/v1",
@@ -98,6 +106,25 @@ async def run_command_in_kubernetes(
                                 "readOnlyRootFilesystem": True,
                                 "capabilities": {"drop": ["ALL"]},
                             },
+                            "env": (
+                                [
+                                    {
+                                        "name": "HTTP_PROXY",
+                                        "value": authenticated_proxy_url(
+                                            egress_proxy_url or "", egress_token or ""
+                                        ),
+                                    },
+                                    {
+                                        "name": "HTTPS_PROXY",
+                                        "value": authenticated_proxy_url(
+                                            egress_proxy_url or "", egress_token or ""
+                                        ),
+                                    },
+                                    {"name": "NO_PROXY", "value": ""},
+                                ]
+                                if network
+                                else []
+                            ),
                             "volumeMounts": [
                                 {
                                     "name": "data",

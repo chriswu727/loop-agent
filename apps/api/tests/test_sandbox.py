@@ -37,15 +37,42 @@ async def test_sandbox_network_follows_egress(
 ) -> None:
     seen: dict[str, object] = {}
 
-    async def fake_container(command: str, root: Path, *, image: str, network: bool, **_: object):
-        seen["network"] = network
+    async def fake_container(
+        command: str,
+        root: Path,
+        *,
+        image: str,
+        network: bool,
+        egress_proxy_url: str | None,
+        egress_token: str | None,
+        egress_network: str | None,
+        **_: object,
+    ):
+        seen.update(
+            network=network,
+            proxy=egress_proxy_url,
+            token=egress_token,
+            network_name=egress_network,
+        )
         return ToolResult("exit code 0\n", ToolStatus.OK)
 
     monkeypatch.setattr("app.tools.registry.run_command_in_container", fake_container)
-    env = CapabilityEnvelope.from_tools(None, egress_allowed=True)
-    ex = ToolExecutor(Workspace(tmp_path / "w"), envelope=env, sandbox_image="img")
+    env = CapabilityEnvelope.from_tools(None, egress_allowed=True, egress_hosts=["example.com"])
+    ex = ToolExecutor(
+        Workspace(tmp_path / "w"),
+        envelope=env,
+        sandbox_image="img",
+        egress_proxy_url="http://egress-proxy:8080",
+        egress_network="loop_sandbox-egress",
+        egress_token_factory=lambda: "short-lived-token",
+    )
     await ex.execute("run_command", {"command": "curl x"})
-    assert seen["network"] is True  # egress allowed -> container has network
+    assert seen == {
+        "network": True,
+        "proxy": "http://egress-proxy:8080",
+        "token": "short-lived-token",
+        "network_name": "loop_sandbox-egress",
+    }
 
 
 async def test_no_sandbox_uses_host(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -78,6 +105,18 @@ def test_kubernetes_sandbox_mounts_only_a_task_subpath(tmp_path: Path) -> None:
     assert _workspace_subpath(mount, workspace) == "workspaces/task-id"
     assert _workspace_subpath(mount, mount) is None
     assert _workspace_subpath(mount, tmp_path / "other") is None
+
+
+def test_docker_sandbox_mounts_only_a_task_volume_subpath(tmp_path: Path) -> None:
+    from app.tools.sandbox import _workspace_volume_subpath
+
+    mount = tmp_path / "data"
+    workspace = mount / "workspaces" / "task-id"
+    workspace.mkdir(parents=True)
+
+    assert _workspace_volume_subpath(mount, workspace) == "workspaces/task-id"
+    assert _workspace_volume_subpath(mount, mount) is None
+    assert _workspace_volume_subpath(mount, tmp_path / "other") is None
 
 
 def test_docker_available_does_not_cache_negative(monkeypatch: pytest.MonkeyPatch) -> None:

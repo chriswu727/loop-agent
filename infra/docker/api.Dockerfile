@@ -6,6 +6,8 @@
 # =============================================================================
 ARG PYTHON_VERSION=3.12
 
+FROM node:22-bookworm-slim AS node-runtime
+
 FROM python:${PYTHON_VERSION}-slim AS base
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
@@ -43,3 +45,22 @@ USER app
 EXPOSE 8000
 # Horizontal scale = more pods. Keep workers modest per pod; the cluster scales out.
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+
+# Provider credentials and browser runtime live in a separate image/process.
+FROM runtime AS provider-gateway
+USER root
+ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright \
+    PATH="/opt/provider/node_modules/.bin:$PATH"
+COPY --from=node-runtime /usr/local/bin/node /usr/local/bin/node
+COPY --from=node-runtime /usr/local/lib/node_modules /usr/local/lib/node_modules
+RUN ln -sf ../lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
+    && ln -sf ../lib/node_modules/npm/bin/npx-cli.js /usr/local/bin/npx
+WORKDIR /opt/provider
+COPY apps/provider-gateway-runtime/package.json apps/provider-gateway-runtime/package-lock.json ./
+RUN npm ci --omit=dev \
+    && ./node_modules/.bin/playwright install --with-deps chromium \
+    && chmod -R a+rX /ms-playwright
+WORKDIR /app
+USER app
+EXPOSE 8090
+CMD ["uvicorn", "app.provider_gateway.main:app", "--host", "0.0.0.0", "--port", "8090"]

@@ -57,7 +57,12 @@ flowchart TB
     API -- "enqueue job" --> REDIS
     WORKER["worker\nbackground jobs · N replicas"] -- "consume" --> REDIS
     WORKER --> PGW
-    WORKER --> JOB["short-lived sandbox Job\none command · no token"]
+    WORKER -- "mint short-lived grant" --> PGATE["Provider Gateway\npublic verifier · provider secrets"]
+    WORKER --> JOB["short-lived sandbox Job\none command · authority grant"]
+    JOB -- "authenticated HTTP(S) proxy" --> EGRESS["Egress proxy\nhost policy · DNS pin · audit"]
+    PGATE -- "browser proxy" --> EGRESS
+    PGATE --> EXT["email · calendar · vision providers"]
+    EGRESS --> WEBEXT["approved public destinations"]
     API & WORKER & JOB --> PVC[("RWX task artifacts + memory")]
     API & WEB & WORKER -. "OTLP" .-> OTEL["OTel Collector"]
     OTEL --> TRACING["Tracing backend\n(Jaeger/Tempo)"]
@@ -65,10 +70,12 @@ flowchart TB
     METRICS --> GRAFANA["Grafana"]
 ```
 
-Three disposable compute tiers (`web`, `api`, `worker`), short-lived sandbox Jobs,
-and three durable edges (`postgres`, `redis`, shared artifact storage). Everything
-in the compute tier is replaceable and horizontally scalable; every stateful edge
-is explicit.
+Five disposable service tiers (`web`, `api`, `worker`, Provider Gateway, egress
+proxy), short-lived sandbox Jobs, and three durable edges (`postgres`, `redis`,
+shared artifact storage). Provider credentials exist only in the gateway; the
+authority signing key exists only in the worker; the gateway and proxy receive only
+the public verifier. Everything in the compute tier is replaceable and horizontally
+scalable; every durable edge is explicit.
 
 ---
 
@@ -222,11 +229,17 @@ Defense in depth, with authority enforced independently of model behavior:
   triggers, memory, files, Receipts, and idempotency keys are subject-scoped.
 - **Runtime authority:** `loop.capabilities/v1` is resolved as task request ∩ signed
   skill grant and enforced at `ToolExecutor.execute`. Unknown tools default-deny.
+- **Delegated authority:** the worker turns that resolved envelope into a short-lived,
+  audience-bound `loop.authority-token/v1`. The Provider Gateway and egress proxy
+  verify it independently with the public key; neither can mint new authority.
 - **Production shell isolation:** the worker creates one non-root, read-only-root
   Kubernetes Job per command with no service-account token, dropped capabilities,
-  resource/time limits, and default-deny egress unless `net.shell` was granted.
-- **Provider boundary:** stateful browser/email/calendar providers are disabled in
-  production until an isolated gateway is configured; the runtime fails closed.
+  resource/time limits, and no direct internet route. A networked Job can reach only
+  the proxy, which re-checks the capability, explicit host and port, rejects private
+  addresses, pins the resolved public IP, and records the decision.
+- **Provider boundary:** browser/email/calendar/vision credentials live only in the
+  isolated Provider Gateway. Every invocation is capability-checked and audited;
+  production fails closed when the gateway is absent.
 - **Input:** every request body and query is validated by Pydantic before it
   reaches your code.
 - **Rate limiting:** a Redis-backed limiter dependency guards expensive routes.

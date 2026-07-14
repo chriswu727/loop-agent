@@ -19,13 +19,18 @@ not prompt instructions.
 ## Runtime authority
 
 - Each task declares `loop.capabilities/v1`; omitted legacy fields are converted at
-  the boundary. A signed skill may only narrow the task grant.
+  the boundary. A signed skill may only narrow the task grant, including its explicit
+  destination-host policy.
 - `ToolExecutor.execute` is the enforcement choke point. Unknown tools and missing
   capabilities default-deny.
 - `net.browser` does not grant `net.shell`; email, calendar, memory, vision, and
   delegation are independent grants.
 - Side-effecting email/calendar actions and policy-classified commands pause through
   the persisted approval flow when approval is required.
+- The worker signs an audience-bound `loop.authority-token/v1` for each run. Tokens
+  carry the task/owner/project/run identity, exact capabilities, explicit destination
+  hosts, and a short expiry. Provider Gateway and proxy processes have only the
+  public verifier, so a compromised enforcement service cannot mint wider grants.
 
 ## Sandbox and network
 
@@ -37,15 +42,33 @@ not prompt instructions.
 - Only the current task directory is mounted through a PVC `subPath`; other tenants'
   workspaces and memory are not visible. Production requires the sandbox image to be
   pinned by digest, and Receipts record that digest.
-- Shell egress is denied by NetworkPolicy unless `net.shell` is granted. The optional
-  host allowlist is enforced at the command/script policy layer; Kubernetes network
-  isolation is currently boolean, not destination-aware. Use an egress proxy or CNI
-  FQDN policy before treating the host allowlist as a network-layer guarantee.
+- Shell egress is denied unless `net.shell` and at least one explicit host were
+  granted. Networked Jobs can connect only to the egress proxy. The proxy verifies
+  the run token, exact host/subdomain policy and allowed port, rejects loopback,
+  private, link-local and otherwise non-global addresses, resolves once, and connects
+  to that pinned IP to prevent DNS rebinding. Every allow/deny is available to the
+  worker audit endpoint and is embedded in the task/Receipt.
 - Local `preferred` mode may fall back to the host and labels the Receipt accordingly.
   Use `required` when containment is mandatory.
-- Browser/email/calendar providers are disabled in the production manifest until an
-  isolated provider gateway exists. Requests fail closed instead of running beside
-  worker credentials.
+- Browser/email/calendar/vision provider credentials exist only in the Provider
+  Gateway. The worker calls it with the short-lived grant; production requests fail
+  closed if the gateway is missing or does not expose every granted capability.
+
+### Exact guarantee boundaries
+
+- Shell containers/Jobs have no direct external route: destination enforcement is a
+  network-layer property of the sandbox namespace plus proxy.
+- Browser navigation is checked by the Provider Gateway and routed through the same
+  authenticated proxy. The gateway pod also needs direct protocol egress for
+  SMTP/IMAP/CalDAV/vision APIs; standard Kubernetes NetworkPolicy cannot express
+  DNS-name policy for those connections. Deployments that need equivalent L4
+  separation should split browser and protocol providers into separate gateways or
+  use a CNI/service mesh with FQDN policy.
+- Proxy audit is currently an in-memory bounded buffer and the Kubernetes deployment
+  intentionally has one replica. The worker fetches it after each invocation, but a
+  proxy restart in that interval can lose network audit evidence. Task steps and
+  already-persisted Receipt events remain durable. Use a durable audit sink before
+  treating the proxy as a compliance ledger.
 
 ## Receipts and provenance
 
@@ -63,8 +86,9 @@ not prompt instructions.
 
 - Never commit secrets. `.env` is ignored; the example Kubernetes Secret is not
   part of Kustomize resources, so a deployment cannot silently inherit placeholders.
-- API/worker and web use separate Kubernetes Secrets so the web pod does not receive
-  database or model credentials.
+- API, worker, Provider Gateway, and web use separate Kubernetes Secrets. The API and
+  gateway do not receive the authority issuer key; the worker does not receive
+  email/calendar/provider-vision credentials; the web receives neither.
 - Production should use External Secrets, Sealed Secrets, or a cloud secret manager.
 - Skills require an Ed25519 signature from the configured trust root.
 - JavaScript and Python production installs use frozen lockfiles; Python wheels are

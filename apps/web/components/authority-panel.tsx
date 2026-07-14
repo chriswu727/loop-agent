@@ -26,7 +26,9 @@ export function AuthorityPanel({ task }: { task: Task }) {
           label: `Shell network: ${task.authority.egress_hosts.join(', ')}`,
           tone: 'elevated' as const,
         }
-      : { label: 'Shell network: any host', tone: 'elevated' as const };
+      : { label: 'Shell network: invalid empty policy', tone: 'elevated' as const };
+  const allowed = task.authority.audit.filter((event) => event.decision === 'allowed').length;
+  const blocked = task.authority.audit.filter((event) => event.decision === 'blocked').length;
 
   return (
     <section className="mt-6 rounded-2xl border border-black/10 bg-white/40 p-5 dark:border-white/10 dark:bg-white/[0.02]">
@@ -43,6 +45,15 @@ export function AuthorityPanel({ task }: { task: Task }) {
         ))}
         {task.require_approval && <Pill tone="neutral">Approval required</Pill>}
         {task.authority.sandbox && <Pill tone="neutral">Sandbox: {task.authority.sandbox}</Pill>}
+        {(granted.has('net.shell') || granted.has('net.browser')) &&
+          task.authority.enforcement.egress_proxy && (
+            <Pill tone="safe">Destination proxy enforced</Pill>
+          )}
+        {task.authority.audit.length > 0 && (
+          <Pill tone="neutral">
+            Runtime decisions: {allowed} allowed / {blocked} blocked
+          </Pill>
+        )}
         {task.skill && <Pill tone="skill">Skill: {task.skill}</Pill>}
       </div>
     </section>
