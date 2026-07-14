@@ -29,7 +29,10 @@ spec:
       serviceAccountName: app
       securityContext:
         runAsNonRoot: true
-        fsGroup: 1000
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        fsGroupChangePolicy: OnRootMismatch
         seccompProfile:
           type: RuntimeDefault
       # Spread pods across nodes so a single node failure can't take the service down.
@@ -81,7 +84,12 @@ spec:
           volumeMounts:
             - name: tmp
               mountPath: /tmp
+            - name: data
+              mountPath: /var/lib/loop
       volumes:
         - name: tmp
           emptyDir: {}
+        - name: data
+          persistentVolumeClaim:
+            claimName: loop-data
       terminationGracePeriodSeconds: 30

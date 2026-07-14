@@ -1,0 +1,25 @@
+name: Verify Loop Receipt
+description: Verify a Loop Receipt hash, signature, and output-file manifest offline.
+inputs:
+  receipt:
+    description: Path to receipt.json in the caller workspace.
+    required: true
+  public-key:
+    description: Optional Ed25519 public key PEM path.
+    required: false
+    default: ''
+runs:
+  using: composite
+  steps:
+    - name: Verify receipt
+      shell: bash
+      env:
+        LOOP_RECEIPT_PATH: ${{ inputs.receipt }}
+        LOOP_RECEIPT_PUBLIC_KEY: ${{ inputs.public-key }}
+      run: |
+        verifier="$GITHUB_ACTION_PATH/../../../apps/api/scripts/verify_receipt.py"
+        if [[ -n "$LOOP_RECEIPT_PUBLIC_KEY" ]]; then
+          python "$verifier" "$LOOP_RECEIPT_PATH" --pubkey "$LOOP_RECEIPT_PUBLIC_KEY"
+        else
+          python "$verifier" "$LOOP_RECEIPT_PATH"
+        fi

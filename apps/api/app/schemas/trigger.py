@@ -7,14 +7,17 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.domain.capability import Capability
 from app.schemas.task import LimitsIn
 
 
 class TriggerCreate(BaseModel):
     name: str = Field(min_length=1, max_length=120)
     goal: str = Field(min_length=4, max_length=4_000)
+    project_id: str = Field(default="default", min_length=1, max_length=100, pattern=r"^[\w.-]+$")
     limits: LimitsIn = Field(default_factory=LimitsIn)
     allowed_tools: list[str] | None = None
+    capabilities: list[Capability] | None = None
     allow_egress: bool = False
     require_approval: bool = False
     skill: str | None = None
@@ -28,12 +31,15 @@ class TriggerRead(BaseModel):
     id: uuid.UUID
     name: str
     goal: str
+    owner_id: str
+    project_id: str
     enabled: bool
     fire_count: int
     secret: str
     max_steps: int
     token_budget: int
     allowed_tools: list[str] | None
+    capabilities: list[str] | None
     allow_egress: bool
     require_approval: bool
     skill: str | None

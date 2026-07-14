@@ -24,7 +24,7 @@ setup: ## Install all dependencies (JS + Python) and copy env
 .PHONY: sandbox-image
 sandbox-image: ## Build the container-isolation image (needs Docker running)
 	@docker info >/dev/null 2>&1 \
-		&& docker build -f apps/api/sandbox.Dockerfile -t loop-sandbox:latest apps/api \
+		&& docker build -f apps/api/sandbox.Dockerfile -t loop-sandbox:latest . \
 		|| echo "Docker not running — skipping sandbox image (tasks will run inline)."
 
 # ---------- Local stack (Docker) ----------
@@ -111,6 +111,11 @@ test: ## Run all tests
 
 .PHONY: check
 check: lint typecheck test ## Run the full quality gate (what CI runs)
+
+.PHONY: audit
+audit: ## Audit production Python and JavaScript dependencies
+	pnpm audit --prod
+	cd apps/api && . .venv/bin/activate && pip-audit
 
 # ---------- Kubernetes ----------
 .PHONY: k8s-dev

@@ -13,11 +13,19 @@ from __future__ import annotations
 
 import hashlib
 import json
+import platform
+import sys
+from datetime import UTC, datetime
 from typing import Any
 
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey, Ed25519PublicKey
-from cryptography.hazmat.primitives.serialization import load_pem_private_key
+from cryptography.hazmat.primitives.serialization import (
+    Encoding,
+    PublicFormat,
+    load_pem_private_key,
+    load_pem_public_key,
+)
 
 from app.core.config import settings
 from app.db.models.task import TaskModel
@@ -26,6 +34,7 @@ from app.tools import Workspace
 
 RECEIPT_JSON = "receipt.json"
 RECEIPT_MD = "RECEIPT.md"
+RECEIPT_SCHEMA = "loop.receipt/v1"
 # Added AFTER the content hash is computed, so they're excluded when recomputing it.
 _NON_BODY_KEYS = ("receipt_hash", "signature")
 
@@ -46,6 +55,23 @@ def _verify_key() -> Ed25519PublicKey | None:
     signing key. (Independent verifiers use the published public key out-of-band.)"""
     priv = _signing_key()
     return priv.public_key() if priv is not None else None
+
+
+def _signing_key_id(key: Ed25519PrivateKey) -> str:
+    public = key.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)
+    return f"ed25519:{hashlib.sha256(public).hexdigest()[:24]}"
+
+
+def _model_identity(provider: str) -> dict[str, str]:
+    names = {
+        "deepseek": settings.deepseek_model,
+        "ollama": settings.ollama_model,
+        "anthropic": "configured-default",
+        "gemini": "configured-default",
+        "glm": "configured-default",
+        "mock": "deterministic-demo",
+    }
+    return {"provider": provider, "model": names[provider]}
 
 
 def _file_manifest(workspace: Workspace) -> list[dict[str, Any]]:
@@ -70,10 +96,36 @@ def build_receipt(
 ) -> tuple[str, dict[str, Any]]:
     """Assemble the receipt, write it into the workspace, return (hash, receipt)."""
     checks = as_dicts(check_results)
+    attempt = task.attempt if isinstance(task.attempt, int) else 1
+    authority_schema = (
+        task.authority_schema if isinstance(task.authority_schema, str) else "loop.capabilities/v1"
+    )
+    requested_capabilities = (
+        task.requested_capabilities
+        if isinstance(task.requested_capabilities, list) or task.requested_capabilities is None
+        else None
+    )
+    resolved_capabilities = (
+        task.resolved_capabilities if isinstance(task.resolved_capabilities, list) else []
+    )
+    egress_hosts = task.egress_hosts if isinstance(task.egress_hosts, list) else []
+    summary = task.summary if isinstance(task.summary, str) or task.summary is None else None
+    criteria = [
+        {"id": f"criterion-{index:03d}", "text": criterion}
+        for index, criterion in enumerate(task.rubric or [], start=1)
+    ]
+    covered_criteria = sorted(
+        {criterion for check in checks for criterion in check.get("criterion_ids", [])}
+    )
     body: dict[str, Any] = {
+        "schema": RECEIPT_SCHEMA,
+        "issued_at": datetime.now(UTC).isoformat(),
         "task_id": str(task.id),
+        "attempt": attempt,
         "goal": task.goal,
+        "summary": summary,
         "rubric": task.rubric or [],
+        "criteria": criteria,
         "verified_by": verified_by,  # "execution" | "judgment"
         "isolation": task.sandbox or "inline",  # "container" | "inline"
         "score": score,
@@ -85,6 +137,7 @@ def build_receipt(
             "rubric_criteria": len(task.rubric or []),
             "checks": len(checks),
             "execution_backed": verified_by == "execution",
+            "covered_criteria": covered_criteria,
         },
         "steps_used": task.steps_used,
         "tokens_used": task.tokens_used,
@@ -92,14 +145,42 @@ def build_receipt(
         # entire history that produced it.
         "ledger_head": ledger_head,
         "files": _file_manifest(workspace),
+        "authority": {
+            "schema": authority_schema,
+            "requested": requested_capabilities,
+            "resolved": resolved_capabilities,
+            "egress_hosts": egress_hosts,
+        },
+        "provenance": {
+            "producer": {"name": "loop-agent", "version": settings.version},
+            "revision": settings.loop_revision,
+            "runtime": {
+                "python": platform.python_version(),
+                "implementation": platform.python_implementation(),
+                "platform": sys.platform,
+            },
+            "model": _model_identity(settings.llm_default_provider),
+            "verifier": _model_identity(
+                settings.llm_verifier_provider or settings.llm_default_provider
+            ),
+            "sandbox": {
+                "mode": task.sandbox or "inline",
+                "image": (
+                    settings.agent_sandbox_image
+                    if task.sandbox in {"container", "kubernetes"}
+                    else None
+                ),
+                "image_digest": settings.agent_sandbox_image_digest,
+            },
+        },
     }
-    # Content address: hash the canonical body (stable key order, no whitespace
-    # drift), then store the hash alongside it.
+    signer = _signing_key()
+    if signer is not None:
+        body["signature_key_id"] = _signing_key_id(signer)
     receipt_hash = _canonical_hash(body)
     receipt = {"receipt_hash": receipt_hash, **body}
     # Optionally sign the hash: with a signing key, forging a consistent Receipt
     # needs the private key, not just workspace write access (tamper-PROOF).
-    signer = _signing_key()
     if signer is not None:
         receipt["signature"] = signer.sign(receipt_hash.encode()).hex()
 
@@ -127,6 +208,7 @@ def verify_receipt_full(
     *,
     workspace: Workspace | None = None,
     db_anchor: str | None = None,
+    public_key_pem: str | None = None,
 ) -> dict[str, Any]:
     """A layered re-verification, not just the self-consistent content hash:
 
@@ -150,6 +232,12 @@ def verify_receipt_full(
         result["signature"] = "invalid"
     else:
         vk = _verify_key()
+        if public_key_pem:
+            try:
+                candidate = load_pem_public_key(public_key_pem.encode())
+                vk = candidate if isinstance(candidate, Ed25519PublicKey) else None
+            except (ValueError, TypeError):
+                vk = None
         if vk is None:
             result["signature"] = "unverifiable"  # signed, but this server has no key
         else:
@@ -189,6 +277,10 @@ def verify_receipt_full(
         and result.get("anchor_ok", True)
         and result.get("files_ok", True)
     )
+    result["authentic"] = bool(result["valid"] and result["signature"] == "valid")
+    result["assurance"] = (
+        "authentic" if result["authentic"] else ("integrity" if result["valid"] else "invalid")
+    )
     return result
 
 
@@ -196,6 +288,7 @@ def _render_markdown(receipt: dict[str, Any]) -> str:
     lines = [
         "# Task Receipt",
         "",
+        f"- **Schema:** `{receipt.get('schema', 'legacy')}`",
         f"- **Verified by:** {receipt['verified_by']}"
         + {
             "execution": "",
@@ -218,6 +311,7 @@ def _render_markdown(receipt: dict[str, Any]) -> str:
         )(receipt.get("coverage") or {}),
         f"- **Steps:** {receipt['steps_used']} · **Tokens:** {receipt['tokens_used']}",
         f"- **Ledger head:** `{receipt['ledger_head']}`",
+        f"- **Authority:** {', '.join(receipt.get('authority', {}).get('resolved', [])) or 'none'}",
         f"- **Receipt hash:** `{receipt['receipt_hash']}`"
         + (
             " — _ed25519-signed_"

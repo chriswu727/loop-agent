@@ -17,6 +17,8 @@ from app.repositories.task import TaskRepository
 from app.services.agent_react import AgentReactService
 from app.services.receipt import _canonical_hash, verify_receipt
 from app.services.task import TaskService
+from app.services.verification import CheckResult
+from app.tools import Workspace
 
 
 def test_verify_receipt_detects_tampering() -> None:
@@ -36,17 +38,30 @@ def _build(tmp_path: Path, **overrides: object):
     ws = Workspace(tmp_path / "ws")
     ws.write("out.txt", "hello world")
     task = MagicMock(
-        id="t1",
-        goal="do a thing",
-        rubric=["make out.txt"],
-        sandbox="inline",
-        steps_used=3,
-        tokens_used=99,
+        **{
+            "id": "t1",
+            "goal": "do a thing",
+            "rubric": ["make out.txt"],
+            "sandbox": "inline",
+            "steps_used": 3,
+            "tokens_used": 99,
+            **overrides,
+        }
     )
     h, receipt = build_receipt(
         task, [], score=90, verified_by="judgment", workspace=ws, ledger_head="abc"
     )
     return ws, h, receipt
+
+
+def test_kubernetes_receipt_records_the_sandbox_image(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(settings, "agent_sandbox_image", "registry.example/loop@sha256:abc")
+    _, _, receipt = _build(tmp_path, sandbox="kubernetes")
+
+    assert receipt["provenance"]["sandbox"]["mode"] == "kubernetes"
+    assert receipt["provenance"]["sandbox"]["image"] == "registry.example/loop@sha256:abc"
 
 
 def test_verify_full_catches_a_modified_output_file(tmp_path: Path) -> None:
@@ -135,6 +150,61 @@ async def test_receipt_roundtrip_produces_and_verifies(
     assert verify_receipt(receipt)[0] is True  # the real produced Receipt verifies
     receipt["goal"] = "not what actually ran"
     assert verify_receipt(receipt)[0] is False
+
+
+async def test_receipt_replay_checks_integrity_before_execution(
+    session: AsyncSession, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from app.exceptions import ConflictError
+    from app.services.receipt import build_receipt
+
+    monkeypatch.setattr(settings, "agent_sandbox", "off")
+    repo = TaskRepository(session)
+    task = await repo.create(
+        goal="produce a checked file",
+        status="completed",
+        rubric=["result exists"],
+        resolved_capabilities=["fs.read"],
+        max_steps=8,
+        token_budget=10_000,
+        summary="done",
+        verification_score=100,
+        steps_used=1,
+        tokens_used=10,
+        workspace_path=None,
+        sandbox="inline",
+    )
+    workspace = Workspace(tmp_path / str(task.id))
+    workspace.write("result.txt", "verified")
+    task.workspace_path = str(workspace.root)
+    receipt_hash, receipt = build_receipt(
+        task,
+        [
+            CheckResult(
+                "file_exists",
+                "result.txt",
+                True,
+                "found",
+                check_id="check-001",
+                criterion_ids=("criterion-001",),
+                definition={"kind": "file_exists", "path": "result.txt"},
+            )
+        ],
+        score=100,
+        verified_by="execution",
+        workspace=workspace,
+    )
+    task.receipt_hash = receipt_hash
+    await session.commit()
+    service = TaskService(repo, StepRepository(session))
+
+    replayed = await service.replay_receipt(task.id)
+    assert replayed["passed"] is True
+
+    receipt["goal"] = "tampered"
+    workspace.write("receipt.json", json.dumps(receipt))
+    with pytest.raises(ConflictError, match="integrity"):
+        await service.replay_receipt(task.id)
 
 
 def test_verify_receipt_script_stays_in_sync_with_library(tmp_path: Path) -> None:

@@ -1,6 +1,6 @@
 'use client';
 
-import type { Trigger } from '@repo/api-contract';
+import type { Capability, Trigger } from '@repo/api-contract';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useState } from 'react';
@@ -48,10 +48,19 @@ export default function TriggersPage() {
     setError(null);
     try {
       const interval = parseInt(intervalMin, 10);
+      const capabilities: Capability[] = [
+        'fs.read',
+        'fs.write',
+        'memory.read',
+        'memory.write',
+        'task.spawn',
+      ];
+      if (!noShell) capabilities.push('exec');
+      if (allowNetwork) capabilities.push('net.shell');
       await triggersApi.create({
         name: name.trim(),
         goal: goal.trim(),
-        allowed_tools: noShell ? ['write_file', 'edit_file', 'read_file'] : null,
+        capabilities,
         allow_egress: allowNetwork,
         require_approval: requireApproval,
         interval_minutes: Number.isFinite(interval) && interval >= 1 ? interval : null,
@@ -174,7 +183,7 @@ export default function TriggersPage() {
                 {t.allowed_tools && ' · files-only'}
               </p>
               <p className="mt-1 truncate font-mono text-[10px] opacity-30" title="Webhook URL">
-                POST /api/v1/triggers/{t.id}/fire?secret={t.secret}
+                POST /hooks/triggers/{t.id} · X-Trigger-Secret: {t.secret}
               </p>
             </div>
             <div className="flex shrink-0 gap-2 text-xs">

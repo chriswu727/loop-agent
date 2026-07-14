@@ -46,6 +46,7 @@ class SkillManifest:
     instructions: str
     allowed_tools: list[str] | None  # None = no extra tool restriction
     allow_egress: bool
+    capabilities: list[str] | None
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> SkillManifest:
@@ -55,6 +56,7 @@ class SkillManifest:
             instructions=str(data.get("instructions", "")),
             allowed_tools=data.get("allowed_tools"),
             allow_egress=bool(data.get("allow_egress", False)),
+            capabilities=data.get("capabilities"),
         )
 
 

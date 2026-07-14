@@ -12,6 +12,7 @@ from datetime import datetime
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.core.config import settings
+from app.domain.capability import CAPABILITY_SCHEMA_VERSION, Capability
 from app.schemas.file import FileEntry
 from app.schemas.step import LedgerStatus, StepRead
 
@@ -26,13 +27,15 @@ class LimitsIn(BaseModel):
 
 class TaskCreate(BaseModel):
     goal: str = Field(min_length=4, max_length=4_000)
+    project_id: str = Field(default="default", min_length=1, max_length=100, pattern=r"^[\w.-]+$")
     limits: LimitsIn = Field(default_factory=LimitsIn)
     # When false, the task is created as a draft (PENDING, not started) so files
     # can be uploaded into its workspace before the agent runs. Start with /start.
     autostart: bool = True
-    # Capability envelope: restrict the agent to these executor tools (e.g.
-    # ["write_file","read_file"] for a no-shell task). Omit/null = all tools.
+    # Legacy tool input retained for API compatibility. New callers should send
+    # the typed capabilities list below.
     allowed_tools: list[str] | None = None
+    capabilities: list[Capability] | None = None
     # Network egress is default-deny; set true only if the task needs the network.
     allow_egress: bool = False
     # Optional egress allowlist: if set (and allow_egress is true), only these hosts
@@ -40,16 +43,18 @@ class TaskCreate(BaseModel):
     egress_hosts: list[str] | None = None
     # When true, non-allowlisted commands pause for the user to approve before running.
     require_approval: bool = False
-    # When true, give the agent a headless browser (MCP). Implies network egress.
+    # Legacy provider toggles map to independent typed capabilities.
     use_browser: bool = False
-    # When true, give the agent email tools (send/read). Implies network egress.
+    # Email does not grant shell network authority.
     use_email: bool = False
-    # When true, give the agent calendar tools (list/create). Implies network egress.
+    # Calendar does not grant shell network authority.
     use_calendar: bool = False
+    use_vision: bool = False
     # Groups tasks into one conversation/session (prior turns become context).
     chat_id: str | None = None
     # Run under this signed skill (by name). Refused if it doesn't verify.
     skill: str | None = None
+    idempotency_key: str | None = Field(default=None, min_length=8, max_length=128)
 
 
 class RespondIn(BaseModel):
@@ -63,24 +68,42 @@ class LimitsRead(BaseModel):
     token_budget: int
 
 
+class AuthorityRead(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    schema_version: str = Field(
+        default=CAPABILITY_SCHEMA_VERSION, alias="schema", serialization_alias="schema"
+    )
+    requested: list[str] | None
+    resolved: list[str]
+    egress_hosts: list[str]
+    sandbox: str | None
+
+
 class TaskRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: uuid.UUID
     goal: str
+    owner_id: str
+    project_id: str
     status: str
     rubric: list[str]
     pending_question: str | None
     allowed_tools: list[str] | None
+    authority: AuthorityRead
     allow_egress: bool
     egress_hosts: list[str] | None
     require_approval: bool
     use_browser: bool
     use_email: bool
     use_calendar: bool
+    use_vision: bool
     skill: str | None
     parent_id: uuid.UUID | None
     depth: int
+    idempotency_key: str | None
+    attempt: int
     limits: LimitsRead
     summary: str | None
     verification_score: int
@@ -103,19 +126,31 @@ class TaskRead(BaseModel):
         return cls(
             id=m.id,  # type: ignore[attr-defined]
             goal=m.goal,  # type: ignore[attr-defined]
+            owner_id=m.owner_id,  # type: ignore[attr-defined]
+            project_id=m.project_id,  # type: ignore[attr-defined]
             status=m.status,  # type: ignore[attr-defined]
             rubric=m.rubric or [],  # type: ignore[attr-defined]
             pending_question=m.pending_question,  # type: ignore[attr-defined]
             allowed_tools=m.allowed_tools,  # type: ignore[attr-defined]
+            authority=AuthorityRead(
+                schema=m.authority_schema,  # type: ignore[attr-defined]
+                requested=m.requested_capabilities,  # type: ignore[attr-defined]
+                resolved=m.resolved_capabilities or [],  # type: ignore[attr-defined]
+                egress_hosts=m.egress_hosts or [],  # type: ignore[attr-defined]
+                sandbox=m.sandbox,  # type: ignore[attr-defined]
+            ),
             allow_egress=m.allow_egress,  # type: ignore[attr-defined]
             egress_hosts=m.egress_hosts,  # type: ignore[attr-defined]
             require_approval=m.require_approval,  # type: ignore[attr-defined]
             use_browser=m.use_browser,  # type: ignore[attr-defined]
             use_email=m.use_email,  # type: ignore[attr-defined]
             use_calendar=m.use_calendar,  # type: ignore[attr-defined]
+            use_vision=m.use_vision,  # type: ignore[attr-defined]
             skill=m.skill,  # type: ignore[attr-defined]
             parent_id=m.parent_id,  # type: ignore[attr-defined]
             depth=m.depth,  # type: ignore[attr-defined]
+            idempotency_key=m.idempotency_key,  # type: ignore[attr-defined]
+            attempt=m.attempt,  # type: ignore[attr-defined]
             limits=LimitsRead(
                 max_steps=m.max_steps,  # type: ignore[attr-defined]
                 token_budget=m.token_budget,  # type: ignore[attr-defined]

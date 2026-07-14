@@ -1,6 +1,6 @@
 # Architecture
 
-This document explains *how* the skeleton is put together and *why*. If the
+This document explains _how_ the skeleton is put together and _why_. If the
 README is the sales pitch, this is the engineering rationale. Read it once
 before you start changing things — the conventions here are what keep the
 codebase scalable as it grows.
@@ -24,10 +24,10 @@ codebase scalable as it grows.
 ## Design principles
 
 1. **Boring on purpose.** Every choice favours the well-trodden path. Novelty
-   is reserved for *your* product, not the plumbing.
-2. **Stateless compute, stateful edges.** Application processes hold no durable
-   state. All state lives in Postgres/Redis. This is the single most important
-   property for horizontal scaling.
+   is reserved for _your_ product, not the plumbing.
+2. **Disposable compute, explicit durable edges.** Application processes hold no
+   private durable state. Metadata lives in Postgres, queue leases in Redis, and
+   task artifacts/memory on a shared RWX volume. Any replica can serve any owner.
 3. **Dependencies point inward.** Transport depends on services, services on
    repositories, repositories on the domain. The domain depends on nothing.
    You can read any layer without understanding the one above it.
@@ -48,7 +48,8 @@ flowchart TB
     U --> IG["Ingress (TLS termination, routing, rate limit)"]
     CDN -. "static assets" .-> U
     IG -->|"/"| WEB["Next.js (web)\nstateless · N replicas"]
-    IG -->|"/api/*"| API["FastAPI (api)\nstateless · N replicas"]
+    IG -->|"/api/loop/*"| WEB
+    IG -->|"/api/v1/*"| API["FastAPI (api)\nstateless · N replicas"]
     WEB -->|"server components\nfetch over cluster network"| API
     API --> PGW[("Postgres primary\n(writes)")]
     API --> PGR[("Postgres replica\n(reads)")]
@@ -56,16 +57,18 @@ flowchart TB
     API -- "enqueue job" --> REDIS
     WORKER["worker\nbackground jobs · N replicas"] -- "consume" --> REDIS
     WORKER --> PGW
+    WORKER --> JOB["short-lived sandbox Job\none command · no token"]
+    API & WORKER & JOB --> PVC[("RWX task artifacts + memory")]
     API & WEB & WORKER -. "OTLP" .-> OTEL["OTel Collector"]
     OTEL --> TRACING["Tracing backend\n(Jaeger/Tempo)"]
     OTEL --> METRICS["Prometheus"]
     METRICS --> GRAFANA["Grafana"]
 ```
 
-Three stateless compute tiers (`web`, `api`, `worker`), two stateful backing
-services (`postgres`, `redis`), and an observability sidecar path. Everything in
-the compute tier is replaceable and horizontally scalable; everything stateful
-is managed deliberately.
+Three disposable compute tiers (`web`, `api`, `worker`), short-lived sandbox Jobs,
+and three durable edges (`postgres`, `redis`, shared artifact storage). Everything
+in the compute tier is replaceable and horizontally scalable; every stateful edge
+is explicit.
 
 ---
 
@@ -74,14 +77,14 @@ is managed deliberately.
 The backend is a layered / hexagonal design. Each layer has one job and may only
 call the layer directly beneath it.
 
-| Layer | Directory | Responsibility | May import |
-|-------|-----------|----------------|-----------|
-| **Transport** | `app/api/` | HTTP routing, request/response, auth deps, status codes | services, schemas |
-| **Service** | `app/services/` | Use-cases, orchestration, business rules, transactions | repositories, domain |
-| **Repository** | `app/repositories/` | Data access; hides SQL/Redis behind an interface | domain, db |
-| **Domain** | `app/domain/` | Pure entities and value objects, no framework | nothing |
-| **Schema** | `app/schemas/` | Pydantic DTOs — the wire contract | domain (for mapping) |
-| **Core** | `app/core/` | Config, logging, security primitives, lifespan | nothing app-specific |
+| Layer          | Directory           | Responsibility                                          | May import           |
+| -------------- | ------------------- | ------------------------------------------------------- | -------------------- |
+| **Transport**  | `app/api/`          | HTTP routing, request/response, auth deps, status codes | services, schemas    |
+| **Service**    | `app/services/`     | Use-cases, orchestration, business rules, transactions  | repositories, domain |
+| **Repository** | `app/repositories/` | Data access; hides SQL/Redis behind an interface        | domain, db           |
+| **Domain**     | `app/domain/`       | Pure entities and value objects, no framework           | nothing              |
+| **Schema**     | `app/schemas/`      | Pydantic DTOs — the wire contract                       | domain (for mapping) |
+| **Core**       | `app/core/`         | Config, logging, security primitives, lifespan          | nothing app-specific |
 
 **The dependency rule:** an arrow may only point downward. A router must never
 touch the database directly; a repository must never import FastAPI. If you find
@@ -163,10 +166,10 @@ flowchart LR
 - **Cache:** a small `Cache` protocol backed by Redis (`get`/`set`/`delete` with
   TTL). Use it for read-through caching of expensive queries. Because it's an
   interface, tests use an in-memory implementation.
-- **Background jobs:** the `app/workers/` skeleton shows a producer (the API
-  enqueues a job onto Redis) and a consumer (a separate `worker` process drains
-  the queue). This is intentionally minimal — swap in Celery, Arq, Dramatiq, or
-  a managed queue as your needs grow, keeping the same enqueue/handle seam.
+- **Background jobs:** Redis Streams consumer groups provide an atomic producer,
+  cross-pod consumers, visibility leases, `XAUTOCLAIM` recovery, retries, and a
+  dead-letter stream. The task row is claimed with a compare-and-update before the
+  loop starts, so duplicate deliveries do not execute a task twice.
 - **Why a separate worker tier?** Long or bursty work must not block request
   threads or share the API's scaling signal. The worker scales on queue depth;
   the API scales on request latency/CPU.
@@ -184,8 +187,8 @@ All configuration comes from the environment via a single typed
 - **Validation at boot:** if a required variable is missing or malformed, the
   process fails fast on startup rather than misbehaving at runtime.
 
-The frontend mirrors this with a typed env module so a missing `NEXT_PUBLIC_*`
-var is a build-time error, not a blank screen in production.
+The frontend mirrors this with a typed env module. Browser API calls stay same-origin;
+only Next route handlers know the internal API URL or session-signing secret.
 
 ---
 
@@ -198,25 +201,32 @@ The three pillars are wired and correlated:
 - **Traces** — OpenTelemetry auto-instrumentation for FastAPI, SQLAlchemy, and
   Redis. Spans export over OTLP to any collector. Disabled cleanly if no
   endpoint is configured.
-- **Metrics** — a Prometheus `/metrics` endpoint exposes request rate, latency
-  histograms, and error counts (the RED method). Dashboards scrape it.
+- **Metrics** — `/metrics` exposes HTTP RED metrics plus task outcomes/duration,
+  capability denials, durable-queue outcomes, and Receipt replay outcomes.
 
-Health endpoints distinguish *liveness* (`/healthz` — is the process up?) from
-*readiness* (`/readyz` — can it serve, i.e. is the DB reachable?). Kubernetes
+Health endpoints distinguish _liveness_ (`/healthz` — is the process up?) from
+_readiness_ (`/readyz` — can it serve, i.e. is the DB reachable?). Kubernetes
 uses them to avoid routing traffic to a pod that isn't ready.
 
 ---
 
 ## Security model
 
-Defense in depth, with the hooks in place even though there's no auth logic to
-protect yet:
+Defense in depth, with authority enforced independently of model behavior:
 
 - **Transport:** TLS terminates at the ingress; HSTS and security headers set at
   the edge and in Next.js config.
-- **AuthN/AuthZ:** a JWT verification dependency and a `CurrentUser` seam are
-  stubbed in `app/core/security.py` and `app/api/v1/deps.py`. Wire them to your
-  IdP (Auth0/Clerk/Cognito/your own) — the injection point already exists.
+- **AuthN/AuthZ:** GitHub OAuth uses authorization code + PKCE. The web tier stores
+  only a short-lived HTTP-only Loop JWT; the GitHub access token is discarded after
+  identity lookup. The API validates signature, expiry, issuer, and audience. Tasks,
+  triggers, memory, files, Receipts, and idempotency keys are subject-scoped.
+- **Runtime authority:** `loop.capabilities/v1` is resolved as task request ∩ signed
+  skill grant and enforced at `ToolExecutor.execute`. Unknown tools default-deny.
+- **Production shell isolation:** the worker creates one non-root, read-only-root
+  Kubernetes Job per command with no service-account token, dropped capabilities,
+  resource/time limits, and default-deny egress unless `net.shell` was granted.
+- **Provider boundary:** stateful browser/email/calendar providers are disabled in
+  production until an isolated gateway is configured; the runtime fails closed.
 - **Input:** every request body and query is validated by Pydantic before it
   reaches your code.
 - **Rate limiting:** a Redis-backed limiter dependency guards expensive routes.
@@ -272,8 +282,9 @@ Full playbook: [`docs/guides/scaling.md`](./docs/guides/scaling.md).
   frontend retries idempotent requests with backoff.
 - **Pod Disruption Budgets** keep a minimum number of replicas during node
   drains and upgrades.
-- **Idempotency seam:** mutating endpoints can honor an `Idempotency-Key`
-  (sketched in the example) so client retries don't double-apply.
+- **Idempotency:** publishes persist an owner-scoped idempotency key with a database
+  uniqueness constraint. Trigger fires use an atomic timestamp claim plus a derived
+  idempotency key, so multiple scheduler replicas are safe.
 
 ---
 
@@ -283,9 +294,10 @@ Full playbook: [`docs/guides/scaling.md`](./docs/guides/scaling.md).
   components only where interactivity demands it.
 - **Typed env** (`lib/env.ts`) validated at build time — secrets stay server-side,
   only `NEXT_PUBLIC_*` reach the browser.
-- **One typed API client** (`lib/api-client.ts`) wraps `fetch` with base URL,
-  timeouts, error normalization, and request-ID propagation. Server components
-  call the API over the internal cluster URL; the browser uses the public URL.
+- **One typed API client** (`lib/api-client.ts`) wraps `fetch` with timeouts and
+  problem-detail normalization. Server components call the API over the cluster
+  URL with the current user session; browser calls use `/api/loop`, whose Node route
+  handler removes cookies and forwards only the user JWT.
 - **Layered UI:** route segments compose presentational components; data fetching
   lives in server components or route handlers, not buried in leaf components.
 
@@ -293,8 +305,7 @@ Full playbook: [`docs/guides/scaling.md`](./docs/guides/scaling.md).
 
 ## Extending the system
 
-The repository is a skeleton, so "extending" is the main activity. The golden
-rules:
+The golden rules:
 
 1. Put logic in the **service** layer. Routers stay thin; repositories stay dumb.
 2. Cross a layer boundary only through its interface.

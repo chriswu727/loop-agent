@@ -10,6 +10,7 @@ from datetime import UTC, datetime
 from app.core.logging import get_logger
 from app.db.models.task import TaskModel
 from app.db.models.trigger import TriggerModel
+from app.domain.capability import parse_capabilities, sorted_capabilities
 from app.exceptions import ConflictError, ForbiddenError, NotFoundError
 from app.repositories.trigger import TriggerRepository
 from app.schemas.task import LimitsIn, TaskCreate
@@ -34,21 +35,35 @@ def _is_due(trigger: TriggerModel, now: datetime) -> bool:
 
 
 class TriggerService:
-    def __init__(self, triggers: TriggerRepository, task_service: TaskService) -> None:
+    def __init__(
+        self,
+        triggers: TriggerRepository,
+        task_service: TaskService,
+        *,
+        subject: str | None = "from-task-service",
+    ) -> None:
         self.triggers = triggers
         self.task_service = task_service
+        self.subject = task_service.subject if subject == "from-task-service" else subject
 
     async def create(self, payload: TriggerCreate) -> TriggerModel:
         max_steps, token_budget = self.task_service._resolve_limits(payload.limits)
         return await self.triggers.create(
             name=payload.name.strip(),
             goal=payload.goal.strip(),
+            owner_id=self.task_service.subject,
+            project_id=payload.project_id,
             enabled=True,
             fire_count=0,
             max_steps=max_steps,
             token_budget=token_budget,
             secret=secrets.token_urlsafe(24),
             allowed_tools=payload.allowed_tools,
+            capabilities=(
+                sorted_capabilities(payload.capabilities)
+                if payload.capabilities is not None
+                else None
+            ),
             allow_egress=payload.allow_egress,
             require_approval=payload.require_approval,
             skill=payload.skill,
@@ -57,15 +72,18 @@ class TriggerService:
         )
 
     async def list(self) -> list[TriggerModel]:
-        return await self.triggers.list(limit=100, offset=0)
+        if self.subject is None:
+            return await self.triggers.list(limit=100, offset=0)
+        return await self.triggers.list_for_owner(self.subject)
 
     async def get(self, trigger_id: uuid.UUID) -> TriggerModel:
         trigger = await self.triggers.get(trigger_id)
-        if trigger is None:
+        if trigger is None or (self.subject is not None and trigger.owner_id != self.subject):
             raise NotFoundError(f"Trigger {trigger_id} does not exist")
         return trigger
 
     async def delete(self, trigger_id: uuid.UUID) -> None:
+        await self.get(trigger_id)
         deleted = await self.triggers.delete(trigger_id)
         if deleted == 0:
             raise NotFoundError(f"Trigger {trigger_id} does not exist")
@@ -85,21 +103,35 @@ class TriggerService:
         trigger = await self.get(trigger_id)
         if not trigger.enabled:
             raise ConflictError("Trigger is disabled")
-        task = await self.task_service.publish(
+        claimed = await self.triggers.claim_fire(
+            trigger.id,
+            expected_last_fired_at=trigger.last_fired_at,
+            now=_now(),
+        )
+        if claimed is None:
+            raise ConflictError("Trigger was already fired by another scheduler or request")
+        owner_tasks = TaskService(
+            self.task_service.tasks,
+            self.task_service.steps,
+            subject=claimed.owner_id,
+        )
+        task = await owner_tasks.publish(
             TaskCreate(
-                goal=trigger.goal,
-                limits=LimitsIn(max_steps=trigger.max_steps, token_budget=trigger.token_budget),
-                allowed_tools=trigger.allowed_tools,
-                allow_egress=trigger.allow_egress,
-                require_approval=trigger.require_approval,
-                skill=trigger.skill,
+                goal=claimed.goal,
+                project_id=claimed.project_id,
+                limits=LimitsIn(max_steps=claimed.max_steps, token_budget=claimed.token_budget),
+                allowed_tools=claimed.allowed_tools,
+                capabilities=(
+                    list(parse_capabilities(claimed.capabilities))
+                    if claimed.capabilities is not None
+                    else None
+                ),
+                allow_egress=claimed.allow_egress,
+                require_approval=claimed.require_approval,
+                skill=claimed.skill,
+                idempotency_key=f"trigger:{claimed.id}:{claimed.fire_count}",
             )
         )
-        trigger.fire_count += 1
-        trigger.last_fired_at = _now()
-        await self.triggers.session.flush()
-        await self.triggers.session.refresh(trigger)
-        await self.triggers.session.commit()
         return task
 
     async def tick(self) -> int:
@@ -109,8 +141,13 @@ class TriggerService:
 
         now = _now()
         due = [t for t in await self.list() if _is_due(t, now)]
+        fired = 0
         for trigger in due:
-            task = await self.fire(trigger.id)
+            try:
+                task = await self.fire(trigger.id)
+            except ConflictError:
+                continue
             await trigger_task(task.id)
             log.info("scheduler.fired", trigger=trigger.name, task_id=str(task.id))
-        return len(due)
+            fired += 1
+        return fired

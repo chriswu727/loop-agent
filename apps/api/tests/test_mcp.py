@@ -6,12 +6,14 @@ from __future__ import annotations
 from pathlib import Path
 from typing import ClassVar
 
-from app.tools import ToolExecutor, ToolStatus, Workspace
+from app.domain.capability import Capability
+from app.tools import CapabilityEnvelope, ToolExecutor, ToolStatus, Workspace
 from app.tools.mcp import McpBrowser
 
 
 class _FakeMcp:
     tool_names: ClassVar[set[str]] = {"browser_navigate"}
+    capability = Capability.NET_BROWSER
 
     def __init__(self) -> None:
         self.calls: list[tuple[str, dict]] = []
@@ -23,7 +25,11 @@ class _FakeMcp:
 
 async def test_executor_dispatches_mcp_tool(tmp_path: Path) -> None:
     mcp = _FakeMcp()
-    ex = ToolExecutor(Workspace(tmp_path / "w"), mcp=mcp)
+    ex = ToolExecutor(
+        Workspace(tmp_path / "w"),
+        mcp=mcp,
+        envelope=CapabilityEnvelope.from_capabilities(["net.browser"]),
+    )
     res = await ex.execute("browser_navigate", {"url": "https://x.com"})
     assert res.status is ToolStatus.OK
     assert "navigated to https://x.com" in res.observation
@@ -33,21 +39,38 @@ async def test_executor_dispatches_mcp_tool(tmp_path: Path) -> None:
 async def test_executor_mcp_tool_error_becomes_observation(tmp_path: Path) -> None:
     class _Boom:
         tool_names: ClassVar[set[str]] = {"browser_click"}
+        capability = Capability.NET_BROWSER
 
         async def call(self, name: str, args: dict) -> str:
             raise RuntimeError("element not found")
 
-    ex = ToolExecutor(Workspace(tmp_path / "w"), mcp=_Boom())
+    ex = ToolExecutor(
+        Workspace(tmp_path / "w"),
+        mcp=_Boom(),
+        envelope=CapabilityEnvelope.from_capabilities(["net.browser"]),
+    )
     res = await ex.execute("browser_click", {"ref": "x"})
     assert res.status is ToolStatus.ERROR
     assert "element not found" in res.observation
 
 
-async def test_unknown_tool_without_mcp_is_error(tmp_path: Path) -> None:
-    ex = ToolExecutor(Workspace(tmp_path / "w"))
+async def test_unknown_tool_without_provider_is_default_denied(tmp_path: Path) -> None:
+    ex = ToolExecutor(
+        Workspace(tmp_path / "w"),
+        envelope=CapabilityEnvelope.from_capabilities(["net.browser"]),
+    )
     res = await ex.execute("browser_navigate", {"url": "x"})
-    assert res.status is ToolStatus.ERROR
-    assert "Unknown tool" in res.observation
+    assert res.status is ToolStatus.BLOCKED
+    assert "capability envelope" in res.observation
+
+
+async def test_browser_tool_is_default_denied(tmp_path: Path) -> None:
+    ex = ToolExecutor(Workspace(tmp_path / "w"), mcp=_FakeMcp())
+
+    res = await ex.execute("browser_navigate", {"url": "https://x.com"})
+
+    assert res.status is ToolStatus.BLOCKED
+    assert "capability envelope" in res.observation
 
 
 def test_browser_specs_formatting() -> None:

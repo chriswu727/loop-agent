@@ -16,6 +16,7 @@ from contextlib import AsyncExitStack
 from typing import Any
 
 from app.core.logging import get_logger
+from app.domain.capability import Capability
 
 log = get_logger("mcp")
 
@@ -24,6 +25,8 @@ _CALL_TIMEOUT = 60  # seconds before a single browser action is abandoned
 
 
 class McpBrowser:
+    capability = Capability.NET_BROWSER
+
     def __init__(self, command: str) -> None:
         self._argv = shlex.split(command)
         self._stack = AsyncExitStack()

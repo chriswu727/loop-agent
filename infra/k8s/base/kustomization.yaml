@@ -14,8 +14,9 @@ labels:
 resources:
   - namespace.yaml
   - serviceaccount.yaml
+  - sandbox-rbac.yaml
+  - data-pvc.yaml
   - configmap.yaml
-  - secret.example.yaml
   - api-deployment.yaml
   - api-service.yaml
   - api-hpa.yaml

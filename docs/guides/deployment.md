@@ -19,9 +19,14 @@ Prefer pinning to an immutable digest in production.
 
 ## 3. Provide real secrets
 
-The base ships an **example** Secret. Replace it with a real one via Sealed
-Secrets, External Secrets Operator, or your cloud's secret manager, and remove
-`secret.example.yaml` from the base `resources`.
+The base references `app-secrets` and `web-secrets` but deliberately does not
+create them. Use `infra/k8s/base/secret.example.yaml` only as a field template,
+then provide the real objects through Sealed Secrets, External Secrets Operator,
+or your cloud secret manager. `SECRET_KEY` and `LOOP_SESSION_SECRET` must contain
+the same random value. `app-secrets` must also provide a valid unencrypted Ed25519
+PEM in `AGENT_RECEIPT_SIGNING_KEY`; generate one with `make receipt-keygen`.
+Set `AGENT_SANDBOX_IMAGE_DIGEST=sha256:...` in the production ConfigMap after
+publishing the sandbox image; production rejects mutable tag-only execution.
 
 ## 4. Apply
 

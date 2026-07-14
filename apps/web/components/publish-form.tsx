@@ -1,8 +1,8 @@
 'use client';
 
-import type { LimitDefaults, SkillInfo } from '@repo/api-contract';
+import type { Capability, LimitDefaults, SkillInfo } from '@repo/api-contract';
 import { useRouter } from 'next/navigation';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { ApiError, tasksApi } from '@/lib/api-client';
 
 const FALLBACK: LimitDefaults = {
@@ -39,9 +39,11 @@ export function PublishForm({
   const [useBrowser, setUseBrowser] = useState(false);
   const [useEmail, setUseEmail] = useState(false);
   const [useCalendar, setUseCalendar] = useState(false);
+  const [useVision, setUseVision] = useState(false);
   const [skill, setSkill] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const idempotencyKey = useRef(crypto.randomUUID());
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -50,13 +52,23 @@ export function PublishForm({
     setError(null);
     try {
       const limits = { max_steps: maxSteps, token_budget: tokenBudget };
-      // Least-authority: when "no shell" is on, grant only the file tools.
-      const allowed_tools = noShell ? ['write_file', 'edit_file', 'read_file'] : null;
+      const capabilities: Capability[] = [
+        'fs.read',
+        'fs.write',
+        'memory.read',
+        'memory.write',
+        'task.spawn',
+      ];
+      if (!noShell) capabilities.push('exec');
+      if (allowNetwork) capabilities.push('net.shell');
+      if (useBrowser) capabilities.push('net.browser');
+      if (useEmail) capabilities.push('email.read', 'email.send');
+      if (useCalendar) capabilities.push('calendar.read', 'calendar.write');
+      if (useVision) capabilities.push('vision');
       const base = {
         goal: goal.trim(),
         limits,
-        allowed_tools,
-        allow_egress: allowNetwork,
+        capabilities,
         egress_hosts:
           allowNetwork && egressHosts.trim()
             ? egressHosts
@@ -65,10 +77,8 @@ export function PublishForm({
                 .filter(Boolean)
             : null,
         require_approval: requireApproval,
-        use_browser: useBrowser,
-        use_email: useEmail,
-        use_calendar: useCalendar,
         skill: skill || null,
+        idempotency_key: idempotencyKey.current,
       };
       if (files.length > 0) {
         // Draft first so files land in the workspace, then start the agent.
@@ -80,6 +90,7 @@ export function PublishForm({
         const task = await tasksApi.publish(base);
         router.push(`/tasks/${task.id}`);
       }
+      idempotencyKey.current = crypto.randomUUID();
     } catch (err) {
       const message =
         err instanceof ApiError ? err.message : 'Could not reach the API. Is it running?';
@@ -181,6 +192,14 @@ export function PublishForm({
             onChange={(e) => setUseCalendar(e.target.checked)}
           />
           Use calendar
+        </label>
+        <label className="flex cursor-pointer items-center gap-1.5 opacity-80">
+          <input
+            type="checkbox"
+            checked={useVision}
+            onChange={(e) => setUseVision(e.target.checked)}
+          />
+          Use vision
         </label>
         {skills.length > 0 && (
           <select

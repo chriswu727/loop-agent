@@ -32,16 +32,20 @@ def step_hash(
     observation: str,
     status: str,
     tokens: int,
+    thought: str = "",
 ) -> str:
+    fields: dict[str, Any] = {
+        "n": number,
+        "tool": tool,
+        "args": tool_args,
+        "obs": observation,
+        "status": status,
+        "tokens": tokens,
+    }
+    if thought:
+        fields["thought"] = thought
     body = json.dumps(
-        {
-            "n": number,
-            "tool": tool,
-            "args": tool_args,
-            "obs": observation,
-            "status": status,
-            "tokens": tokens,
-        },
+        fields,
         sort_keys=True,
         separators=(",", ":"),
         ensure_ascii=False,
@@ -56,6 +60,7 @@ class _StepLike(Protocol):
     observation: str
     status: str
     tokens: int
+    thought: str
     prev_hash: str | None
     hash: str
 
@@ -74,8 +79,19 @@ def verify_chain(task_id: uuid.UUID, steps: Sequence[_StepLike]) -> tuple[bool, 
             observation=s.observation,
             status=s.status,
             tokens=s.tokens,
+            thought=getattr(s, "thought", ""),
         )
         if s.hash != expected:
-            return False, s.number
+            legacy = step_hash(
+                prev,
+                number=s.number,
+                tool=s.tool,
+                tool_args=s.tool_args,
+                observation=s.observation,
+                status=s.status,
+                tokens=s.tokens,
+            )
+            if s.hash != legacy:
+                return False, s.number
         prev = s.hash
     return True, None

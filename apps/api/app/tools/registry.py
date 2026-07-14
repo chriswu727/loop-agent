@@ -10,6 +10,8 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable
 from typing import Any
 
+from app.domain.capability import Capability
+from app.observability.metrics import TOOL_DENIALS
 from app.tools.base import ToolError, ToolResult, ToolStatus
 from app.tools.envelope import CapabilityEnvelope
 from app.tools.policy import Verdict, evaluate_command
@@ -102,6 +104,7 @@ class ToolExecutor:
         calendar: Any = None,
         vision: Any = None,
         sandbox_image: str | None = None,
+        sandbox_backend: str | None = None,
         sandbox_memory: str = "512m",
         sandbox_cpus: str = "1",
     ) -> None:
@@ -112,10 +115,13 @@ class ToolExecutor:
         # When set, run_command runs inside an ephemeral container instead of the
         # host. Network is granted only when the envelope allows egress.
         self.sandbox_image = sandbox_image
+        self.sandbox_backend = sandbox_backend or ("docker" if sandbox_image else None)
         self.sandbox_memory = sandbox_memory
         self.sandbox_cpus = sandbox_cpus
         # The single point where the task's declared authority is enforced.
-        self.envelope = envelope or CapabilityEnvelope.full()
+        self.envelope = (
+            envelope if envelope is not None else CapabilityEnvelope.from_capabilities([])
+        )
         self.before_tool = before_tool
         self.after_tool = after_tool
         # Optional tool providers (a headless browser via MCP, email). Their tools
@@ -133,8 +139,11 @@ class ToolExecutor:
         return None
 
     async def execute(self, tool: str, args: dict[str, Any]) -> ToolResult:
+        provider = self._provider_for(tool)
+        provider_capability = getattr(provider, "capability", None)
         # Capability gate: a tool the envelope doesn't grant never runs.
-        if not self.envelope.permits(tool):
+        if not self.envelope.permits(tool, provider_capability=provider_capability):
+            TOOL_DENIALS.labels(tool=tool).inc()
             return ToolResult(
                 f"Tool '{tool}' is not permitted by this task's capability envelope.",
                 ToolStatus.BLOCKED,
@@ -144,12 +153,14 @@ class ToolExecutor:
             veto = await self.before_tool(tool, args)
             if veto is not None:
                 return veto
-        result = await self._dispatch(tool, args)
+        result = await self._dispatch(tool, args, provider=provider)
         if self.after_tool is not None:
             await self.after_tool(tool, args, result)
         return result
 
-    async def _dispatch(self, tool: str, args: dict[str, Any]) -> ToolResult:
+    async def _dispatch(
+        self, tool: str, args: dict[str, Any], *, provider: Any = None
+    ) -> ToolResult:
         try:
             if tool == "write_file":
                 written = self.workspace.write(str(args["path"]), str(args.get("content", "")))
@@ -161,7 +172,6 @@ class ToolExecutor:
                 return ToolResult(self.workspace.read(str(args["path"])))
             if tool == "run_command":
                 return await self._run(str(args["command"]))
-            provider = self._provider_for(tool)
             if provider is not None:
                 try:
                     return ToolResult(await provider.call(tool, args))
@@ -187,11 +197,24 @@ class ToolExecutor:
                 f"Blocked by safety policy ({reason}). Try a safer approach.", ToolStatus.BLOCKED
             )
         if self.sandbox_image is not None:
+            if self.sandbox_backend == "kubernetes":
+                from app.tools.kubernetes_sandbox import run_command_in_kubernetes
+
+                return await run_command_in_kubernetes(
+                    command,
+                    self.workspace.root,
+                    image=self.sandbox_image,
+                    network=self.envelope.permits_capability(Capability.NET_SHELL),
+                    timeout_seconds=self.command_timeout,
+                    output_limit=self.output_limit,
+                    memory=self.sandbox_memory,
+                    cpus=self.sandbox_cpus,
+                )
             return await run_command_in_container(
                 command,
                 self.workspace.root,
                 image=self.sandbox_image,
-                network=self.envelope.egress_allowed,
+                network=self.envelope.permits_capability(Capability.NET_SHELL),
                 timeout_seconds=self.command_timeout,
                 output_limit=self.output_limit,
                 memory=self.sandbox_memory,

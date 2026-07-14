@@ -3,7 +3,8 @@ kind: ConfigMap
 metadata:
   name: app-config
 data:
-  ENVIRONMENT: "production"
-  LOG_LEVEL: "info"
-  CORS_ORIGINS: "https://app.example.com"
-  NEXT_PUBLIC_API_URL: "https://app.example.com"
+  ENVIRONMENT: 'production'
+  LOG_LEVEL: 'info'
+  CORS_ORIGINS: 'https://app.example.com'
+  APP_BASE_URL: 'https://app.example.com'
+  AGENT_SANDBOX_IMAGE: 'ghcr.io/your-org/loop-agent-sandbox:1.0.0'

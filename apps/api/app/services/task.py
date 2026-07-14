@@ -12,11 +12,15 @@ import uuid
 from pathlib import Path
 from typing import Any
 
+from sqlalchemy.exc import IntegrityError
+
 from app.core.config import settings
 from app.db.models.step import StepModel
 from app.db.models.task import TaskModel
+from app.domain.capability import sorted_capabilities
 from app.domain.task import TaskStatus
 from app.exceptions import ConflictError, NotFoundError
+from app.observability.metrics import RECEIPT_REPLAYS
 from app.repositories.step import StepRepository
 from app.repositories.task import TaskRepository
 from app.schemas.task import LimitsIn, TaskCreate
@@ -52,9 +56,12 @@ def _is_approval(answer: str) -> bool:
 
 
 class TaskService:
-    def __init__(self, tasks: TaskRepository, steps: StepRepository) -> None:
+    def __init__(
+        self, tasks: TaskRepository, steps: StepRepository, *, subject: str = "local"
+    ) -> None:
         self.tasks = tasks
         self.steps = steps
+        self.subject = subject
 
     def _resolve_limits(self, limits: LimitsIn) -> tuple[int, int]:
         """Apply defaults for omitted fields, then clamp to the hard caps so no
@@ -67,11 +74,25 @@ class TaskService:
         return max_steps, token_budget
 
     async def publish(self, payload: TaskCreate) -> TaskModel:
+        if payload.idempotency_key:
+            existing = await self.tasks.get_by_idempotency_key(
+                payload.idempotency_key, owner_id=self.subject
+            )
+            if existing is not None:
+                return existing
         max_steps, token_budget = self._resolve_limits(payload.limits)
         task = await self.tasks.create(
             goal=payload.goal.strip(),
+            owner_id=self.subject,
+            project_id=payload.project_id,
             status=TaskStatus.PENDING.value,
             rubric=[],
+            requested_capabilities=(
+                sorted_capabilities(payload.capabilities)
+                if payload.capabilities is not None
+                else None
+            ),
+            resolved_capabilities=[],
             allowed_tools=payload.allowed_tools,
             allow_egress=payload.allow_egress,
             egress_hosts=payload.egress_hosts,
@@ -79,8 +100,10 @@ class TaskService:
             use_browser=payload.use_browser,
             use_email=payload.use_email,
             use_calendar=payload.use_calendar,
+            use_vision=payload.use_vision,
             chat_id=payload.chat_id,
             skill=payload.skill,
+            idempotency_key=payload.idempotency_key,
             max_steps=max_steps,
             token_budget=token_budget,
             summary=None,
@@ -91,7 +114,18 @@ class TaskService:
         )
         # Commit before the caller schedules the run: the background/worker agent
         # opens its own session and must be able to read this row immediately.
-        await self.tasks.session.commit()
+        try:
+            await self.tasks.session.commit()
+        except IntegrityError:
+            await self.tasks.session.rollback()
+            if not payload.idempotency_key:
+                raise
+            existing = await self.tasks.get_by_idempotency_key(
+                payload.idempotency_key, owner_id=self.subject
+            )
+            if existing is None:
+                raise
+            return existing
         return task
 
     async def retry(self, task_id: uuid.UUID) -> TaskModel:
@@ -111,8 +145,12 @@ class TaskService:
         )
         task = await self.tasks.create(
             goal=original.goal,
+            owner_id=self.subject,
+            project_id=original.project_id,
             status=TaskStatus.PENDING.value,
             rubric=[],
+            requested_capabilities=original.requested_capabilities,
+            resolved_capabilities=[],
             allowed_tools=original.allowed_tools,
             allow_egress=original.allow_egress,
             egress_hosts=original.egress_hosts,
@@ -120,8 +158,11 @@ class TaskService:
             use_browser=original.use_browser,
             use_email=original.use_email,
             use_calendar=original.use_calendar,
+            use_vision=original.use_vision,
             chat_id=original.chat_id,
             skill=original.skill,
+            idempotency_key=None,
+            attempt=original.attempt + 1,
             max_steps=max_steps,
             token_budget=token_budget,
             summary=None,
@@ -137,11 +178,11 @@ class TaskService:
         self, *, limit: int, offset: int, root_only: bool = True
     ) -> tuple[list[TaskModel], int]:
         if root_only:
-            tasks = await self.tasks.list_roots(limit=limit, offset=offset)
-            total = await self.tasks.count_roots()
+            tasks = await self.tasks.list_roots(limit=limit, offset=offset, owner_id=self.subject)
+            total = await self.tasks.count_roots(owner_id=self.subject)
         else:
-            tasks = await self.tasks.list(limit=limit, offset=offset)
-            total = await self.tasks.count()
+            tasks = await self.tasks.list_for_owner(self.subject, limit=limit, offset=offset)
+            total = await self.tasks.count_for_owner(self.subject)
         return tasks, total
 
     async def list_children(self, task_id: uuid.UUID) -> list[TaskModel]:
@@ -150,7 +191,7 @@ class TaskService:
 
     async def get(self, task_id: uuid.UUID) -> TaskModel:
         task = await self.tasks.get(task_id)
-        if task is None:
+        if task is None or task.owner_id != self.subject:
             raise NotFoundError(f"Task {task_id} does not exist")
         return task
 
@@ -192,10 +233,17 @@ class TaskService:
 
     async def save_upload(self, task_id: uuid.UUID, filename: str, data: bytes) -> str:
         """Write an uploaded file into the task workspace (sandbox-checked)."""
+        task = await self.get(task_id)
+        if task.status != TaskStatus.PENDING.value or task.steps_used > 0:
+            raise ConflictError("Files can only be uploaded before a task starts.")
         workspace = await self.ensure_workspace(task_id)
         # Use only the basename so an upload can't path-escape via its name.
         safe_name = Path(filename or "upload.bin").name
         target = workspace.resolve(safe_name)
+        existing_size = target.stat().st_size if target.is_file() else 0
+        current_size = sum(size for _, size in workspace.list_files())
+        if current_size - existing_size + len(data) > settings.agent_max_workspace_bytes:
+            raise ConflictError("Upload would exceed the task workspace quota.")
         target.write_bytes(data)
         return safe_name
 
@@ -236,6 +284,64 @@ class TaskService:
         ws = await self._workspace(task_id)
         report = verify_receipt_full(receipt, workspace=ws, db_anchor=task.receipt_hash)
         return {"receipt": receipt, **report}
+
+    async def replay_receipt(self, task_id: uuid.UUID) -> dict[str, Any]:
+        from app.services.verification import as_dicts, run_checks
+        from app.tools.envelope import CapabilityEnvelope
+
+        task = await self.get(task_id)
+        receipt = await self.get_receipt(task_id)
+        ws = await self._workspace(task_id)
+        if receipt is None or ws is None:
+            RECEIPT_REPLAYS.labels(outcome="missing").inc()
+            raise NotFoundError("This task has no replayable Receipt.")
+        from app.services.receipt import verify_receipt_full
+
+        integrity = verify_receipt_full(receipt, workspace=ws, db_anchor=task.receipt_hash)
+        if not integrity["valid"]:
+            RECEIPT_REPLAYS.labels(outcome="integrity_refused").inc()
+            raise ConflictError("Receipt integrity verification failed; replay was refused.")
+        raw_checks = receipt.get("checks")
+        definitions = (
+            [
+                check["definition"]
+                for check in raw_checks
+                if isinstance(check, dict) and isinstance(check.get("definition"), dict)
+            ]
+            if isinstance(raw_checks, list)
+            else []
+        )
+        if not definitions:
+            RECEIPT_REPLAYS.labels(outcome="not_replayable").inc()
+            raise ConflictError("This Receipt has no replayable check definitions.")
+        backend = (
+            "kubernetes"
+            if task.sandbox == "kubernetes"
+            else ("docker" if task.sandbox == "container" else None)
+        )
+        if backend is None and settings.agent_sandbox not in {"off", "inline"}:
+            RECEIPT_REPLAYS.labels(outcome="sandbox_refused").inc()
+            raise ConflictError("Replay refuses the host because no sandbox is available.")
+        results = await run_checks(
+            definitions,
+            ws,
+            envelope=CapabilityEnvelope.from_capabilities(
+                task.resolved_capabilities, egress_hosts=task.egress_hosts
+            ),
+            sandbox_image=settings.agent_sandbox_image if backend else None,
+            sandbox_backend=backend,
+            command_timeout=settings.agent_command_timeout_seconds,
+            output_limit=settings.agent_command_output_limit,
+            sandbox_memory=settings.agent_sandbox_memory,
+            sandbox_cpus=settings.agent_sandbox_cpus,
+            criterion_count=len(task.rubric or []),
+        )
+        passed = bool(results) and all(result.passed for result in results)
+        RECEIPT_REPLAYS.labels(outcome="passed" if passed else "failed").inc()
+        return {
+            "passed": passed,
+            "checks": as_dicts(results),
+        }
 
     async def read_file(self, task_id: uuid.UUID, relpath: str) -> tuple[str, int, bool]:
         ws = await self._workspace(task_id)
@@ -313,6 +419,7 @@ class TaskService:
                 observation=last.observation,
                 status=last.status,
                 tokens=last.tokens,
+                thought=last.thought,
             )
 
         task.pending_question = None

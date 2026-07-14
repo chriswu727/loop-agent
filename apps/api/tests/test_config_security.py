@@ -1,0 +1,58 @@
+from __future__ import annotations
+
+import pytest
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+from cryptography.hazmat.primitives.serialization import Encoding, NoEncryption, PrivateFormat
+from pydantic import ValidationError
+
+from app.core.config import Settings
+
+TEST_RECEIPT_KEY = (
+    Ed25519PrivateKey.generate()
+    .private_bytes(Encoding.PEM, PrivateFormat.PKCS8, NoEncryption())
+    .decode()
+)
+
+
+def production(**overrides: object) -> Settings:
+    values: dict[str, object] = {
+        "environment": "production",
+        "auth_required": True,
+        "secret_key": "a-production-secret-that-is-at-least-32-bytes",
+        "agent_sandbox": "required",
+        "agent_sandbox_image_digest": "sha256:" + "a" * 64,
+        "agent_allow_host_providers": False,
+        "agent_receipt_signing_key": TEST_RECEIPT_KEY,
+    }
+    values.update(overrides)
+    return Settings(_env_file=None, **values)
+
+
+def test_secure_production_settings_are_accepted() -> None:
+    assert production().is_production is True
+
+
+@pytest.mark.parametrize(
+    "override",
+    [
+        {"auth_required": False},
+        {"secret_key": "short"},
+        {"secret_key": "CHANGE_ME_shared_session_secret_at_least_32_bytes"},
+        {"agent_sandbox": "preferred"},
+        {"agent_sandbox_image_digest": None},
+        {"agent_allow_host_providers": True},
+        {"agent_receipt_signing_key": None},
+        {"agent_receipt_signing_key": "not-a-key"},
+    ],
+)
+def test_insecure_production_settings_fail_fast(override: dict[str, object]) -> None:
+    with pytest.raises(ValidationError):
+        production(**override)
+
+
+def test_sandbox_digest_must_be_a_sha256_reference() -> None:
+    with pytest.raises(ValidationError):
+        production(agent_sandbox_image_digest="latest")
+
+    digest = "sha256:" + "a" * 64
+    assert production(agent_sandbox_image_digest=digest).agent_sandbox_image_digest == digest

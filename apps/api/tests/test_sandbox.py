@@ -56,13 +56,28 @@ async def test_no_sandbox_uses_host(tmp_path: Path, monkeypatch: pytest.MonkeyPa
         return ToolResult("exit code 0\n", ToolStatus.OK)
 
     monkeypatch.setattr("app.tools.registry.run_command", fake_host)
-    ex = ToolExecutor(Workspace(tmp_path / "w"))  # no sandbox_image
+    ex = ToolExecutor(
+        Workspace(tmp_path / "w"),
+        envelope=CapabilityEnvelope.from_capabilities(["exec"]),
+    )
     await ex.execute("run_command", {"command": "echo hi"})
     assert used["host"] is True
 
 
 def test_image_present_false_for_missing() -> None:
     assert image_present("loop-definitely-not-real:nope") is False
+
+
+def test_kubernetes_sandbox_mounts_only_a_task_subpath(tmp_path: Path) -> None:
+    from app.tools.kubernetes_sandbox import _workspace_subpath
+
+    mount = tmp_path / "data"
+    workspace = mount / "workspaces" / "task-id"
+    workspace.mkdir(parents=True)
+
+    assert _workspace_subpath(mount, workspace) == "workspaces/task-id"
+    assert _workspace_subpath(mount, mount) is None
+    assert _workspace_subpath(mount, tmp_path / "other") is None
 
 
 def test_docker_available_does_not_cache_negative(monkeypatch: pytest.MonkeyPatch) -> None:

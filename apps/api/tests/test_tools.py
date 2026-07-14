@@ -177,7 +177,12 @@ async def test_executor_hooks_fire_and_can_veto(tmp_path) -> None:
     async def after(tool, args, result):
         seen.append(f"after:{tool}:{result.status.value}")
 
-    ex = ToolExecutor(ws, before_tool=before, after_tool=after)
+    ex = ToolExecutor(
+        ws,
+        envelope=CapabilityEnvelope.from_capabilities(["fs.write", "exec"]),
+        before_tool=before,
+        after_tool=after,
+    )
     vetoed = await ex.execute("run_command", {"command": "echo hi"})
     assert vetoed.observation == "denied by approval"
     assert "after:run_command" not in " ".join(seen)  # veto short-circuits, no dispatch/after

@@ -19,6 +19,7 @@ class SkillRead(BaseModel):
     verified: bool
     reason: str
     allowed_tools: list[str] | None
+    capabilities: list[str] | None
     allow_egress: bool
 
 
@@ -32,6 +33,7 @@ async def list_skills() -> list[SkillRead]:
             verified=s.verified,
             reason=s.reason,
             allowed_tools=s.manifest.allowed_tools,
+            capabilities=s.manifest.capabilities,
             allow_egress=s.manifest.allow_egress,
         )
         for s in store.list_skills()

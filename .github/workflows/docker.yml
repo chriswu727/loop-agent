@@ -4,7 +4,7 @@ name: Build images
 # so this runs on version tags (or manually), keeping the main-branch CI fast.
 on:
   push:
-    tags: ["v*"]
+    tags: ['v*']
   workflow_dispatch:
 
 permissions:
@@ -23,6 +23,9 @@ jobs:
           - name: web
             dockerfile: infra/docker/web.Dockerfile
             target: runner
+          - name: sandbox
+            dockerfile: apps/api/sandbox.Dockerfile
+            target: ''
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v4

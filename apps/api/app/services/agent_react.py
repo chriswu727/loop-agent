@@ -33,19 +33,24 @@ from app.core.llm import LLMClient, LLMError
 from app.core.logging import get_logger
 from app.core.redaction import redact_secrets
 from app.db.models.task import TaskModel
+from app.domain.capability import (
+    Capability,
+    legacy_capabilities,
+    parse_capabilities,
+    sorted_capabilities,
+)
 from app.domain.task import StopReason, TaskStatus
 from app.repositories.step import StepRepository
 from app.repositories.task import TaskRepository
 from app.services.ledger import genesis_hash, step_hash
-from app.services.memory import MemoryStore
+from app.services.memory import MemoryStore, scoped_memory_root
 from app.services.prompts import plan_prompts, understand_prompts, verify_prompts
-from app.services.receipt import build_receipt
+from app.services.receipt import RECEIPT_SCHEMA, build_receipt
 from app.services.skills import SkillStore
-from app.services.verification import checks_summary, run_checks
+from app.services.verification import checks_summary, execution_coverage_complete, run_checks
 from app.tools import VALID_TOOLS, CapabilityEnvelope, ToolExecutor, ToolStatus, Workspace
 from app.tools.calendar import CalendarTools
 from app.tools.email import EmailTools
-from app.tools.envelope import EXECUTOR_TOOLS
 from app.tools.guards import make_egress_guard
 from app.tools.mcp import McpBrowser
 from app.tools.policy import Verdict, evaluate_command
@@ -123,16 +128,6 @@ def _extract_json(text: str) -> Any:
     return None
 
 
-def _combine_tools(a: list[str] | None, b: list[str] | None) -> list[str] | None:
-    """Intersect two allowed-tool sets where ``None`` means 'all'. Returns None
-    only when both are unrestricted; otherwise the (sorted) intersection."""
-    if a is None and b is None:
-        return None
-    sa = EXECUTOR_TOOLS if a is None else {t for t in a if t in EXECUTOR_TOOLS}
-    sb = EXECUTOR_TOOLS if b is None else {t for t in b if t in EXECUTOR_TOOLS}
-    return sorted(sa & sb)
-
-
 def _as_int(value: object, default: int) -> int:
     if isinstance(value, (int, float, str)):
         try:
@@ -150,14 +145,23 @@ def _clamp_score(value: object) -> int:
 
 
 class AgentReactService:
-    def __init__(self, tasks: TaskRepository, steps: StepRepository, llm: LLMClient) -> None:
+    def __init__(
+        self,
+        tasks: TaskRepository,
+        steps: StepRepository,
+        llm: LLMClient,
+        verifier_llm: LLMClient | None = None,
+    ) -> None:
         self.tasks = tasks
         self.steps = steps
         self.llm = llm
+        self.verifier_llm = verifier_llm or llm
         self.session = tasks.session
         self._history: list[str] = []
         self._last_hash = ""  # head of the step hash chain
-        self.memory = MemoryStore(Path(settings.agent_memory_root))
+        self.memory = MemoryStore(
+            scoped_memory_root(Path(settings.agent_memory_root), "local", "default")
+        )
         self._memory_snapshot = ""  # what the agent remembers, injected into planning
         self._skill_instructions = ""  # instructions from the task's signed skill
         self._browser_specs = ""  # MCP browser tool list, injected into planning
@@ -168,30 +172,40 @@ class AgentReactService:
         self._conversation = ""  # earlier turns of a chat/session, injected into planning
         self._mcp_tools: set[str] = set()  # extra tool names the planner may call
         self._sandbox_image: str | None = None  # container image for run_command, or None
+        self._sandbox_backend: str | None = None
         self._egress_allowed = False  # resolved egress; verification checks mirror it
 
     async def run(self, task_id: uuid.UUID) -> None:
         """Run, or resume, a task. A task is resumable when it was paused on an
         ask_user question and the user has since answered (status back to
         pending with steps already on record)."""
-        task = await self.tasks.get(task_id)
+        task = await self.tasks.claim_pending(task_id)
         if task is None:
-            log.warning("agent.task_missing", task_id=str(task_id))
-            return
-        if task.status != TaskStatus.PENDING.value:
-            log.info("agent.skip_non_pending", task_id=str(task_id), status=task.status)
+            existing = await self.tasks.get(task_id)
+            if existing is None:
+                log.warning("agent.task_missing", task_id=str(task_id))
+            else:
+                log.info("agent.skip_non_pending", task_id=str(task_id), status=existing.status)
             return
 
         workspace = Workspace(
             Path(task.workspace_path or settings.agent_workspaces_root)
             / ("" if task.workspace_path else str(task.id))
         )
+        self.memory = MemoryStore(
+            scoped_memory_root(Path(settings.agent_memory_root), task.owner_id, task.project_id)
+        )
 
         # Load the signed skill (if any) BEFORE anything runs. A skill that can't
         # be verified is refused outright — provenance is not optional.
-        skill_tools: list[str] | None = None
-        skill_egress = True
+        skill_capabilities: frozenset[Capability] | None = None
         self._skill_instructions = ""
+        self._mcp_tools = set()
+        self._browser_specs = ""
+        self._email_specs = ""
+        self._calendar_specs = ""
+        self._vision_specs = ""
+        self._notices = ""
         if task.skill:
             store = SkillStore(Path(settings.agent_skills_root), settings.trust_public_key_pem())
             skill = store.load(task.skill)
@@ -208,28 +222,78 @@ class AgentReactService:
                 log.warning("agent.skill_refused", task_id=str(task.id), skill=task.skill)
                 return
             self._skill_instructions = skill.manifest.instructions
-            skill_tools = skill.manifest.allowed_tools
-            skill_egress = skill.manifest.allow_egress
+            skill_capabilities = (
+                parse_capabilities(skill.manifest.capabilities)
+                if skill.manifest.capabilities is not None
+                else legacy_capabilities(
+                    skill.manifest.allowed_tools,
+                    allow_egress=skill.manifest.allow_egress,
+                    use_browser=False,
+                    use_email=False,
+                    use_calendar=False,
+                )
+            )
 
-        # Effective envelope is the intersection of the task's and the skill's:
-        # the narrower of the two always wins. Browsing is egress, so use_browser
-        # implies the egress grant.
-        envelope = CapabilityEnvelope.from_tools(
-            _combine_tools(task.allowed_tools, skill_tools),
-            egress_allowed=(
-                (task.allow_egress and skill_egress)
-                or task.use_browser
-                or task.use_email
-                or task.use_calendar
-            ),
-            # The allowlist governs run_command (shell) egress. Browser/email/calendar
-            # don't go through that guard, so enabling them must NOT drop the shell
-            # allowlist — apply it whenever egress was granted via allow_egress.
-            egress_hosts=(task.egress_hosts if task.allow_egress else None),
+        requested_capabilities = (
+            parse_capabilities(task.requested_capabilities)
+            if task.requested_capabilities is not None
+            else legacy_capabilities(
+                task.allowed_tools,
+                allow_egress=task.allow_egress,
+                use_browser=task.use_browser,
+                use_email=task.use_email,
+                use_calendar=task.use_calendar,
+                use_vision=task.use_vision,
+            )
         )
+        resolved_capabilities = (
+            requested_capabilities
+            if skill_capabilities is None
+            else requested_capabilities & skill_capabilities
+        )
+        envelope = CapabilityEnvelope.from_capabilities(
+            resolved_capabilities,
+            egress_hosts=(
+                task.egress_hosts if Capability.NET_SHELL in resolved_capabilities else None
+            ),
+        )
+        task.resolved_capabilities = sorted_capabilities(resolved_capabilities)
+        provider_capabilities = {
+            Capability.NET_BROWSER,
+            Capability.EMAIL_READ,
+            Capability.EMAIL_SEND,
+            Capability.CALENDAR_READ,
+            Capability.CALENDAR_WRITE,
+            Capability.VISION,
+        }
+        if (
+            resolved_capabilities & provider_capabilities
+            and not settings.agent_allow_host_providers
+        ):
+            task.status = TaskStatus.FAILED.value
+            task.stop_reason = StopReason.ERROR.value
+            task.error = (
+                "A requested provider capability is disabled because no isolated "
+                "provider gateway is configured."
+            )
+            task.workspace_path = str(workspace.root)
+            self._ensure_unverified_receipt(task)
+            await self._commit()
+            return
         self._egress_allowed = envelope.egress_allowed
-        sandbox_image, sandbox_label = self._resolve_sandbox()
+        try:
+            sandbox_image, sandbox_label, sandbox_backend = self._resolve_sandbox()
+        except RuntimeError as exc:
+            task.status = TaskStatus.FAILED.value
+            task.stop_reason = StopReason.ERROR.value
+            task.error = str(exc)
+            task.sandbox = "unavailable"
+            task.workspace_path = str(workspace.root)
+            self._ensure_unverified_receipt(task)
+            await self._commit()
+            return
         self._sandbox_image = sandbox_image
+        self._sandbox_backend = sandbox_backend
         task.sandbox = sandbox_label
         executor = ToolExecutor(
             workspace,
@@ -239,36 +303,60 @@ class AgentReactService:
             envelope=envelope,
             before_tool=make_egress_guard(envelope, workspace),
             sandbox_image=sandbox_image,
+            sandbox_backend=sandbox_backend,
             sandbox_memory=settings.agent_sandbox_memory,
             sandbox_cpus=settings.agent_sandbox_cpus,
         )
 
-        # Spin up a headless browser (MCP) if the task opted in. A startup failure
-        # is non-fatal: the task simply runs without browser tools.
-        browser = await self._start_browser(task)
+        browser = await self._start_browser(envelope)
         if browser is not None:
             executor.mcp = browser
             self._browser_specs = browser.specs()
             self._mcp_tools |= set(browser.tool_names)
-        elif task.use_browser:
-            # Requested but couldn't start — tell the agent so it reports the gap
-            # instead of fabricating web content (Loop must not hallucinate).
-            self._notices += (
-                "The browser you requested is UNAVAILABLE — it failed to start. Do not "
-                "invent web page contents. If the goal needs the web, finish by reporting "
-                "you could not access it rather than guessing.\n"
-            )
+        elif envelope.permits_capability(Capability.NET_BROWSER):
+            task.status = TaskStatus.FAILED.value
+            task.stop_reason = StopReason.ERROR.value
+            task.error = "The requested browser capability is unavailable."
+            task.workspace_path = str(workspace.root)
+            self._ensure_unverified_receipt(task)
+            await self._commit()
+            return
 
-        # Give the agent email tools if the task opted in and creds are configured.
-        if task.use_email and settings.email_configured:
+        wants_email = envelope.permits_capability(
+            Capability.EMAIL_READ
+        ) or envelope.permits_capability(Capability.EMAIL_SEND)
+        if wants_email and settings.email_configured:
             executor.email = EmailTools()
             self._mcp_tools |= EmailTools.tool_names
             self._email_specs = EMAIL_SPEC
+        elif wants_email:
+            if browser is not None:
+                await browser.stop()
+            task.status = TaskStatus.FAILED.value
+            task.stop_reason = StopReason.ERROR.value
+            task.error = "The requested email capability is not configured."
+            task.workspace_path = str(workspace.root)
+            self._ensure_unverified_receipt(task)
+            await self._commit()
+            return
 
-        if task.use_calendar and settings.calendar_configured:
+        wants_calendar = envelope.permits_capability(
+            Capability.CALENDAR_READ
+        ) or envelope.permits_capability(Capability.CALENDAR_WRITE)
+        if wants_calendar and settings.calendar_configured:
             executor.calendar = CalendarTools()
             self._mcp_tools |= CalendarTools.tool_names
             self._calendar_specs = CALENDAR_SPEC
+        elif wants_calendar:
+            if browser is not None:
+                await browser.stop()
+            task.status = TaskStatus.FAILED.value
+            task.stop_reason = StopReason.ERROR.value
+            task.error = "The requested calendar capability is not configured."
+            task.workspace_path = str(workspace.root)
+            self._ensure_unverified_receipt(task)
+            await self._commit()
+            return
 
         # Email/calendar talk to the network on the host, OUTSIDE the container's
         # --network none jail — an out-of-sandbox path. Make it explicit rather than
@@ -284,18 +372,29 @@ class AgentReactService:
                 "approval; never email or export secrets or workspace credentials.\n"
             )
 
-        # Vision (see_image) is available whenever a multimodal provider is set.
-        if settings.gemini_api_key:
+        if envelope.permits_capability(Capability.VISION) and settings.gemini_api_key:
             executor.vision = VisionTools(workspace)
             self._mcp_tools |= VisionTools.tool_names
             self._vision_specs = VISION_SPEC
+        elif envelope.permits_capability(Capability.VISION):
+            if browser is not None:
+                await browser.stop()
+            task.status = TaskStatus.FAILED.value
+            task.stop_reason = StopReason.ERROR.value
+            task.error = "The requested vision capability is not configured."
+            task.workspace_path = str(workspace.root)
+            self._ensure_unverified_receipt(task)
+            await self._commit()
+            return
 
         task.status = TaskStatus.RUNNING.value
         task.workspace_path = str(workspace.root)
         # Rebuild the working memory from whatever has already happened so a
         # resumed run sees its own past actions (and the user's answer).
         await self._rebuild_history(task.id)
-        self._memory_snapshot = self.memory.snapshot()  # what it remembers across tasks
+        self._memory_snapshot = (
+            self.memory.snapshot() if envelope.permits_capability(Capability.MEMORY_READ) else ""
+        )
         self._conversation = await self._build_conversation(task)  # earlier turns of this chat
         await self._commit()
         resuming = task.steps_used > 0
@@ -314,27 +413,41 @@ class AgentReactService:
             if browser is not None:
                 await browser.stop()
 
-    def _resolve_sandbox(self) -> tuple[str | None, str]:
+    def _resolve_sandbox(self) -> tuple[str | None, str, str | None]:
         """(image, label): which sandbox to use for run_command, and how to label
         it. 'container' jails commands in Docker; 'inline' runs on the host (a
         clearly-labeled reduced-isolation downgrade when Docker is unavailable)."""
-        if settings.agent_sandbox == "inline":
-            return None, "inline"
+        if settings.agent_sandbox in {"off", "inline"}:
+            return None, "inline", None
         image = settings.agent_sandbox_image
+        if settings.agent_sandbox_image_digest:
+            image = f"{image.split('@', 1)[0]}@{settings.agent_sandbox_image_digest}"
+        backend = settings.agent_sandbox_backend
+        if backend == "kubernetes" or (
+            backend == "auto"
+            and Path("/var/run/secrets/kubernetes.io/serviceaccount/token").is_file()
+        ):
+            return image, "kubernetes", "kubernetes"
         if docker_available() and image_present(image):
-            return image, "container"
+            return image, "container", "docker"
+        if settings.agent_sandbox in {"required", "container"}:
+            raise RuntimeError(
+                f"Required sandbox image {image!r} is unavailable; refusing host execution."
+            )
         log.warning("agent.sandbox_downgrade", wanted=settings.agent_sandbox)
-        return None, "inline"
+        return None, "inline", None
 
-    async def _start_browser(self, task: TaskModel) -> McpBrowser | None:
-        if not (task.use_browser and settings.agent_browser_enabled):
+    async def _start_browser(self, envelope: CapabilityEnvelope) -> McpBrowser | None:
+        if not (
+            envelope.permits_capability(Capability.NET_BROWSER) and settings.agent_browser_enabled
+        ):
             return None
         browser = McpBrowser(settings.agent_browser_command)
         try:
             await browser.start()
             return browser
         except Exception:  # browser unavailable -> run without it, don't fail the task
-            log.warning("agent.browser_unavailable", task_id=str(task.id))
+            log.warning("agent.browser_unavailable")
             await browser.stop()
             return None
 
@@ -441,6 +554,26 @@ class AgentReactService:
             if tool == "ask_user":
                 await self._pause_for_user(task, args, thought, number, step_tokens)
                 return  # the run resumes when the user answers
+
+            if tool in {"remember", "spawn"} and not executor.envelope.permits(tool):
+                await self._record_step(
+                    task,
+                    number,
+                    thought,
+                    tool,
+                    args,
+                    f"Tool '{tool}' is not permitted by this task's capability envelope.",
+                    ToolStatus.BLOCKED,
+                    step_tokens,
+                )
+                consecutive_failures += 1
+                if number >= task.max_steps:
+                    await self._finish(task, StopReason.MAX_STEPS)
+                    return
+                if consecutive_failures >= settings.agent_stuck_threshold:
+                    await self._finish(task, StopReason.STUCK)
+                    return
+                continue
 
             if tool == "remember":
                 note = str(args.get("note", "")).strip()
@@ -688,10 +821,31 @@ class AgentReactService:
             ),
         )
         allowed = args.get("allowed_tools")
+        raw_capabilities = args.get("capabilities")
+        if isinstance(raw_capabilities, list):
+            try:
+                child_requested = parse_capabilities(str(value) for value in raw_capabilities)
+            except ValueError:
+                child_requested = frozenset()
+        else:
+            child_requested = legacy_capabilities(
+                allowed if isinstance(allowed, list) else None,
+                allow_egress=bool(args.get("allow_egress", False)),
+                use_browser=bool(args.get("use_browser", False)),
+                use_email=bool(args.get("use_email", False)),
+                use_calendar=bool(args.get("use_calendar", False)),
+                use_vision=bool(args.get("use_vision", False)),
+            )
+        parent_capabilities = parse_capabilities(task.resolved_capabilities or [])
+        child_capabilities = child_requested & parent_capabilities
         child = await self.tasks.create(
             goal=goal,
+            owner_id=task.owner_id,
+            project_id=task.project_id,
             status=TaskStatus.PENDING.value,
             rubric=[],
+            requested_capabilities=sorted_capabilities(child_capabilities),
+            resolved_capabilities=[],
             allowed_tools=allowed if isinstance(allowed, list) else None,
             allow_egress=bool(args.get("allow_egress", False)),
             require_approval=task.require_approval,
@@ -709,7 +863,9 @@ class AgentReactService:
         )
         await self._commit()
 
-        child_service = AgentReactService(self.tasks, self.steps, self.llm)
+        child_service = AgentReactService(
+            self.tasks, self.steps, self.llm, verifier_llm=self.verifier_llm
+        )
         await child_service.run(child.id)
         await self.session.refresh(child)
 
@@ -778,7 +934,12 @@ class AgentReactService:
         follow-up like 'now also add tests' has the context it refers to."""
         if not task.chat_id:
             return ""
-        prior = await self.tasks.recent_for_chat(task.chat_id, exclude_id=task.id, limit=5)
+        prior = await self.tasks.recent_for_chat(
+            task.chat_id,
+            exclude_id=task.id,
+            owner_id=task.owner_id,
+            limit=5,
+        )
         turns = [t for t in reversed(prior) if t.summary]  # chronological, answered only
         if not turns:
             return ""
@@ -828,12 +989,19 @@ class AgentReactService:
             command_timeout=settings.agent_command_timeout_seconds,
             output_limit=settings.agent_command_output_limit,
             sandbox_image=self._sandbox_image,
+            sandbox_backend=self._sandbox_backend,
             sandbox_memory=settings.agent_sandbox_memory,
             sandbox_cpus=settings.agent_sandbox_cpus,
             egress_allowed=self._egress_allowed,
+            envelope=CapabilityEnvelope.from_capabilities(
+                task.resolved_capabilities,
+                egress_hosts=task.egress_hosts,
+            ),
+            criterion_count=len(task.rubric or []),
         )
         checks_passed = all(r.passed for r in check_results) if check_results else None
-        verified_by = "execution" if check_results else "judgment"
+        coverage_complete = execution_coverage_complete(check_results, len(task.rubric or []))
+        verified_by = "execution" if coverage_complete else "judgment"
 
         system, user = verify_prompts(
             task.goal,
@@ -844,7 +1012,7 @@ class AgentReactService:
             workspace.contents_digest(),
             today=date.today().isoformat(),
         )
-        result = await self.llm.complete(
+        result = await self.verifier_llm.complete(
             system, user, max_tokens=_VERDICT_MAX_TOKENS, temperature=0.2
         )
         parsed = _extract_json(result.content)
@@ -903,6 +1071,7 @@ class AgentReactService:
                 ledger_head=self._last_hash,
             )
             task.receipt_hash = receipt_hash
+            task.receipt_schema = RECEIPT_SCHEMA
             await self._finish(task, StopReason.GOAL_ACHIEVED)
             return True, score, summary, result.tokens
         return False, score, summary, result.tokens
@@ -945,6 +1114,7 @@ class AgentReactService:
             observation=observation,
             status=status.value,
             tokens=tokens,
+            thought=thought,
         )
         await self.steps.create(
             task_id=task.id,
@@ -1065,6 +1235,7 @@ class AgentReactService:
                 ledger_head=self._last_hash,
             )
             task.receipt_hash = receipt_hash
+            task.receipt_schema = RECEIPT_SCHEMA
         except Exception:
             log.warning("agent.receipt_build_failed", task_id=str(task.id))
 

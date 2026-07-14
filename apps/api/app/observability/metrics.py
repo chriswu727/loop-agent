@@ -26,6 +26,30 @@ REQUEST_LATENCY = Histogram(
     "HTTP request latency in seconds",
     ["method", "path"],
 )
+TASK_RUNS = Counter(
+    "loop_task_runs_total",
+    "Task runs by terminal outcome",
+    ["status", "stop_reason"],
+)
+TASK_RUN_DURATION = Histogram(
+    "loop_task_run_duration_seconds",
+    "End-to-end task execution duration",
+)
+TOOL_DENIALS = Counter(
+    "loop_tool_denials_total",
+    "Tool calls denied by the capability envelope",
+    ["tool"],
+)
+QUEUE_JOBS = Counter(
+    "loop_queue_jobs_total",
+    "Durable queue jobs by outcome",
+    ["outcome"],
+)
+RECEIPT_REPLAYS = Counter(
+    "loop_receipt_replays_total",
+    "Receipt replay attempts by outcome",
+    ["outcome"],
+)
 
 
 def _route_template(request: Request) -> str:

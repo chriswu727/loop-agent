@@ -18,8 +18,13 @@ spec:
         app.kubernetes.io/component: worker
     spec:
       serviceAccountName: app
+      automountServiceAccountToken: true
       securityContext:
         runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        fsGroupChangePolicy: OnRootMismatch
         seccompProfile:
           type: RuntimeDefault
       containers:
@@ -32,6 +37,11 @@ spec:
                 name: app-config
             - secretRef:
                 name: app-secrets
+          env:
+            - name: AGENT_KUBERNETES_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
           resources:
             requests:
               cpu: 100m
@@ -47,8 +57,13 @@ spec:
           volumeMounts:
             - name: tmp
               mountPath: /tmp
+            - name: data
+              mountPath: /var/lib/loop
       volumes:
         - name: tmp
           emptyDir: {}
+        - name: data
+          persistentVolumeClaim:
+            claimName: loop-data
       # Allow in-flight jobs to finish on rolling deploys.
       terminationGracePeriodSeconds: 60

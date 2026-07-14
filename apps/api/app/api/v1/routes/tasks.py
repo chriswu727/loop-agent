@@ -12,10 +12,20 @@ import uuid
 from collections.abc import AsyncIterator
 from typing import Any
 
-from fastapi import APIRouter, BackgroundTasks, File, Query, UploadFile, status
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    File,
+    HTTPException,
+    Query,
+    Request,
+    UploadFile,
+    status,
+)
 from fastapi.responses import FileResponse, StreamingResponse
 
 from app.api.v1.deps import TaskServiceDep, rate_limit
+from app.core.config import settings
 from app.db.session import get_sessionmaker
 from app.exceptions import NotFoundError
 from app.repositories.step import StepRepository
@@ -89,7 +99,17 @@ async def publish_task(
 async def upload_file(
     task_id: uuid.UUID, service: TaskServiceDep, file: UploadFile = File(...)
 ) -> list[FileEntry]:
-    data = await file.read()
+    chunks: list[bytes] = []
+    total = 0
+    while chunk := await file.read(1_048_576):
+        total += len(chunk)
+        if total > settings.agent_max_upload_bytes:
+            raise HTTPException(
+                status_code=status.HTTP_413_CONTENT_TOO_LARGE,
+                detail=f"Upload exceeds the {settings.agent_max_upload_bytes}-byte limit.",
+            )
+        chunks.append(chunk)
+    data = b"".join(chunks)
     await service.save_upload(task_id, file.filename or "upload.bin", data)
     return [FileEntry(path=p, size=s) for p, s in await service.list_files(task_id)]
 
@@ -139,7 +159,7 @@ async def list_steps(task_id: uuid.UUID, service: TaskServiceDep) -> list[StepRe
     summary="Re-verify the task's tamper-evident step chain",
 )
 async def verify_ledger(task_id: uuid.UUID, service: TaskServiceDep) -> LedgerStatus:
-    return LedgerStatus(**await service.verify_ledger(task_id))
+    return LedgerStatus.model_validate(await service.verify_ledger(task_id))
 
 
 @router.get("/{task_id}/receipt", summary="The task's Receipt + layered re-verification")
@@ -148,6 +168,11 @@ async def task_receipt(task_id: uuid.UUID, service: TaskServiceDep) -> dict[str,
     if report is None:
         raise NotFoundError("This task has no Receipt yet (it hasn't reached a terminal state).")
     return report
+
+
+@router.post("/{task_id}/receipt/replay", summary="Re-run a Receipt's recorded checks")
+async def replay_task_receipt(task_id: uuid.UUID, service: TaskServiceDep) -> dict[str, Any]:
+    return await service.replay_receipt(task_id)
 
 
 async def _build_snapshot(service: TaskService, task_id: uuid.UUID) -> TaskSnapshot:
@@ -159,11 +184,11 @@ async def _build_snapshot(service: TaskService, task_id: uuid.UUID) -> TaskSnaps
         task=TaskRead.from_model(task),
         steps=[StepRead.model_validate(s) for s in steps],
         files=[FileEntry(path=p, size=s) for p, s in files],
-        ledger=LedgerStatus(**ledger),
+        ledger=LedgerStatus.model_validate(ledger),
     )
 
 
-async def _event_stream(task_id: uuid.UUID) -> AsyncIterator[str]:
+async def _event_stream(task_id: uuid.UUID, subject: str) -> AsyncIterator[str]:
     """Push a full task snapshot whenever something changes, until terminal. Each
     tick does a *cheap* fingerprint fetch (one task row) and only rebuilds the full
     snapshot — steps, files, ledger re-hash — when it actually changed, so an idle
@@ -172,9 +197,10 @@ async def _event_stream(task_id: uuid.UUID) -> AsyncIterator[str]:
     last_fp: tuple[object, ...] | None = None
     for _ in range(1800):  # ~15 min safety cap at 0.5s cadence
         async with sessionmaker() as session:
-            service = TaskService(TaskRepository(session), StepRepository(session))
-            task = await service.tasks.get(task_id)
-            if task is None:
+            service = TaskService(TaskRepository(session), StepRepository(session), subject=subject)
+            try:
+                task = await service.get(task_id)
+            except NotFoundError:
                 yield 'event: error\ndata: {"detail":"task not found"}\n\n'
                 return
             fp = (task.status, task.steps_used, task.tokens_used, task.updated_at.isoformat())
@@ -189,9 +215,10 @@ async def _event_stream(task_id: uuid.UUID) -> AsyncIterator[str]:
 
 
 @router.get("/{task_id}/events", summary="Stream live task updates (SSE)")
-async def task_events(task_id: uuid.UUID) -> StreamingResponse:
+async def task_events(task_id: uuid.UUID, request: Request) -> StreamingResponse:
+    subject = str(getattr(request.state, "subject", "local"))
     return StreamingResponse(
-        _event_stream(task_id),
+        _event_stream(task_id, subject),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )

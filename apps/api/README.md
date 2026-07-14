@@ -1,51 +1,43 @@
-# api — FastAPI backend
+# Loop API
 
-Layered, async, production-shaped FastAPI service. **No business logic** — one
-example `items` resource shows the conventions end-to-end.
+FastAPI control plane and worker runtime for a least-authority, receipt-producing
+agent loop.
 
 ## Layout
 
-```
+```text
 app/
-  core/          config, logging, security, lifespan
-  api/           transport: errors, v1 router, deps, routes
-  services/      use-cases (your business logic goes here)
-  repositories/  data access (BaseRepository + concrete repos)
-  domain/        pure entities
-  schemas/       Pydantic DTOs (the API contract)
-  db/            async engine/session + ORM models
-  cache/         Cache protocol + Redis impl + in-memory fake
-  middleware/    request-id / access logging
-  observability/ tracing (OTel) + metrics (Prometheus)
-  workers/       background job queue + consumer
-alembic/         migrations
-tests/           pytest (runs on in-memory sqlite, no services needed)
+  api/             authenticated HTTP/SSE routes and RFC 9457 errors
+  services/        task loop, verifier, Receipt, scheduler, memory, approvals
+  repositories/    async SQLAlchemy persistence and atomic claims
+  domain/          capability and task contracts
+  tools/           workspace jail, policy guards, Docker/Kubernetes execution
+  workers/         Redis Streams producer, leased consumer, retries, DLQ
+  cli/             loop receipt inspect|verify|replay|evaluate
+alembic/           versioned schema migrations
+tests/             offline API, loop, security, queue, and Receipt tests
 ```
 
 ## Run
 
 ```bash
 python -m venv .venv && source .venv/bin/activate
-pip install -e ".[dev]"
+pip install -e ".[dev,office]"
 alembic upgrade head
 uvicorn app.main:app --reload
 ```
 
-- Swagger UI: http://localhost:8000/docs
-- OpenAPI JSON: http://localhost:8000/openapi.json
-- Liveness/readiness: `/healthz`, `/readyz`
-- Metrics: `/metrics`
+Swagger is at `/docs`; liveness, readiness, and Prometheus metrics are `/healthz`,
+`/readyz`, and `/metrics`.
 
-## Quality gate
+## Verify
 
 ```bash
 ruff check . && ruff format --check .
 mypy app
 pytest
+pip-audit
 ```
 
-## The dependency rule
-
-`api → services → repositories → domain`. Arrows point inward only. A router
-never touches the DB; a repository never imports FastAPI. See the root
-`ARCHITECTURE.md`.
+The dependency rule is `api → services → repositories → domain`. See the root
+`ARCHITECTURE.md` for runtime, authority, queue, and failure semantics.

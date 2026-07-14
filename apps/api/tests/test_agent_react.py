@@ -402,7 +402,7 @@ async def test_unverified_skill_is_refused(
 
 async def test_remember_persists_across_tasks(session: AsyncSession) -> None:
     from app.core.config import settings as _settings
-    from app.services.memory import MemoryStore
+    from app.services.memory import MemoryStore, scoped_memory_root
 
     plans = [
         {
@@ -415,8 +415,9 @@ async def test_remember_persists_across_tasks(session: AsyncSession) -> None:
     task = await _make_task(session, max_steps=8, token_budget=1_000_000)
     await _service(session, ScriptedLLM(plans, verify={"score": 90, "met": True})).run(task.id)
 
-    # The note is in the shared store, so the next task would see it injected.
-    store = MemoryStore(Path(_settings.agent_memory_root))
+    store = MemoryStore(
+        scoped_memory_root(Path(_settings.agent_memory_root), task.owner_id, task.project_id)
+    )
     assert "make ship" in store.snapshot()
 
 

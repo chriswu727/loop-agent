@@ -4,19 +4,18 @@
 # Multi-stage: `dev` (hot reload, used by compose) and non-root `runner` (prod).
 # Build context is the REPO ROOT:  docker build -f infra/docker/web.Dockerfile .
 # =============================================================================
-FROM node:26-alpine AS base
+FROM node:22-alpine AS base
 RUN corepack enable
 WORKDIR /app
 
 # ---- deps: install the whole workspace from manifests (great layer caching) ----
 FROM base AS deps
-COPY package.json pnpm-workspace.yaml turbo.json .npmrc ./
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml turbo.json .npmrc ./
 COPY apps/web/package.json apps/web/package.json
 COPY packages/eslint-config/package.json packages/eslint-config/package.json
 COPY packages/tsconfig/package.json packages/tsconfig/package.json
 COPY packages/api-contract/package.json packages/api-contract/package.json
-# Once you commit a pnpm-lock.yaml, switch to: pnpm install --frozen-lockfile
-RUN pnpm install
+RUN pnpm install --frozen-lockfile
 
 # ---- builder: build the standalone server ----
 FROM base AS builder

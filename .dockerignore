@@ -8,5 +8,10 @@
 **/.ruff_cache
 **/.mypy_cache
 **/coverage
+**/.env
+**/.env.*
+**/*.pem
 .git
 *.md
+!apps/api/README.md
+!apps/api/skills/trust_key.pem
