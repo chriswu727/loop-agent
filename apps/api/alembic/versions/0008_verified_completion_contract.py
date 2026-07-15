@@ -1,6 +1,6 @@
 """Add the verified-completion task contract and actual model provenance.
 
-Revision ID: 0008_verified_completion_contract
+Revision ID: 0008_verified_completion
 Revises: 0007_verified_changesets
 """
 
@@ -11,7 +11,7 @@ from collections.abc import Sequence
 import sqlalchemy as sa
 from alembic import op
 
-revision: str = "0008_verified_completion_contract"
+revision: str = "0008_verified_completion"
 down_revision: str | None = "0007_verified_changesets"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
