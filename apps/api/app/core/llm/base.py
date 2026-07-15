@@ -14,9 +14,18 @@ from typing import Protocol
 class LLMError(Exception):
     """Raised when a model call fails. ``retryable`` drives fallback cascade."""
 
-    def __init__(self, message: str, *, retryable: bool = False) -> None:
+    def __init__(
+        self,
+        message: str,
+        *,
+        retryable: bool = False,
+        tokens_spent: int = 0,
+        budget_exhausted: bool = False,
+    ) -> None:
         super().__init__(message)
         self.retryable = retryable
+        self.tokens_spent = max(0, tokens_spent)
+        self.budget_exhausted = budget_exhausted
 
 
 @dataclass(slots=True)
@@ -79,4 +88,5 @@ class LLMClient(Protocol):
         *,
         max_tokens: int = 4096,
         temperature: float = 0.7,
+        token_budget: int | None = None,
     ) -> LLMResult: ...

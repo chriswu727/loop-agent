@@ -3,6 +3,8 @@ mock HTTP transport (no real API calls, no keys needed)."""
 
 from __future__ import annotations
 
+import json
+
 import httpx
 import pytest
 
@@ -197,3 +199,44 @@ async def test_default_retry_budget_rides_out_a_sustained_blip(
     result = await llm.complete("s", "u")
     assert result.content == "ok"  # survived; the default budget covers 4 retries
     assert calls["n"] == 5
+
+
+async def test_missing_provider_usage_gets_a_conservative_local_charge(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "deepseek_api_key", "d")
+    for attr in ("anthropic_api_key", "gemini_api_key", "glm_api_key"):
+        monkeypatch.setattr(settings, attr, None)
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"choices": [{"message": {"content": "ok"}}]})
+
+    llm = FallbackLLMClient(primary="deepseek", client=_client(handler))
+    result = await llm.complete("system", "user", token_budget=1_000)
+
+    assert result.tokens > 0
+    assert result.tokens <= 1_000
+
+
+async def test_retry_attempts_are_charged_and_cannot_cross_call_budget(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "deepseek_api_key", "d")
+    for attr in ("anthropic_api_key", "gemini_api_key", "glm_api_key"):
+        monkeypatch.setattr(settings, attr, None)
+    monkeypatch.setattr(settings, "llm_retry_backoff_seconds", 0.0)
+    monkeypatch.setattr(settings, "llm_max_retries", 3)
+    requested_max: list[int] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requested_max.append(json.loads(request.content)["max_tokens"])
+        return httpx.Response(503, text="overloaded")
+
+    llm = FallbackLLMClient(primary="deepseek", client=_client(handler))
+    with pytest.raises(LLMError) as caught:
+        await llm.complete("s", "u", max_tokens=100, token_budget=150)
+
+    assert requested_max == [84, 18]
+    assert caught.value.budget_exhausted is True
+    assert caught.value.tokens_spent == 132
+    assert caught.value.tokens_spent <= 150

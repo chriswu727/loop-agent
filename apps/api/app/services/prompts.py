@@ -50,6 +50,7 @@ def plan_prompts(
     notices: str = "",
     allow_spawn: bool = False,
     today: str = "",
+    progress_state: str = "",
 ) -> tuple[str, str]:
     system = (
         "You are an autonomous agent that completes a task by taking ONE action at "
@@ -94,6 +95,10 @@ def plan_prompts(
         "met, call finish with what you have rather than chasing minor refinements "
         "(e.g. exact number formatting) — an accepted result beats running out of "
         "steps with the work unproven.\n"
+        "- Exploration has a hard branch cap. State the hypothesis in your thought, "
+        "seek evidence that can change the next decision, and do not repeat equivalent "
+        "reads, searches, or commands. If investigation stops producing new evidence, "
+        "implement, verify, ask the user if genuinely blocked, or finish.\n"
         "- Commands already run inside your workspace directory — use relative paths "
         "(./file) and never `cd` to an absolute path like /home/user. Keep commands "
         "simple and safe.\n"
@@ -134,6 +139,7 @@ def plan_prompts(
     # The model has no clock; without this it guesses (its stale training date) or,
     # when shell is off, must ask the user — so dated reports/logs/changelogs break.
     date_block = f"Today's date is {today}.\n\n" if today else ""
+    progress_block = f"Execution state: {progress_state}.\n\n" if progress_state else ""
     user = (
         f"Goal:\n{goal}\n\n"
         f"Success criteria:\n{criteria}\n\n"
@@ -145,6 +151,7 @@ def plan_prompts(
         f"{restriction}"
         f"Workspace files:\n{workspace_tree}\n\n"
         f"What you have done so far:\n{history or '(nothing yet)'}\n\n"
+        f"{progress_block}"
         f"Budget left: {steps_left} steps, ~{tokens_left} tokens.\n\n"
         "Decide the single next action. Respond with the JSON object only."
     )
