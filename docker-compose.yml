@@ -104,7 +104,12 @@ services:
       AGENT_SANDBOX_BACKEND: docker
       AGENT_DOCKER_WORKSPACE_VOLUME: '${COMPOSE_PROJECT_NAME:-loop}_loopdata'
       AGENT_DOCKER_WORKSPACE_MOUNT: /var/lib/loop
-      AGENT_PROVIDER_GATEWAY_URL: http://provider-gateway:8090
+      AGENT_EMAIL_GATEWAY_URL: http://email-gateway:8090
+      AGENT_CALENDAR_GATEWAY_URL: http://calendar-gateway:8090
+      AGENT_VISION_GATEWAY_URL: http://vision-gateway:8090
+      AGENT_EMAIL_EGRESS_HOSTS: ${AGENT_EMAIL_EGRESS_HOSTS:-}
+      AGENT_CALENDAR_EGRESS_HOSTS: ${AGENT_CALENDAR_EGRESS_HOSTS:-}
+      AGENT_VISION_EGRESS_HOSTS: ${AGENT_VISION_EGRESS_HOSTS:-generativelanguage.googleapis.com}
       AGENT_BROWSER_GATEWAY_URL: http://browser-gateway:8090
       AGENT_EGRESS_PROXY_URL: http://172.30.0.2:8080
       AGENT_EGRESS_PROXY_AUDIT_URL: http://egress-proxy:8081
@@ -126,6 +131,7 @@ services:
     networks:
       default:
       browser-egress:
+      provider-egress:
     group_add:
       - '0'
     depends_on:
@@ -133,7 +139,11 @@ services:
         condition: service_completed_successfully
       redis:
         condition: service_healthy
-      provider-gateway:
+      email-gateway:
+        condition: service_healthy
+      calendar-gateway:
+        condition: service_healthy
+      vision-gateway:
         condition: service_healthy
       browser-gateway:
         condition: service_healthy
@@ -155,47 +165,56 @@ services:
         '10001:10001',
         '/var/lib/loop',
         '/var/lib/loop-egress',
-        '/var/lib/loop-provider',
+        '/var/lib/loop-email',
+        '/var/lib/loop-calendar',
+        '/var/lib/loop-vision',
         '/var/lib/loop-browser',
       ]
     volumes:
       - loopdata:/var/lib/loop
       - egressaudit:/var/lib/loop-egress
-      - providerstate:/var/lib/loop-provider
+      - emailstate:/var/lib/loop-email
+      - calendarstate:/var/lib/loop-calendar
+      - visionstate:/var/lib/loop-vision
       - browserstate:/var/lib/loop-browser
     restart: 'no'
 
-  provider-gateway:
+  email-gateway:
     build:
       context: .
       dockerfile: infra/docker/api.Dockerfile
       target: runtime
     command: ['uvicorn', 'app.provider_gateway.main:app', '--host', '0.0.0.0', '--port', '8090']
     environment:
+      PROVIDER_GATEWAY_SERVICE_NAME: email-gateway
+      PROVIDER_GATEWAY_AUTHORITY_AUDIENCE: loop-email-gateway
       PROVIDER_GATEWAY_REQUIRE_AUTHORITY_KEY: 'true'
       PROVIDER_GATEWAY_AUTHORITY_PUBLIC_KEY: ${AGENT_AUTHORITY_PUBLIC_KEY:-}
       PROVIDER_GATEWAY_AUTHORITY_PUBLIC_KEYS: ${AGENT_AUTHORITY_PUBLIC_KEYS:-{}}
       PROVIDER_GATEWAY_REQUIRE_DURABLE_REVOCATIONS: 'true'
-      PROVIDER_GATEWAY_REVOCATION_DATABASE_PATH: /var/lib/loop-provider/authority.sqlite3
+      PROVIDER_GATEWAY_REVOCATION_DATABASE_PATH: /var/lib/loop-email/authority.sqlite3
       PROVIDER_GATEWAY_BROWSER_ENABLED: 'false'
-      PROVIDER_GATEWAY_GEMINI_API_KEY: ${PROVIDER_GATEWAY_GEMINI_API_KEY:-}
+      PROVIDER_GATEWAY_EGRESS_PROXY_URL: http://172.32.0.2:8080
       SMTP_HOST: ${SMTP_HOST:-}
       SMTP_PORT: ${SMTP_PORT:-587}
       SMTP_USER: ${SMTP_USER:-}
       SMTP_PASSWORD: ${SMTP_PASSWORD:-}
       SMTP_STARTTLS: ${SMTP_STARTTLS:-true}
       IMAP_HOST: ${IMAP_HOST:-}
+      IMAP_PORT: ${IMAP_PORT:-993}
       EMAIL_FROM: ${EMAIL_FROM:-}
-      CALDAV_URL: ${CALDAV_URL:-}
-      CALDAV_USER: ${CALDAV_USER:-}
-      CALDAV_PASSWORD: ${CALDAV_PASSWORD:-}
-      CALDAV_CALENDAR: ${CALDAV_CALENDAR:-}
     volumes:
       - ./apps/api:/app:ro
-      - providerstate:/var/lib/loop-provider
+      - emailstate:/var/lib/loop-email
     depends_on:
       data-init:
         condition: service_completed_successfully
+      egress-proxy:
+        condition: service_healthy
+    networks:
+      provider-egress:
+    dns:
+      - 127.0.0.1
     healthcheck:
       test:
         [
@@ -207,7 +226,96 @@ services:
       interval: 10s
       timeout: 3s
       retries: 5
-      start_period: 10s
+      start_period: 20s
+    restart: unless-stopped
+
+  calendar-gateway:
+    build:
+      context: .
+      dockerfile: infra/docker/api.Dockerfile
+      target: runtime
+    command: ['uvicorn', 'app.provider_gateway.main:app', '--host', '0.0.0.0', '--port', '8090']
+    environment:
+      PROVIDER_GATEWAY_SERVICE_NAME: calendar-gateway
+      PROVIDER_GATEWAY_AUTHORITY_AUDIENCE: loop-calendar-gateway
+      PROVIDER_GATEWAY_REQUIRE_AUTHORITY_KEY: 'true'
+      PROVIDER_GATEWAY_AUTHORITY_PUBLIC_KEY: ${AGENT_AUTHORITY_PUBLIC_KEY:-}
+      PROVIDER_GATEWAY_AUTHORITY_PUBLIC_KEYS: ${AGENT_AUTHORITY_PUBLIC_KEYS:-{}}
+      PROVIDER_GATEWAY_REQUIRE_DURABLE_REVOCATIONS: 'true'
+      PROVIDER_GATEWAY_REVOCATION_DATABASE_PATH: /var/lib/loop-calendar/authority.sqlite3
+      PROVIDER_GATEWAY_BROWSER_ENABLED: 'false'
+      PROVIDER_GATEWAY_EGRESS_PROXY_URL: http://172.32.0.2:8080
+      CALDAV_URL: ${CALDAV_URL:-}
+      CALDAV_USER: ${CALDAV_USER:-}
+      CALDAV_PASSWORD: ${CALDAV_PASSWORD:-}
+      CALDAV_CALENDAR: ${CALDAV_CALENDAR:-}
+    volumes:
+      - ./apps/api:/app:ro
+      - calendarstate:/var/lib/loop-calendar
+    depends_on:
+      data-init:
+        condition: service_completed_successfully
+      egress-proxy:
+        condition: service_healthy
+    networks:
+      provider-egress:
+    dns:
+      - 127.0.0.1
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'python',
+          '-c',
+          "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8090/healthz').status==200 else 1)",
+        ]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 20s
+    restart: unless-stopped
+
+  vision-gateway:
+    build:
+      context: .
+      dockerfile: infra/docker/api.Dockerfile
+      target: runtime
+    command: ['uvicorn', 'app.provider_gateway.main:app', '--host', '0.0.0.0', '--port', '8090']
+    environment:
+      PROVIDER_GATEWAY_SERVICE_NAME: vision-gateway
+      PROVIDER_GATEWAY_AUTHORITY_AUDIENCE: loop-vision-gateway
+      PROVIDER_GATEWAY_REQUIRE_AUTHORITY_KEY: 'true'
+      PROVIDER_GATEWAY_AUTHORITY_PUBLIC_KEY: ${AGENT_AUTHORITY_PUBLIC_KEY:-}
+      PROVIDER_GATEWAY_AUTHORITY_PUBLIC_KEYS: ${AGENT_AUTHORITY_PUBLIC_KEYS:-{}}
+      PROVIDER_GATEWAY_REQUIRE_DURABLE_REVOCATIONS: 'true'
+      PROVIDER_GATEWAY_REVOCATION_DATABASE_PATH: /var/lib/loop-vision/authority.sqlite3
+      PROVIDER_GATEWAY_BROWSER_ENABLED: 'false'
+      PROVIDER_GATEWAY_EGRESS_PROXY_URL: http://172.32.0.2:8080
+      PROVIDER_GATEWAY_GEMINI_API_KEY: ${PROVIDER_GATEWAY_GEMINI_API_KEY:-}
+    volumes:
+      - ./apps/api:/app:ro
+      - visionstate:/var/lib/loop-vision
+    depends_on:
+      data-init:
+        condition: service_completed_successfully
+      egress-proxy:
+        condition: service_healthy
+    networks:
+      provider-egress:
+    dns:
+      - 127.0.0.1
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'python',
+          '-c',
+          "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8090/healthz').status==200 else 1)",
+        ]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 20s
     restart: unless-stopped
 
   browser-gateway:
@@ -266,6 +374,7 @@ services:
       EGRESS_PROXY_AUDIT_DATABASE_PATH: /var/lib/loop-egress/audit.sqlite3
       EGRESS_PROXY_REQUIRE_DURABLE_REVOCATIONS: 'true'
       EGRESS_PROXY_REVOCATION_DATABASE_PATH: /var/lib/loop-egress/audit.sqlite3
+      EGRESS_PROXY_ALLOWED_PORTS: 80,443,587,993
     volumes:
       - egressaudit:/var/lib/loop-egress
     depends_on:
@@ -277,6 +386,8 @@ services:
         ipv4_address: 172.30.0.2
       browser-egress:
         ipv4_address: 172.31.0.2
+      provider-egress:
+        ipv4_address: 172.32.0.2
     healthcheck:
       test:
         [
@@ -353,7 +464,9 @@ volumes:
   redisdata:
   loopdata:
   egressaudit:
-  providerstate:
+  emailstate:
+  calendarstate:
+  visionstate:
   browserstate:
 
 networks:
@@ -367,3 +480,8 @@ networks:
     ipam:
       config:
         - subnet: 172.31.0.0/24
+  provider-egress:
+    internal: true
+    ipam:
+      config:
+        - subnet: 172.32.0.0/24

@@ -19,6 +19,15 @@ function Pill({ tone, children }: { tone: keyof typeof TONES; children: ReactNod
 
 export function AuthorityPanel({ task }: { task: Task }) {
   const granted = new Set(task.authority.resolved);
+  const emailGranted = granted.has('email.read') || granted.has('email.send');
+  const calendarGranted = granted.has('calendar.read') || granted.has('calendar.write');
+  const visionGranted = granted.has('vision');
+  const networkedAuthority =
+    granted.has('net.shell') ||
+    granted.has('net.browser') ||
+    emailGranted ||
+    calendarGranted ||
+    visionGranted;
   const shellNetwork = !granted.has('net.shell')
     ? { label: 'Shell network: denied', tone: 'safe' as const }
     : task.authority.egress_hosts.length > 0
@@ -45,12 +54,20 @@ export function AuthorityPanel({ task }: { task: Task }) {
         ))}
         {task.require_approval && <Pill tone="neutral">Approval required</Pill>}
         {task.authority.sandbox && <Pill tone="neutral">Sandbox: {task.authority.sandbox}</Pill>}
-        {(granted.has('net.shell') || granted.has('net.browser')) &&
-          task.authority.enforcement.egress_proxy && (
-            <Pill tone="safe">Destination proxy enforced</Pill>
-          )}
+        {networkedAuthority && task.authority.enforcement.egress_proxy && (
+          <Pill tone="safe">Destination proxy enforced</Pill>
+        )}
         {granted.has('net.browser') && task.authority.enforcement.browser_gateway && (
           <Pill tone="safe">Browser network isolated</Pill>
+        )}
+        {emailGranted && task.authority.enforcement.email_gateway && (
+          <Pill tone="safe">Email network isolated</Pill>
+        )}
+        {calendarGranted && task.authority.enforcement.calendar_gateway && (
+          <Pill tone="safe">Calendar network isolated</Pill>
+        )}
+        {visionGranted && task.authority.enforcement.vision_gateway && (
+          <Pill tone="safe">Vision network isolated</Pill>
         )}
         {task.authority.audit.length > 0 && (
           <Pill tone="neutral">

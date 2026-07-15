@@ -36,6 +36,9 @@ export interface Authority {
   enforcement: {
     provider_gateway: boolean;
     browser_gateway: boolean;
+    email_gateway: boolean;
+    calendar_gateway: boolean;
+    vision_gateway: boolean;
     egress_proxy: boolean;
   };
   audit: Array<{

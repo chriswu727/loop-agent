@@ -1,9 +1,9 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: provider-gateway
+  name: calendar-gateway
   labels:
-    app.kubernetes.io/name: provider-gateway
+    app.kubernetes.io/name: calendar-gateway
     app.kubernetes.io/component: provider
 spec:
   replicas: 1
@@ -11,14 +11,18 @@ spec:
     type: Recreate
   selector:
     matchLabels:
-      app.kubernetes.io/name: provider-gateway
+      app.kubernetes.io/name: calendar-gateway
   template:
     metadata:
       labels:
-        app.kubernetes.io/name: provider-gateway
+        app.kubernetes.io/name: calendar-gateway
         app.kubernetes.io/component: provider
     spec:
       automountServiceAccountToken: false
+      enableServiceLinks: true
+      dnsPolicy: None
+      dnsConfig:
+        nameservers: ['127.0.0.1']
       securityContext:
         runAsNonRoot: true
         runAsUser: 10001
@@ -28,23 +32,28 @@ spec:
         seccompProfile:
           type: RuntimeDefault
       containers:
-        - name: provider-gateway
+        - name: calendar-gateway
           image: app-api:latest
           imagePullPolicy: IfNotPresent
-          command: ['uvicorn', 'app.provider_gateway.main:app', '--host', '0.0.0.0', '--port', '8090']
+          command:
+            ['uvicorn', 'app.provider_gateway.main:app', '--host', '0.0.0.0', '--port', '8090']
           ports:
             - name: http
               containerPort: 8090
           envFrom:
             - secretRef:
-                name: provider-gateway-secrets
+                name: calendar-gateway-secrets
           env:
+            - name: PROVIDER_GATEWAY_SERVICE_NAME
+              value: calendar-gateway
+            - name: PROVIDER_GATEWAY_AUTHORITY_AUDIENCE
+              value: loop-calendar-gateway
             - name: PROVIDER_GATEWAY_REQUIRE_AUTHORITY_KEY
               value: 'true'
             - name: PROVIDER_GATEWAY_REQUIRE_DURABLE_REVOCATIONS
               value: 'true'
             - name: PROVIDER_GATEWAY_REVOCATION_DATABASE_PATH
-              value: /var/lib/loop-provider/authority.sqlite3
+              value: /var/lib/loop-calendar/authority.sqlite3
             - name: PROVIDER_GATEWAY_BROWSER_ENABLED
               value: 'false'
             - name: HOME
@@ -75,10 +84,10 @@ spec:
             - name: tmp
               mountPath: /tmp
             - name: state
-              mountPath: /var/lib/loop-provider
+              mountPath: /var/lib/loop-calendar
       volumes:
         - name: tmp
           emptyDir: { sizeLimit: 256Mi }
         - name: state
           persistentVolumeClaim:
-            claimName: provider-gateway-state
+            claimName: calendar-gateway-state

@@ -152,8 +152,16 @@ def build_receipt(
             "egress_hosts": egress_hosts,
             "audit": task.authority_audit if isinstance(task.authority_audit, list) else [],
             "enforcement": {
-                "provider_gateway": bool(settings.agent_provider_gateway_url),
+                "provider_gateway": bool(
+                    settings.agent_provider_gateway_url
+                    or settings.agent_email_gateway_url
+                    or settings.agent_calendar_gateway_url
+                    or settings.agent_vision_gateway_url
+                ),
                 "browser_gateway": bool(settings.agent_browser_gateway_url),
+                "email_gateway": bool(settings.agent_email_gateway_url),
+                "calendar_gateway": bool(settings.agent_calendar_gateway_url),
+                "vision_gateway": bool(settings.agent_vision_gateway_url),
                 "egress_proxy": bool(settings.agent_egress_proxy_url),
             },
         },

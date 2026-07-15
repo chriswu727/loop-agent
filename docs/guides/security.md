@@ -29,10 +29,10 @@ not prompt instructions.
   the persisted approval flow when approval is required.
 - The worker signs an audience-bound `loop.authority-token/v1` for each run. Tokens
   carry the task/owner/project/run identity, exact capabilities, explicit destination
-  hosts, and a short expiry. Provider Gateway and proxy processes have only the
+  hosts, and a short expiry. Gateway and proxy processes have only the
   public verifier, so a compromised enforcement service cannot mint wider grants.
 - Verification uses the token's derived Ed25519 `kid` against a configured keyring.
-  A terminal run sends a separately audience-bound control token to both enforcement
+  A terminal run sends a separately audience-bound control token to every enforcement
   services; they persist the run revocation, reject its remaining tokens, close its
   browser session, and tear down established proxy connections.
 
@@ -58,22 +58,21 @@ not prompt instructions.
   audited proxy.
 - Local `preferred` mode may fall back to the host and labels the Receipt accordingly.
   Use `required` when containment is mandatory.
-- Email/calendar/vision credentials exist only in the protocol Provider Gateway.
-  Chromium runs in a separate Browser Gateway with no provider credentials, no DNS,
-  and no direct internet route. The worker uses separate audience-bound grants and
-  production fails closed if either required gateway is missing.
+- Email, calendar, and vision credentials exist only in their respective dedicated
+  gateways. Chromium runs in a fourth gateway with no provider credentials. All four
+  have DNS disabled and no direct internet route; they can reach only the authenticated
+  proxy. The worker uses separate audience-bound grants, and production fails closed
+  if any required gateway or upstream-host policy is missing.
 
 ### Exact guarantee boundaries
 
 - Shell containers/Jobs have no direct external route: destination enforcement is a
   network-layer property of the sandbox namespace plus proxy.
-- Browser navigation is checked by a dedicated Browser Gateway and routed through the
-  authenticated proxy. Its Kubernetes identity may connect only to the proxy port;
-  DNS is disabled. A gateway-local loopback relay refreshes short-lived proxy authority
-  without exposing it to Chromium, and the proxy closes established connections when
-  that authority expires. The separate protocol gateway retains direct egress for
-  SMTP/IMAP/CalDAV/vision APIs; deployments needing per-protocol FQDN enforcement can
-  split those providers further or use a CNI/service mesh with FQDN policy.
+- Browser, SMTP, IMAP, CalDAV, and vision traffic is routed through the authenticated
+  proxy. Each Kubernetes identity may connect only to the proxy port and has DNS
+  disabled. Gateway-local relays inject short-lived proxy authority without exposing
+  it to Chromium or upstream libraries. The gateway and proxy both verify the exact
+  identity, capabilities, and host set before the proxy resolves and pins a public IP.
 - Proxy audit is a bounded SQLite WAL on a dedicated persistent volume, so a proxy
   restart does not erase events waiting for the worker to embed them in a task and
   Receipt. The base deployment intentionally has one replica because this local
@@ -100,9 +99,9 @@ not prompt instructions.
 
 - Never commit secrets. `.env` is ignored; the example Kubernetes Secret is not
   part of Kustomize resources, so a deployment cannot silently inherit placeholders.
-- API, worker, Provider Gateway, and web use separate Kubernetes Secrets. The API and
-  gateway do not receive the authority issuer key; the worker does not receive
-  email/calendar/provider-vision credentials; the web receives neither.
+- API, worker, each protocol gateway, Browser Gateway, and web use separate Kubernetes
+  Secrets. The API and gateways do not receive the authority issuer key; the worker
+  does not receive email/calendar/provider-vision credentials; the web receives neither.
 - Production should use External Secrets, Sealed Secrets, or a cloud secret manager.
 - Skills require an Ed25519 signature from the configured trust root.
 - JavaScript and Python production installs use frozen lockfiles; Python wheels are

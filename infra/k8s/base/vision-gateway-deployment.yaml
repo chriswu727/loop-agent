@@ -1,0 +1,93 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vision-gateway
+  labels:
+    app.kubernetes.io/name: vision-gateway
+    app.kubernetes.io/component: provider
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: vision-gateway
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: vision-gateway
+        app.kubernetes.io/component: provider
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: true
+      dnsPolicy: None
+      dnsConfig:
+        nameservers: ['127.0.0.1']
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: vision-gateway
+          image: app-api:latest
+          imagePullPolicy: IfNotPresent
+          command:
+            ['uvicorn', 'app.provider_gateway.main:app', '--host', '0.0.0.0', '--port', '8090']
+          ports:
+            - name: http
+              containerPort: 8090
+          envFrom:
+            - secretRef:
+                name: vision-gateway-secrets
+          env:
+            - name: PROVIDER_GATEWAY_SERVICE_NAME
+              value: vision-gateway
+            - name: PROVIDER_GATEWAY_AUTHORITY_AUDIENCE
+              value: loop-vision-gateway
+            - name: PROVIDER_GATEWAY_REQUIRE_AUTHORITY_KEY
+              value: 'true'
+            - name: PROVIDER_GATEWAY_REQUIRE_DURABLE_REVOCATIONS
+              value: 'true'
+            - name: PROVIDER_GATEWAY_REVOCATION_DATABASE_PATH
+              value: /var/lib/loop-vision/authority.sqlite3
+            - name: PROVIDER_GATEWAY_BROWSER_ENABLED
+              value: 'false'
+            - name: HOME
+              value: /tmp
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: '1'
+              memory: 512Mi
+          startupProbe:
+            httpGet: { path: /healthz, port: http }
+            failureThreshold: 30
+            periodSeconds: 2
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }
+            periodSeconds: 10
+          readinessProbe:
+            httpGet: { path: /healthz, port: http }
+            periodSeconds: 10
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ['ALL']
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: state
+              mountPath: /var/lib/loop-vision
+      volumes:
+        - name: tmp
+          emptyDir: { sizeLimit: 256Mi }
+        - name: state
+          persistentVolumeClaim:
+            claimName: vision-gateway-state

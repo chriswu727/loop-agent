@@ -18,7 +18,14 @@ const baseTask: Task = {
     resolved: ['net.browser'],
     egress_hosts: [],
     sandbox: 'required',
-    enforcement: { provider_gateway: true, browser_gateway: true, egress_proxy: true },
+    enforcement: {
+      provider_gateway: true,
+      browser_gateway: true,
+      email_gateway: true,
+      calendar_gateway: true,
+      vision_gateway: true,
+      egress_proxy: true,
+    },
     audit: [],
   },
   allow_egress: false,
@@ -74,6 +81,25 @@ describe('AuthorityPanel', () => {
 
     expect(screen.getByText('Shell network: api.example.com')).toBeInTheDocument();
     expect(screen.getByText('Destination proxy enforced')).toBeInTheDocument();
+  });
+
+  it('shows each isolated provider network that the task actually used', () => {
+    render(
+      <AuthorityPanel
+        task={{
+          ...baseTask,
+          authority: {
+            ...baseTask.authority,
+            resolved: ['email.read', 'calendar.write', 'vision'],
+          },
+        }}
+      />,
+    );
+
+    expect(screen.getByText('Destination proxy enforced')).toBeInTheDocument();
+    expect(screen.getByText('Email network isolated')).toBeInTheDocument();
+    expect(screen.getByText('Calendar network isolated')).toBeInTheDocument();
+    expect(screen.getByText('Vision network isolated')).toBeInTheDocument();
   });
 
   it('summarizes runtime enforcement decisions', () => {

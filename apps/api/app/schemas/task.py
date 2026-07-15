@@ -90,6 +90,9 @@ class LimitsRead(BaseModel):
 class AuthorityEnforcementRead(BaseModel):
     provider_gateway: bool
     browser_gateway: bool
+    email_gateway: bool
+    calendar_gateway: bool
+    vision_gateway: bool
     egress_proxy: bool
 
 
@@ -167,8 +170,16 @@ class TaskRead(BaseModel):
                 sandbox=m.sandbox,  # type: ignore[attr-defined]
                 audit=m.authority_audit or [],  # type: ignore[attr-defined]
                 enforcement=AuthorityEnforcementRead(
-                    provider_gateway=bool(settings.agent_provider_gateway_url),
+                    provider_gateway=bool(
+                        settings.agent_provider_gateway_url
+                        or settings.agent_email_gateway_url
+                        or settings.agent_calendar_gateway_url
+                        or settings.agent_vision_gateway_url
+                    ),
                     browser_gateway=bool(settings.agent_browser_gateway_url),
+                    email_gateway=bool(settings.agent_email_gateway_url),
+                    calendar_gateway=bool(settings.agent_calendar_gateway_url),
+                    vision_gateway=bool(settings.agent_vision_gateway_url),
                     egress_proxy=bool(settings.agent_egress_proxy_url),
                 ),
             ),

@@ -90,15 +90,21 @@ class ProviderGatewayRuntime:
         elif tool in {"read_inbox", "send_email"}:
             if not self.settings.email_configured:
                 raise RuntimeError("Email provider is not configured")
-            result = await self.email.call(tool, args)
+            result = await self.email.call(
+                tool, args, self._require_provider_egress(grant, tool, egress_token)
+            )
         elif tool in {"list_events", "create_event"}:
             if not self.settings.calendar_configured:
                 raise RuntimeError("Calendar provider is not configured")
-            result = await self.calendar.call(tool, args)
+            result = await self.calendar.call(
+                tool, args, self._require_provider_egress(grant, tool, egress_token)
+            )
         elif tool == "see_image":
             if not self.settings.gemini_api_key:
                 raise RuntimeError("Vision provider is not configured")
-            result = await self.vision.call(args)
+            result = await self.vision.call(
+                args, self._require_provider_egress(grant, tool, egress_token)
+            )
         else:
             raise AuthorityTokenError(f"Unknown provider tool {tool!r}")
         return result, self.audit_event(grant, tool, args, decision="allowed")
@@ -177,6 +183,23 @@ class ProviderGatewayRuntime:
             raise AuthorityTokenError("Browser URL must be an absolute HTTP(S) URL")
         if not grant.permits_host(parsed.hostname):
             raise AuthorityTokenError(f"Browser target {parsed.hostname!r} is not allowlisted")
+
+    def _require_provider_egress(
+        self, grant: AuthorityGrant, tool: str, egress_token: str | None
+    ) -> str:
+        if not egress_token:
+            raise AuthorityTokenError("Provider requires fresh egress authority")
+        if tool == "read_inbox":
+            host = self.settings.imap_host or self.settings.smtp_host
+        elif tool == "send_email":
+            host = self.settings.smtp_host
+        elif tool in {"list_events", "create_event"}:
+            host = urlsplit(self.settings.caldav_url or "").hostname
+        else:
+            host = "generativelanguage.googleapis.com"
+        if not host or not grant.permits_host(host):
+            raise AuthorityTokenError(f"Provider upstream {host or '(missing)'} is not allowlisted")
+        return egress_token
 
     def _target(self, tool: str, args: dict[str, Any]) -> str | None:
         if tool == "send_email":

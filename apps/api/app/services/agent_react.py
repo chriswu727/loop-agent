@@ -36,8 +36,11 @@ from app.core.redaction import redact_secrets
 from app.db.models.task import TaskModel
 from app.domain.authority_token import (
     BROWSER_GATEWAY_AUDIENCE,
+    CALENDAR_GATEWAY_AUDIENCE,
     EGRESS_PROXY_AUDIENCE,
+    EMAIL_GATEWAY_AUDIENCE,
     PROVIDER_GATEWAY_AUDIENCE,
+    VISION_GATEWAY_AUDIENCE,
     AuthorityTokenError,
     intersect_host_policies,
     issue_authority_token,
@@ -293,13 +296,10 @@ class AgentReactService:
         )
         task.resolved_capabilities = sorted_capabilities(resolved_capabilities)
         browser_capabilities = {Capability.NET_BROWSER}
-        protocol_capabilities = {
-            Capability.EMAIL_READ,
-            Capability.EMAIL_SEND,
-            Capability.CALENDAR_READ,
-            Capability.CALENDAR_WRITE,
-            Capability.VISION,
-        }
+        email_capabilities = {Capability.EMAIL_READ, Capability.EMAIL_SEND}
+        calendar_capabilities = {Capability.CALENDAR_READ, Capability.CALENDAR_WRITE}
+        vision_capabilities = {Capability.VISION}
+        protocol_capabilities = email_capabilities | calendar_capabilities | vision_capabilities
         destination_capabilities = {Capability.NET_SHELL, Capability.NET_BROWSER}
         if (
             settings.agent_require_egress_hosts
@@ -320,12 +320,19 @@ class AgentReactService:
             and not settings.agent_allow_host_providers
         ):
             unavailable_gateways.append("Browser Gateway")
-        if (
-            resolved_capabilities & protocol_capabilities
-            and not settings.agent_provider_gateway_url
-            and not settings.agent_allow_host_providers
-        ):
-            unavailable_gateways.append("Provider Gateway")
+        protocol_gateways = (
+            (email_capabilities, settings.agent_email_gateway_url, "Email Gateway"),
+            (calendar_capabilities, settings.agent_calendar_gateway_url, "Calendar Gateway"),
+            (vision_capabilities, settings.agent_vision_gateway_url, "Vision Gateway"),
+        )
+        for capabilities, gateway_url, name in protocol_gateways:
+            if (
+                resolved_capabilities & capabilities
+                and not gateway_url
+                and not settings.agent_provider_gateway_url
+                and not settings.agent_allow_host_providers
+            ):
+                unavailable_gateways.append(name)
         if unavailable_gateways:
             gateway_names = " and ".join(unavailable_gateways)
             verb = "is" if len(unavailable_gateways) == 1 else "are"
@@ -334,6 +341,70 @@ class AgentReactService:
             task.error = (
                 "Requested capabilities are disabled because no isolated "
                 f"{gateway_names} {verb} configured."
+            )
+            task.workspace_path = str(workspace.root)
+            self._ensure_unverified_receipt(task)
+            await self._commit()
+            return
+
+        def configured_provider_hosts(value: str) -> frozenset[str]:
+            return normalize_hosts(host for item in value.split(",") if (host := item.strip()))
+
+        try:
+            provider_egress_hosts = {
+                "email": (
+                    configured_provider_hosts(settings.agent_email_egress_hosts)
+                    if resolved_capabilities & email_capabilities
+                    else frozenset()
+                ),
+                "calendar": (
+                    configured_provider_hosts(settings.agent_calendar_egress_hosts)
+                    if resolved_capabilities & calendar_capabilities
+                    else frozenset()
+                ),
+                "vision": (
+                    configured_provider_hosts(settings.agent_vision_egress_hosts)
+                    if resolved_capabilities & vision_capabilities
+                    else frozenset()
+                ),
+            }
+        except AuthorityTokenError as exc:
+            task.status = TaskStatus.FAILED.value
+            task.stop_reason = StopReason.ERROR.value
+            task.error = f"Invalid provider destination authority: {exc}"
+            task.workspace_path = str(workspace.root)
+            self._ensure_unverified_receipt(task)
+            await self._commit()
+            return
+        missing_provider_hosts = [
+            name
+            for capabilities, gateway_url, name, hosts in (
+                (
+                    email_capabilities,
+                    settings.agent_email_gateway_url or settings.agent_provider_gateway_url,
+                    "Email Gateway",
+                    provider_egress_hosts["email"],
+                ),
+                (
+                    calendar_capabilities,
+                    settings.agent_calendar_gateway_url or settings.agent_provider_gateway_url,
+                    "Calendar Gateway",
+                    provider_egress_hosts["calendar"],
+                ),
+                (
+                    vision_capabilities,
+                    settings.agent_vision_gateway_url or settings.agent_provider_gateway_url,
+                    "Vision Gateway",
+                    provider_egress_hosts["vision"],
+                ),
+            )
+            if resolved_capabilities & capabilities and gateway_url and not hosts
+        ]
+        if missing_provider_hosts:
+            task.status = TaskStatus.FAILED.value
+            task.stop_reason = StopReason.ERROR.value
+            task.error = "Provider gateways require configured egress hosts: " + ", ".join(
+                missing_provider_hosts
             )
             task.workspace_path = str(workspace.root)
             self._ensure_unverified_receipt(task)
@@ -373,6 +444,13 @@ class AgentReactService:
         gateway_capabilities: set[Capability] = set()
         if settings.agent_provider_gateway_url:
             gateway_capabilities |= resolved_capabilities & protocol_capabilities
+        else:
+            if settings.agent_email_gateway_url:
+                gateway_capabilities |= resolved_capabilities & email_capabilities
+            if settings.agent_calendar_gateway_url:
+                gateway_capabilities |= resolved_capabilities & calendar_capabilities
+            if settings.agent_vision_gateway_url:
+                gateway_capabilities |= resolved_capabilities & vision_capabilities
         if settings.agent_browser_gateway_url:
             gateway_capabilities |= resolved_capabilities & browser_capabilities
         uses_gateway = bool(gateway_capabilities)
@@ -391,6 +469,7 @@ class AgentReactService:
 
         def scoped_token_factory(
             granted_capabilities: set[Capability],
+            granted_hosts: frozenset[str] | None = None,
         ) -> Callable[[str], str]:
             def factory(audience: str) -> str:
                 if not authority_key:
@@ -403,7 +482,9 @@ class AgentReactService:
                     project_id=task.project_id,
                     run_id=run_id,
                     capabilities=granted_capabilities,
-                    egress_hosts=task.egress_hosts or [],
+                    egress_hosts=(
+                        granted_hosts if granted_hosts is not None else task.egress_hosts or []
+                    ),
                     ttl_seconds=settings.agent_authority_token_ttl_seconds,
                 )
 
@@ -415,7 +496,7 @@ class AgentReactService:
         provider_gateway: ProviderGatewayPool | None = None
         egress_audit = (
             EgressAuditClient(settings.agent_egress_proxy_audit_url, token_factory)
-            if resolved_capabilities & destination_capabilities
+            if (uses_gateway or resolved_capabilities & destination_capabilities)
             and settings.agent_egress_proxy_audit_url
             else None
         )
@@ -474,15 +555,74 @@ class AgentReactService:
             gateway_clients: list[ProviderGatewayClient] = []
             protocol_grants = resolved_capabilities & protocol_capabilities
             if protocol_grants and settings.agent_provider_gateway_url:
+                legacy_grants = set(protocol_grants)
+                if (
+                    Capability.VISION in protocol_grants
+                    and Capability.FS_READ in resolved_capabilities
+                ):
+                    legacy_grants.add(Capability.FS_READ)
+                legacy_hosts = frozenset().union(
+                    *(
+                        provider_egress_hosts[name]
+                        for capabilities, name in (
+                            (email_capabilities, "email"),
+                            (calendar_capabilities, "calendar"),
+                            (vision_capabilities, "vision"),
+                        )
+                        if resolved_capabilities & capabilities
+                    )
+                )
                 gateway_clients.append(
                     ProviderGatewayClient(
                         settings.agent_provider_gateway_url,
                         workspace,
-                        scoped_token_factory(set(protocol_grants)),
+                        scoped_token_factory(legacy_grants, legacy_hosts),
                         audience=PROVIDER_GATEWAY_AUDIENCE,
+                        egress_authority=True,
                         timeout_seconds=settings.agent_command_timeout_seconds + 15,
                     )
                 )
+            elif protocol_grants:
+                email_grants = resolved_capabilities & email_capabilities
+                if email_grants and settings.agent_email_gateway_url:
+                    gateway_clients.append(
+                        ProviderGatewayClient(
+                            settings.agent_email_gateway_url,
+                            workspace,
+                            scoped_token_factory(set(email_grants), provider_egress_hosts["email"]),
+                            audience=EMAIL_GATEWAY_AUDIENCE,
+                            egress_authority=True,
+                            timeout_seconds=settings.agent_command_timeout_seconds + 15,
+                        )
+                    )
+                calendar_grants = resolved_capabilities & calendar_capabilities
+                if calendar_grants and settings.agent_calendar_gateway_url:
+                    gateway_clients.append(
+                        ProviderGatewayClient(
+                            settings.agent_calendar_gateway_url,
+                            workspace,
+                            scoped_token_factory(
+                                set(calendar_grants), provider_egress_hosts["calendar"]
+                            ),
+                            audience=CALENDAR_GATEWAY_AUDIENCE,
+                            egress_authority=True,
+                            timeout_seconds=settings.agent_command_timeout_seconds + 15,
+                        )
+                    )
+                if Capability.VISION in protocol_grants and settings.agent_vision_gateway_url:
+                    vision_grants = {Capability.VISION}
+                    if Capability.FS_READ in resolved_capabilities:
+                        vision_grants.add(Capability.FS_READ)
+                    gateway_clients.append(
+                        ProviderGatewayClient(
+                            settings.agent_vision_gateway_url,
+                            workspace,
+                            scoped_token_factory(vision_grants, provider_egress_hosts["vision"]),
+                            audience=VISION_GATEWAY_AUDIENCE,
+                            egress_authority=True,
+                            timeout_seconds=settings.agent_command_timeout_seconds + 15,
+                        )
+                    )
             if Capability.NET_BROWSER in gateway_capabilities:
                 gateway_clients.append(
                     ProviderGatewayClient(

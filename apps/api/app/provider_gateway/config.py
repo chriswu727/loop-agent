@@ -66,6 +66,7 @@ class ProviderGatewaySettings(BaseSettings):
     smtp_password: str | None = Field(default=None, validation_alias="SMTP_PASSWORD")
     smtp_starttls: bool = Field(default=True, validation_alias="SMTP_STARTTLS")
     imap_host: str | None = Field(default=None, validation_alias="IMAP_HOST")
+    imap_port: int = Field(default=993, ge=1, le=65535, validation_alias="IMAP_PORT")
     email_from: str | None = Field(default=None, validation_alias="EMAIL_FROM")
 
     caldav_url: str | None = Field(default=None, validation_alias="CALDAV_URL")
@@ -120,3 +121,9 @@ class ProviderGatewaySettings(BaseSettings):
     @property
     def calendar_configured(self) -> bool:
         return bool(self.caldav_url and self.caldav_user and self.caldav_password)
+
+    def proxy_required(self) -> str:
+        proxy_url = self.resolved_egress_proxy_url()
+        if not proxy_url:
+            raise RuntimeError("Provider requires the destination-enforcing egress proxy")
+        return proxy_url

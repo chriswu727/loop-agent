@@ -4,10 +4,10 @@
   "private": true,
   "description": "Loop \u2014 a verifiable, least-authority autonomous agent runtime. Next.js + FastAPI, deployable on Kubernetes.",
   "license": "MIT",
-  "packageManager": "pnpm@10.11.0",
+  "packageManager": "pnpm@11.13.0",
   "engines": {
-    "node": ">=20",
-    "pnpm": ">=10"
+    "node": ">=22.13",
+    "pnpm": ">=11"
   },
   "scripts": {
     "dev": "turbo run dev",
@@ -23,10 +23,5 @@
     "prettier": "^3.9.4",
     "turbo": "^2.5.0",
     "typescript": "5.9.3"
-  },
-  "pnpm": {
-    "overrides": {
-      "postcss": "8.5.19"
-    }
   }
 }

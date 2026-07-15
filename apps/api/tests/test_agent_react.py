@@ -151,15 +151,18 @@ async def test_agent_scopes_protocol_and_browser_gateway_tokens(
     import app.services.agent_react as agent_module
     from app.domain.authority_token import (
         BROWSER_GATEWAY_AUDIENCE,
+        CALENDAR_GATEWAY_AUDIENCE,
         EGRESS_PROXY_AUDIENCE,
+        EMAIL_GATEWAY_AUDIENCE,
         PROVIDER_GATEWAY_AUDIENCE,
+        VISION_GATEWAY_AUDIENCE,
         verify_authority_token,
     )
     from app.domain.capability import Capability
     from app.services.skills import generate_keypair
 
     private, public = generate_keypair()
-    grants: list[tuple[str, frozenset[Capability]]] = []
+    grants: list[tuple[str, frozenset[Capability], frozenset[str]]] = []
 
     class GatewaySpy:
         capability = Capability.NET_BROWSER
@@ -186,12 +189,28 @@ async def test_agent_scopes_protocol_and_browser_gateway_tokens(
                         "capability": "net.browser",
                     }
                 ]
-            else:
+            elif audience == EMAIL_GATEWAY_AUDIENCE:
                 self.tools = [
                     {
                         "name": "read_inbox",
                         "description": "Read inbox",
                         "capability": "email.read",
+                    }
+                ]
+            elif audience == CALENDAR_GATEWAY_AUDIENCE:
+                self.tools = [
+                    {
+                        "name": "list_events",
+                        "description": "List events",
+                        "capability": "calendar.read",
+                    }
+                ]
+            else:
+                self.tools = [
+                    {
+                        "name": "see_image",
+                        "description": "See image",
+                        "capability": "vision",
                     }
                 ]
             self.tool_names = {item["name"] for item in self.tools}
@@ -200,14 +219,14 @@ async def test_agent_scopes_protocol_and_browser_gateway_tokens(
             grant = verify_authority_token(
                 self.token_factory(self.audience), public, audience=self.audience
             )
-            grants.append((self.audience, grant.capabilities))
+            grants.append((self.audience, grant.capabilities, grant.egress_hosts))
             if self.egress_authority:
                 egress = verify_authority_token(
                     self.token_factory(EGRESS_PROXY_AUDIENCE),
                     public,
                     audience=EGRESS_PROXY_AUDIENCE,
                 )
-                grants.append((EGRESS_PROXY_AUDIENCE, egress.capabilities))
+                grants.append((EGRESS_PROXY_AUDIENCE, egress.capabilities, egress.egress_hosts))
 
         async def call(self, _name: str, _args: dict[str, Any]) -> str:
             raise AssertionError("No gateway tool should be called")
@@ -222,7 +241,13 @@ async def test_agent_scopes_protocol_and_browser_gateway_tokens(
             return []
 
     monkeypatch.setattr(agent_module, "ProviderGatewayClient", GatewaySpy)
-    monkeypatch.setattr(settings, "agent_provider_gateway_url", "http://provider-gateway:8090")
+    monkeypatch.setattr(settings, "agent_provider_gateway_url", None)
+    monkeypatch.setattr(settings, "agent_email_gateway_url", "http://email-gateway:8090")
+    monkeypatch.setattr(settings, "agent_email_egress_hosts", "mail.example.com")
+    monkeypatch.setattr(settings, "agent_calendar_gateway_url", "http://calendar-gateway:8090")
+    monkeypatch.setattr(settings, "agent_calendar_egress_hosts", "caldav.example.com")
+    monkeypatch.setattr(settings, "agent_vision_gateway_url", "http://vision-gateway:8090")
+    monkeypatch.setattr(settings, "agent_vision_egress_hosts", "generativelanguage.googleapis.com")
     monkeypatch.setattr(settings, "agent_browser_gateway_url", "http://browser-gateway:8090")
     monkeypatch.setattr(settings, "agent_allow_host_providers", False)
     monkeypatch.setattr(settings, "agent_authority_signing_key", private)
@@ -230,10 +255,16 @@ async def test_agent_scopes_protocol_and_browser_gateway_tokens(
     monkeypatch.setattr(settings, "agent_egress_proxy_audit_url", None)
 
     task = await TaskRepository(session).create(
-        goal="read mail and browse",
+        goal="read mail, calendar, image, and browse",
         status=TaskStatus.PENDING.value,
         rubric=[],
-        requested_capabilities=["email.read", "net.browser"],
+        requested_capabilities=[
+            "email.read",
+            "calendar.read",
+            "vision",
+            "fs.read",
+            "net.browser",
+        ],
         egress_hosts=["docs.example.com"],
         max_steps=5,
         token_budget=1_000_000,
@@ -253,10 +284,79 @@ async def test_agent_scopes_protocol_and_browser_gateway_tokens(
     await service.run(task.id)
 
     assert grants == [
-        (PROVIDER_GATEWAY_AUDIENCE, frozenset({Capability.EMAIL_READ})),
-        (BROWSER_GATEWAY_AUDIENCE, frozenset({Capability.NET_BROWSER})),
-        (EGRESS_PROXY_AUDIENCE, frozenset({Capability.NET_BROWSER})),
+        (
+            EMAIL_GATEWAY_AUDIENCE,
+            frozenset({Capability.EMAIL_READ}),
+            frozenset({"mail.example.com"}),
+        ),
+        (
+            EGRESS_PROXY_AUDIENCE,
+            frozenset({Capability.EMAIL_READ}),
+            frozenset({"mail.example.com"}),
+        ),
+        (
+            CALENDAR_GATEWAY_AUDIENCE,
+            frozenset({Capability.CALENDAR_READ}),
+            frozenset({"caldav.example.com"}),
+        ),
+        (
+            EGRESS_PROXY_AUDIENCE,
+            frozenset({Capability.CALENDAR_READ}),
+            frozenset({"caldav.example.com"}),
+        ),
+        (
+            VISION_GATEWAY_AUDIENCE,
+            frozenset({Capability.FS_READ, Capability.VISION}),
+            frozenset({"generativelanguage.googleapis.com"}),
+        ),
+        (
+            EGRESS_PROXY_AUDIENCE,
+            frozenset({Capability.FS_READ, Capability.VISION}),
+            frozenset({"generativelanguage.googleapis.com"}),
+        ),
+        (
+            BROWSER_GATEWAY_AUDIENCE,
+            frozenset({Capability.NET_BROWSER}),
+            frozenset({"docs.example.com"}),
+        ),
+        (
+            EGRESS_PROXY_AUDIENCE,
+            frozenset({Capability.NET_BROWSER}),
+            frozenset({"docs.example.com"}),
+        ),
     ]
+
+
+async def test_agent_fails_closed_when_provider_gateway_has_no_host_policy(
+    session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(settings, "agent_provider_gateway_url", None)
+    monkeypatch.setattr(settings, "agent_email_gateway_url", "http://email-gateway:8090")
+    monkeypatch.setattr(settings, "agent_email_egress_hosts", "")
+    monkeypatch.setattr(settings, "agent_allow_host_providers", False)
+    task = await TaskRepository(session).create(
+        goal="read mail",
+        status=TaskStatus.PENDING.value,
+        rubric=[],
+        requested_capabilities=["email.read"],
+        max_steps=5,
+        token_budget=1_000_000,
+        summary=None,
+        verification_score=0,
+        steps_used=0,
+        tokens_used=0,
+        workspace_path=None,
+    )
+    await session.commit()
+
+    await _service(
+        session,
+        ScriptedLLM([{"thought": "done", "tool": "finish", "args": {"summary": "done"}}]),
+    ).run(task.id)
+
+    await session.refresh(task)
+    assert task.status == TaskStatus.FAILED.value
+    assert task.error == "Provider gateways require configured egress hosts: Email Gateway"
 
 
 async def test_rejected_finish_then_gives_up_stuck(session: AsyncSession) -> None:

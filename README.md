@@ -110,7 +110,7 @@ the two axes a chat-log agent can't retrofit:
 | **Tamper-evident ledger**     | each step is hash-chained from a genesis; edit any step and `GET /tasks/{id}/ledger` reports it                                 |
 | **Signed skills**             | a skill bundle's ed25519 signature must verify or it won't load — supply-chain safety                                           |
 | **Typed capability contract** | `loop.capabilities/v1` separates filesystem, execution, shell network, browser, email, calendar, memory, vision, and delegation |
-| **Destination-bound egress**  | shell and browser runtimes have no direct route; explicit hosts pass through a token-verifying, DNS-pinning proxy              |
+| **Destination-bound egress**  | shell, browser, and provider runtimes have no direct route; explicit hosts pass through a token-verifying, DNS-pinning proxy    |
 | **Approval gate**             | `require_approval` pauses non-allowlisted commands until you say yes; restart-safe                                              |
 | **Injection quarantine**      | tool output, files and memory are `[DATA]`, never commands                                                                      |
 
@@ -174,8 +174,8 @@ Open http://localhost:3000, publish anything, and watch it plan → write → ru
 
 ## Quickstart (zero infrastructure)
 
-No Docker, no Postgres, no Redis. You need **Python 3.12+**, **Node 20+**, and
-**pnpm 10** (`corepack enable`), plus one LLM API key.
+No Docker, no Postgres, no Redis. You need **Python 3.12+**, **Node 22.13+**, and
+**pnpm 11** (`corepack enable`), plus one LLM API key.
 
 ```bash
 # 1) Backend (FastAPI on SQLite, agent runs in-process)
@@ -211,30 +211,31 @@ immutable image digests, and fail-closed isolation.
 
 See [`.env.example`](./.env.example). Key knobs:
 
-| Variable                                                                        | Purpose                                                                                                                                                    |
-| ------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `ANTHROPIC_API_KEY` / `DEEPSEEK_API_KEY` / `GEMINI_API_KEY` / `GLM_API_KEY`     | LLM providers (at least one). A retryable failure is retried, then cascades to the next provider.                                                          |
-| `LLM_DEFAULT_PROVIDER`                                                          | which provider to try first.                                                                                                                               |
-| `OLLAMA_BASE_URL`                                                               | run on a fully-local model via Ollama (no API key).                                                                                                        |
-| `API_TOKEN`                                                                     | optional bearer-token gate on the whole API.                                                                                                               |
-| `WEB_AUTH_REQUIRED` / `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET`               | GitHub OAuth + PKCE login. The web tier mints an HTTP-only, short-lived user JWT; task, trigger, memory, idempotency, and Receipt access are owner-scoped. |
-| `LLM_VERIFIER_PROVIDER`                                                         | optional verifier provider, kept separate from the executor model.                                                                                         |
-| `TELEGRAM_BOT_TOKEN` / `TELEGRAM_ALLOWED_CHAT_IDS`                              | enable the Telegram inlet + restrict who can use it.                                                                                                       |
-| `SLACK_BOT_TOKEN` / `SLACK_SIGNING_SECRET` / `SLACK_ALLOWED_CHANNELS`           | enable the Slack `/slack/events` inlet + its channel allowlist.                                                                                            |
-| `SMTP_*` / `IMAP_HOST` / `CALDAV_*`                                             | email send/read + calendar (use a Gmail app password).                                                                                                     |
-| `EXECUTION_MODE`                                                                | `inline` (run in the API process) or `worker` (enqueue to Redis).                                                                                          |
-| `DATABASE_URL`                                                                  | `postgresql+asyncpg://…` or `sqlite+aiosqlite:///./loop.db`.                                                                                               |
-| `AGENT_APPROVAL_MODE`                                                           | `auto` or `manual` (pause non-allowlisted commands).                                                                                                       |
-| `AGENT_SKILLS_ROOT` / `AGENT_SKILL_TRUST_PUBLIC_KEY`                            | signed-skills folder + the ed25519 key signatures must verify against.                                                                                     |
-| `AGENT_RECEIPT_SIGNING_KEY`                                                     | ed25519 key for signed Receipts (`make receipt-keygen`); required in production, optional hash-only mode in development.                                   |
-| `AGENT_AUTHORITY_SIGNING_KEY` / `AGENT_AUTHORITY_PUBLIC_KEY`                    | worker-only Ed25519 issuer key and gateway/proxy-only verifier key (`make authority-keygen`).                                                              |
-| `PROVIDER_GATEWAY_AUTHORITY_PUBLIC_KEYS` / `EGRESS_PROXY_AUTHORITY_PUBLIC_KEYS` | optional `kid` → public-PEM JSON keyrings for zero-downtime issuer rotation.                                                                               |
-| `AGENT_PROVIDER_GATEWAY_URL`                                                    | isolated credential-bearing email/calendar/vision service; required in production.                                                                         |
-| `AGENT_BROWSER_GATEWAY_URL`                                                     | credentialless, proxy-only browser service; required separately in production.                                                                              |
-| `AGENT_EGRESS_PROXY_URL` / `AGENT_EGRESS_PROXY_AUDIT_URL`                       | authenticated data-plane proxy and worker-only audit endpoint; required in production.                                                                     |
-| `AGENT_MEMORY_ROOT`                                                             | cross-task memory store.                                                                                                                                   |
-| `AGENT_SANDBOX` / `AGENT_SANDBOX_BACKEND`                                       | `required` fails closed; production selects short-lived Kubernetes Jobs. `preferred` is the explicitly labeled local fallback.                             |
-| `AGENT_SANDBOX_IMAGE_DIGEST`                                                    | immutable sandbox image digest; required in production and recorded in every isolated Receipt.                                                             |
+| Variable                                                                                 | Purpose                                                                                                                                                    |
+| ---------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ANTHROPIC_API_KEY` / `DEEPSEEK_API_KEY` / `GEMINI_API_KEY` / `GLM_API_KEY`              | LLM providers (at least one). A retryable failure is retried, then cascades to the next provider.                                                          |
+| `LLM_DEFAULT_PROVIDER`                                                                   | which provider to try first.                                                                                                                               |
+| `OLLAMA_BASE_URL`                                                                        | run on a fully-local model via Ollama (no API key).                                                                                                        |
+| `API_TOKEN`                                                                              | optional bearer-token gate on the whole API.                                                                                                               |
+| `WEB_AUTH_REQUIRED` / `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET`                        | GitHub OAuth + PKCE login. The web tier mints an HTTP-only, short-lived user JWT; task, trigger, memory, idempotency, and Receipt access are owner-scoped. |
+| `LLM_VERIFIER_PROVIDER`                                                                  | optional verifier provider, kept separate from the executor model.                                                                                         |
+| `TELEGRAM_BOT_TOKEN` / `TELEGRAM_ALLOWED_CHAT_IDS`                                       | enable the Telegram inlet + restrict who can use it.                                                                                                       |
+| `SLACK_BOT_TOKEN` / `SLACK_SIGNING_SECRET` / `SLACK_ALLOWED_CHANNELS`                    | enable the Slack `/slack/events` inlet + its channel allowlist.                                                                                            |
+| `SMTP_*` / `IMAP_HOST` / `CALDAV_*`                                                      | email send/read + calendar (use a Gmail app password).                                                                                                     |
+| `EXECUTION_MODE`                                                                         | `inline` (run in the API process) or `worker` (enqueue to Redis).                                                                                          |
+| `DATABASE_URL`                                                                           | `postgresql+asyncpg://…` or `sqlite+aiosqlite:///./loop.db`.                                                                                               |
+| `AGENT_APPROVAL_MODE`                                                                    | `auto` or `manual` (pause non-allowlisted commands).                                                                                                       |
+| `AGENT_SKILLS_ROOT` / `AGENT_SKILL_TRUST_PUBLIC_KEY`                                     | signed-skills folder + the ed25519 key signatures must verify against.                                                                                     |
+| `AGENT_RECEIPT_SIGNING_KEY`                                                              | ed25519 key for signed Receipts (`make receipt-keygen`); required in production, optional hash-only mode in development.                                   |
+| `AGENT_AUTHORITY_SIGNING_KEY` / `AGENT_AUTHORITY_PUBLIC_KEY`                             | worker-only Ed25519 issuer key and gateway/proxy-only verifier key (`make authority-keygen`).                                                              |
+| `PROVIDER_GATEWAY_AUTHORITY_PUBLIC_KEYS` / `EGRESS_PROXY_AUTHORITY_PUBLIC_KEYS`          | optional `kid` → public-PEM JSON keyrings for zero-downtime issuer rotation.                                                                               |
+| `AGENT_EMAIL_GATEWAY_URL` / `AGENT_CALENDAR_GATEWAY_URL` / `AGENT_VISION_GATEWAY_URL`    | independently credentialed protocol services; all three are required in production.                                                                        |
+| `AGENT_EMAIL_EGRESS_HOSTS` / `AGENT_CALENDAR_EGRESS_HOSTS` / `AGENT_VISION_EGRESS_HOSTS` | signed upstream host ceilings for each protocol identity; required in production.                                                                          |
+| `AGENT_BROWSER_GATEWAY_URL`                                                              | credentialless, proxy-only browser service; required separately in production.                                                                             |
+| `AGENT_EGRESS_PROXY_URL` / `AGENT_EGRESS_PROXY_AUDIT_URL`                                | authenticated data-plane proxy and worker-only audit endpoint; required in production.                                                                     |
+| `AGENT_MEMORY_ROOT`                                                                      | cross-task memory store.                                                                                                                                   |
+| `AGENT_SANDBOX` / `AGENT_SANDBOX_BACKEND`                                                | `required` fails closed; production selects short-lived Kubernetes Jobs. `preferred` is the explicitly labeled local fallback.                             |
+| `AGENT_SANDBOX_IMAGE_DIGEST`                                                             | immutable sandbox image digest; required in production and recorded in every isolated Receipt.                                                             |
 
 Per-task safety is set at publish time through the versioned `capabilities` list;
 legacy `allowed_tools` / `allow_egress` fields remain migration inputs. A signed
@@ -253,7 +254,7 @@ test with a fake model.
 ```
 apps/api/app/
 ├── core/llm/          # provider registry (Anthropic/DeepSeek/Gemini/GLM/Ollama) + cascade
-├── provider_gateway/  # isolated protocol/browser gateway runtime (deployed as separate identities)
+├── provider_gateway/  # shared runtime, deployed as isolated email/calendar/vision/browser identities
 ├── egress_proxy/      # destination enforcement, DNS pinning, per-run audit
 ├── tools/             # workspace sandbox, gateway/proxy clients, capability envelope, executor
 ├── services/
@@ -297,14 +298,14 @@ scheduler, SSE live view, provider registry, a **local Ollama provider**, an **M
 client with a headless browser**, **container isolation**, **multi-agent delegation**
 (`spawn` → a tree of verified sub-agents), **email + calendar**, **conversational
 sessions** with a web chat page, **Telegram + Slack chat inlets**, and a
-**channel-agnostic `/chat` API**, separate credential-bearing **Provider Gateway**
-and proxy-only **Browser Gateway**, renewable and
+**channel-agnostic `/chat` API**, separately credentialed **email, calendar, and
+vision gateways** plus a credentialless **Browser Gateway**, renewable and
 revocable short-lived capability tokens, and **network-layer destination enforcement** with
-durable, bounded audit records and DNS-pinned proxy routing.
+durable, bounded audit records and DNS-pinned proxy routing for shell, browser, and
+every provider protocol.
 
-**Next:** broaden the signed skill catalog and channel ecosystem, split individual
-SMTP/IMAP/CalDAV/vision protocols into narrower network identities where deployments
-require per-provider L4 enforcement, add shared audit/session backends for horizontal HA, and
+**Next:** broaden the signed skill catalog and channel ecosystem, add shared
+audit/session backends for horizontal HA, and
 accumulate real production/adversarial evidence. Loop's core trust architecture is
 implemented;
 its remaining gap versus mature assistants is ecosystem and operational proof, not
