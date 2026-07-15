@@ -106,6 +106,26 @@ create_secrets() {
     --dry-run=client --output yaml | kubectl apply -f -
 }
 
+wait_for_succeeded_pod() {
+  local pod="$1"
+  local pod_namespace="$2"
+  local timeout_seconds="$3"
+  local deadline=$((SECONDS + timeout_seconds))
+  local phase
+  while ((SECONDS < deadline)); do
+    phase="$(
+      kubectl get pod "$pod" --namespace "$pod_namespace" \
+        -o jsonpath='{.status.phase}' 2>/dev/null || true
+    )"
+    case "$phase" in
+      Succeeded) return 0 ;;
+      Failed) return 1 ;;
+    esac
+    sleep 1
+  done
+  return 1
+}
+
 run_cluster_probe() {
   local suffix="$1"
   local run_task="$2"
@@ -169,7 +189,10 @@ if os.environ["RUN_TASK"] == "true":
     if task["status"] != "completed":
         raise SystemExit(f"Task did not complete: {task}")
     if task["sandbox"] != "kubernetes" or task["verified_by"] != "execution":
-        raise SystemExit(f"Task bypassed Kubernetes execution verification: {task}")
+        steps = request("GET", api + "/api/v1/tasks/" + task["id"] + "/steps")
+        raise SystemExit(
+            f"Task bypassed Kubernetes execution verification: task={task}, steps={steps}"
+        )
     report = request("GET", api + "/api/v1/tasks/" + task["id"] + "/receipt")
     if not report.get("valid") or not report.get("authentic"):
         raise SystemExit(f"Receipt is not authentic: {report}")
@@ -187,11 +210,7 @@ else:
     print(json.dumps({"api": "ready", "web": "ready"}, sort_keys=True))
 '
 
-  if ! kubectl wait \
-    --namespace "$ingress_namespace" \
-    --for=jsonpath='{.status.phase}'=Succeeded \
-    "pod/$probe" \
-    --timeout=5m; then
+  if ! wait_for_succeeded_pod "$probe" "$ingress_namespace" 300; then
     kubectl logs "$probe" --namespace "$ingress_namespace" || true
     kubectl describe pod "$probe" --namespace "$ingress_namespace" || true
     return 1

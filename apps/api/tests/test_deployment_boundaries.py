@@ -210,6 +210,15 @@ def test_kubernetes_app_workloads_use_explicit_runtime_identities_and_discovery(
     assert "USER 1001:1001" in (ROOT / "infra/docker/web.Dockerfile").read_text()
 
 
+def test_kubernetes_worker_can_read_sandbox_job_status() -> None:
+    role = _documents("infra/k8s/base/sandbox-rbac.yaml")[0]
+    permissions = {
+        (tuple(rule["apiGroups"]), tuple(rule["resources"])): set(rule["verbs"])
+        for rule in role["rules"]
+    }
+    assert permissions[("batch",), ("jobs/status",)] == {"get"}
+
+
 def test_kubernetes_provider_secrets_are_protocol_specific() -> None:
     secrets = {
         document["metadata"]["name"]: set(document["stringData"])

@@ -22,6 +22,8 @@ log = get_logger("worker")
 
 WORKER_ID = os.environ.get("WORKER_ID") or f"{socket.gethostname()}-{os.getpid()}"
 HANDLERS: dict[str, Callable[[dict[str, Any]], Awaitable[None]]] = {}
+STREAM_BLOCK_MILLISECONDS = 5_000
+STREAM_SOCKET_TIMEOUT_SECONDS = 10
 
 
 def handler(
@@ -222,9 +224,17 @@ async def _claim_stale(client: aioredis.Redis) -> list[tuple[str, dict[Any, Any]
     return [(str(message_id), fields) for message_id, fields in messages]
 
 
+def _redis_client() -> aioredis.Redis:
+    return aioredis.from_url(
+        str(settings.redis_url),
+        decode_responses=True,
+        socket_timeout=STREAM_SOCKET_TIMEOUT_SECONDS,
+    )
+
+
 async def _run() -> None:
     configure_logging()
-    client = aioredis.from_url(str(settings.redis_url), decode_responses=True)
+    client = _redis_client()
     stop = asyncio.Event()
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGINT, signal.SIGTERM):
@@ -248,7 +258,7 @@ async def _run() -> None:
                 WORKER_ID,
                 streams={QUEUE_KEY: ">"},
                 count=1,
-                block=5000,
+                block=STREAM_BLOCK_MILLISECONDS,
             )
             messages = cast(list[tuple[Any, list[tuple[Any, dict[Any, Any]]]]], raw_messages or [])
             for _stream, entries in messages:
