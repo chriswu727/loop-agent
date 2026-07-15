@@ -22,6 +22,12 @@ wait_for_redis() {
   return 1
 }
 
+current_redis_url() {
+  local endpoint
+  endpoint="$(docker port "$container" 6379/tcp)"
+  printf 'redis://127.0.0.1:%s/15\n' "${endpoint##*:}"
+}
+
 run_acceptance() {
   (
     cd "$root/apps/api"
@@ -43,13 +49,12 @@ docker run -d \
   redis-server --appendonly yes --appendfsync always >/dev/null
 wait_for_redis
 
-endpoint="$(docker port "$container" 6379/tcp)"
-redis_port="${endpoint##*:}"
-redis_url="redis://127.0.0.1:${redis_port}/15"
+redis_url="$(current_redis_url)"
 
 run_acceptance exercise --redis-url "$redis_url" --namespace "$namespace"
 docker stop "$container" >/dev/null
 run_acceptance verify-unavailable --redis-url "$redis_url" --namespace "$namespace"
 docker start "$container" >/dev/null
 wait_for_redis
+redis_url="$(current_redis_url)"
 run_acceptance verify-recovery --redis-url "$redis_url" --namespace "$namespace"
