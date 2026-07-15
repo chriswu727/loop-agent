@@ -25,13 +25,28 @@ make migrate   # apply migrations
 make dev       # web + api in watch mode
 ```
 
+To let Loop edit existing repositories through a reviewable change set, set one
+local boundary in `.env` before starting the API:
+
+```bash
+LOOP_LOCAL_PROJECTS_ROOT=/absolute/path/to/your/projects
+```
+
+The publish form then accepts a repository path relative to that root. The source
+checkout must be clean. Loop clones committed content into its task workspace,
+removes the source remote, and does not expose either the source path or its own
+absolute workspace path through the API. A successful task still cannot modify the
+source until you review the diff and choose **Apply verified patch**. Apply leaves
+normal uncommitted changes in the source repository; **Undo apply** reverses only
+that exact patch and refuses on an overlap or changed base commit.
+
 ## Common tasks
 
-| Task | Command |
-|------|---------|
-| All quality checks (CI parity) | `make check` |
-| Format everything | `make format` |
-| New migration | `make migration m="describe change"` |
-| Apply migrations | `make migrate` |
-| Backend tests only | `cd apps/api && pytest` |
-| See all commands | `make help` |
+| Task                           | Command                              |
+| ------------------------------ | ------------------------------------ |
+| All quality checks (CI parity) | `make check`                         |
+| Format everything              | `make format`                        |
+| New migration                  | `make migration m="describe change"` |
+| Apply migrations               | `make migrate`                       |
+| Backend tests only             | `cd apps/api && pytest`              |
+| See all commands               | `make help`                          |

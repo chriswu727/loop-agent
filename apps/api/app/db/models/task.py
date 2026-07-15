@@ -82,5 +82,13 @@ class TaskModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     steps_used: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     tokens_used: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     workspace_path: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    # Local project tasks run in an isolated clone. The absolute source path stays
+    # server-side; clients only receive the path relative to the configured root.
+    project_source_path: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    project_relative_path: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    project_base_commit: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    project_base_branch: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    change_state: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    applied_patch_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
     stop_reason: Mapped[str | None] = mapped_column(String(30), nullable=True)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)

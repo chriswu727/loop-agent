@@ -3,6 +3,7 @@
  * request-id propagation, and error normalization so callers never repeat this.
  */
 import type {
+  ChangeSet,
   FileContent,
   FileEntry,
   LedgerStatus,
@@ -80,6 +81,7 @@ export type { FileContent, FileEntry, LedgerStatus, LimitDefaults, Page, Step, T
 export interface PublishBody {
   goal: string;
   project_id?: string;
+  project_path?: string | null;
   autostart?: boolean;
   allowed_tools?: string[] | null;
   capabilities?: import('@repo/api-contract').Capability[] | null;
@@ -133,6 +135,13 @@ export const tasksApi = {
       `/api/v1/tasks/${id}/receipt/replay`,
       { method: 'POST', timeoutMs: 180_000 },
     ),
+  changes: (id: string) => apiFetch<ChangeSet>(`/api/v1/tasks/${id}/changes`),
+  applyChanges: (id: string) =>
+    apiFetch<ChangeSet>(`/api/v1/tasks/${id}/changes/apply`, { method: 'POST' }),
+  discardChanges: (id: string) =>
+    apiFetch<ChangeSet>(`/api/v1/tasks/${id}/changes/discard`, { method: 'POST' }),
+  undoChanges: (id: string) =>
+    apiFetch<ChangeSet>(`/api/v1/tasks/${id}/changes/undo`, { method: 'POST' }),
   files: (id: string) => apiFetch<FileEntry[]>(`/api/v1/tasks/${id}/files`),
   fileContent: (id: string, path: string) =>
     apiFetch<FileContent>(`/api/v1/tasks/${id}/files/${path}`),

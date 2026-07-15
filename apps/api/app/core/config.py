@@ -156,6 +156,11 @@ class Settings(BaseSettings):
     # Python project would inherit that project's pyproject.toml and misbehave.
     # Container mode is unaffected (the workspace is the mount root).
     agent_workspaces_root: str = "./workspaces"
+    # Optional local-project boundary. When set, a task may bind to one clean Git
+    # repository below this root; Loop clones it into the task workspace and never
+    # gives the agent a path back to the source checkout.
+    loop_local_projects_root: str | None = None
+    loop_changeset_preview_bytes: int = Field(default=200_000, ge=10_000, le=5_000_000)
     # Owner/project-scoped cross-task memory store (MEMORY.md + topics/).
     agent_memory_root: str = "./agent_memory"
     # Signed skills: a folder of skill bundles, and the ed25519 trust public key

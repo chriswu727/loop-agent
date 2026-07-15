@@ -74,10 +74,17 @@ def _model_identity(provider: str) -> dict[str, str]:
     return {"provider": provider, "model": names[provider]}
 
 
-def _file_manifest(workspace: Workspace) -> list[dict[str, Any]]:
+def _file_manifest(
+    workspace: Workspace, *, include_paths: list[str] | None = None
+) -> list[dict[str, Any]]:
     """sha256 + size of every workspace file, excluding the receipt itself."""
     manifest: list[dict[str, Any]] = []
-    for rel, size in workspace.list_files():
+    files = (
+        [(path, workspace.resolve(path).stat().st_size) for path in include_paths]
+        if include_paths is not None
+        else workspace.list_files()
+    )
+    for rel, size in files:
         if rel in (RECEIPT_JSON, RECEIPT_MD):
             continue
         digest = hashlib.sha256(workspace.resolve(rel).read_bytes()).hexdigest()
@@ -117,6 +124,33 @@ def build_receipt(
     covered_criteria = sorted(
         {criterion for check in checks for criterion in check.get("criterion_ids", [])}
     )
+    change_set: dict[str, Any] | None = None
+    manifest_paths: list[str] | None = None
+    project_base_commit = task.project_base_commit
+    if isinstance(project_base_commit, str) and project_base_commit:
+        from app.services.changeset import inspect_changes
+
+        snapshot = inspect_changes(workspace.root, project_base_commit)
+        change_set = {
+            "schema": "loop.changeset/v1",
+            "base_commit": project_base_commit,
+            "patch_sha256": snapshot.patch_sha256,
+            "files": [
+                {
+                    "path": change.path,
+                    "previous_path": change.previous_path,
+                    "status": change.status,
+                    "additions": change.additions,
+                    "deletions": change.deletions,
+                }
+                for change in snapshot.files
+            ],
+        }
+        manifest_paths = [
+            change.path
+            for change in snapshot.files
+            if change.status[:1] != "D" and workspace.resolve(change.path).is_file()
+        ]
     body: dict[str, Any] = {
         "schema": RECEIPT_SCHEMA,
         "issued_at": datetime.now(UTC).isoformat(),
@@ -144,7 +178,7 @@ def build_receipt(
         # Head of the tamper-evident step chain — this Receipt vouches for the
         # entire history that produced it.
         "ledger_head": ledger_head,
-        "files": _file_manifest(workspace),
+        "files": _file_manifest(workspace, include_paths=manifest_paths),
         "authority": {
             "schema": authority_schema,
             "requested": requested_capabilities,
@@ -188,6 +222,8 @@ def build_receipt(
             },
         },
     }
+    if change_set is not None:
+        body["change_set"] = change_set
     signer = _signing_key()
     if signer is not None:
         body["signature_key_id"] = _signing_key_id(signer)

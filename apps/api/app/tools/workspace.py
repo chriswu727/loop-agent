@@ -39,6 +39,8 @@ class Workspace:
             raise ToolError(
                 "Absolute paths are not allowed; use a path inside the workspace", blocked=True
             )
+        if ".git" in Path(relative).parts:
+            raise ToolError("Git internals are not part of the task workspace", blocked=True)
         target = (self.root / relative).resolve()
         if target != self.root and self.root not in target.parents:
             raise ToolError(f"Path {relative!r} escapes the workspace", blocked=True)
@@ -89,11 +91,15 @@ class Workspace:
     def list_files(self, *, max_entries: int = 500) -> list[tuple[str, int]]:
         """Every file (not directory) in the workspace as (relative_path, bytes)."""
         files: list[tuple[str, int]] = []
-        for path in sorted(self.root.rglob("*")):
-            if path.is_file():
+        for current, directories, filenames in os.walk(self.root):
+            directories[:] = sorted(name for name in directories if name != ".git")
+            for filename in sorted(filenames):
+                path = Path(current) / filename
+                if filename == ".git" or not path.is_file():
+                    continue
                 files.append((str(path.relative_to(self.root)), path.stat().st_size))
-            if len(files) >= max_entries:
-                break
+                if len(files) >= max_entries:
+                    return files
         return files
 
     def contents_digest(
@@ -127,13 +133,18 @@ class Workspace:
         """A compact listing of the workspace, shown to the agent each turn so it
         knows what it has already created."""
         entries: list[str] = []
-        for path in sorted(self.root.rglob("*")):
-            rel = path.relative_to(self.root)
-            if path.is_dir():
-                entries.append(f"{rel}/")
-            else:
-                entries.append(f"{rel} ({path.stat().st_size}b)")
-            if len(entries) >= max_entries:
-                entries.append("... [more]")
-                break
+        for current, directories, filenames in os.walk(self.root):
+            directories[:] = sorted(name for name in directories if name != ".git")
+            current_path = Path(current)
+            for directory in directories:
+                entries.append(f"{(current_path / directory).relative_to(self.root)}/")
+                if len(entries) >= max_entries:
+                    return "\n".join([*entries, "... [more]"])
+            for filename in sorted(filenames):
+                path = current_path / filename
+                if filename == ".git" or not path.is_file():
+                    continue
+                entries.append(f"{path.relative_to(self.root)} ({path.stat().st_size}b)")
+                if len(entries) >= max_entries:
+                    return "\n".join([*entries, "... [more]"])
         return "\n".join(entries) if entries else "(empty)"

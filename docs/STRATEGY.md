@@ -9,9 +9,12 @@
 > vision, and browser gateways; rotatable, revocable audience-bound authority grants;
 > and a network-layer egress proxy that requires explicit hosts, rejects private
 > resolution, pins DNS, and records durable per-run audit events in horizontally
-> shared Redis state. Remaining work that cannot honestly be marked done: a meaningful
-> skill marketplace, broader channels, multi-replica browser-session routing, and
-> production/adoption evidence.
+> shared Redis state. A local deployment can also bind a clean Git repository to an
+> isolated clone and move its execution-verified, Receipt-bound patch through
+> review, Apply, Discard, and conflict-safe Undo. Remaining work that cannot honestly
+> be marked done: a packaged desktop shell and native project picker, durable desktop
+> crash recovery, a meaningful skill marketplace, broader channels, multi-replica
+> browser-session routing, and production/adoption evidence.
 
 _Synthesized by a multi-agent research workflow (2026-06): 4 verified OpenClaw research dimensions + repo analysis + a 6-lens differentiation panel. Two research dimensions (capabilities, ecosystem) failed structured-output validation and were covered indirectly via the panel; treat those areas as lower-confidence until re-verified._
 

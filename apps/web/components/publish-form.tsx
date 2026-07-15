@@ -10,6 +10,7 @@ const FALLBACK: LimitDefaults = {
   max_steps_cap: 40,
   token_budget_default: 60000,
   token_budget_cap: 200000,
+  local_projects_enabled: false,
 };
 
 const EXAMPLES = [
@@ -32,6 +33,7 @@ export function PublishForm({
   const [maxSteps, setMaxSteps] = useState(d.max_steps_default);
   const [tokenBudget, setTokenBudget] = useState(d.token_budget_default);
   const [files, setFiles] = useState<File[]>([]);
+  const [projectPath, setProjectPath] = useState('');
   const [noShell, setNoShell] = useState(false);
   const [allowNetwork, setAllowNetwork] = useState(false);
   const [egressHosts, setEgressHosts] = useState('');
@@ -72,6 +74,7 @@ export function PublishForm({
       if (useVision) capabilities.push('vision');
       const base = {
         goal: goal.trim(),
+        project_path: projectPath.trim() || null,
         limits,
         capabilities,
         egress_hosts:
@@ -133,6 +136,25 @@ export function PublishForm({
           </button>
         ))}
       </div>
+
+      {d.local_projects_enabled && (
+        <div className="mt-3">
+          <label htmlFor="project-path" className="text-xs font-medium opacity-70">
+            Local Git project <span className="font-normal opacity-60">(optional)</span>
+          </label>
+          <input
+            id="project-path"
+            value={projectPath}
+            onChange={(event) => setProjectPath(event.target.value)}
+            placeholder="Path relative to LOOP_LOCAL_PROJECTS_ROOT"
+            className="mt-1 w-full rounded-lg border border-black/10 bg-transparent px-3 py-1.5 text-xs outline-none focus:border-blue-500/60 dark:border-white/15"
+          />
+          <p className="mt-1 text-[11px] opacity-50">
+            Loop requires a clean repository, works in an isolated clone, and applies only the
+            Receipt-verified patch you approve.
+          </p>
+        </div>
+      )}
 
       <div className="mt-3 flex flex-wrap items-center gap-3 text-xs">
         <label className="cursor-pointer rounded-lg border border-black/10 px-3 py-1.5 opacity-80 hover:opacity-100 dark:border-white/15">

@@ -7,7 +7,9 @@ configured caps is what makes "within the limit" a guarantee, not a suggestion.
 
 from __future__ import annotations
 
+import asyncio
 import json
+import shutil
 import uuid
 from pathlib import Path
 from typing import Any
@@ -18,12 +20,24 @@ from app.core.config import settings
 from app.db.models.step import StepModel
 from app.db.models.task import TaskModel
 from app.domain.capability import sorted_capabilities
-from app.domain.task import TaskStatus
+from app.domain.task import StopReason, TaskStatus
 from app.exceptions import ConflictError, NotFoundError
 from app.observability.metrics import RECEIPT_REPLAYS
 from app.repositories.step import StepRepository
 from app.repositories.task import TaskRepository
-from app.schemas.task import LimitsIn, TaskCreate
+from app.schemas.task import ChangeSetFileRead, ChangeSetRead, LimitsIn, TaskCreate
+from app.services.changeset import (
+    ProjectBinding,
+    acquire_source_lock,
+    apply_patch,
+    clone_project,
+    delete_patch,
+    inspect_changes,
+    load_patch,
+    prepare_project,
+    release_source_lock,
+    save_patch,
+)
 from app.services.ledger import genesis_hash, step_hash, verify_chain
 from app.tools.base import ToolError
 from app.tools.workspace import Workspace
@@ -80,6 +94,11 @@ class TaskService:
             )
             if existing is not None:
                 return existing
+        binding = (
+            await asyncio.to_thread(prepare_project, payload.project_path)
+            if payload.project_path
+            else None
+        )
         max_steps, token_budget = self._resolve_limits(payload.limits)
         task = await self.tasks.create(
             goal=payload.goal.strip(),
@@ -112,7 +131,26 @@ class TaskService:
             steps_used=0,
             tokens_used=0,
             workspace_path=None,
+            project_source_path=str(binding.source) if binding else None,
+            project_relative_path=binding.relative_path if binding else None,
+            project_base_commit=binding.base_commit if binding else None,
+            project_base_branch=binding.branch if binding else None,
+            change_state="pending" if binding else None,
+            applied_patch_sha256=None,
         )
+        if binding is not None:
+            try:
+                await self._attach_project(task, binding)
+            except IntegrityError:
+                if not payload.idempotency_key:
+                    raise
+                existing = await self.tasks.get_by_idempotency_key(
+                    payload.idempotency_key, owner_id=self.subject
+                )
+                if existing is None:
+                    raise
+                return existing
+            return task
         # Commit before the caller schedules the run: the background/worker agent
         # opens its own session and must be able to read this row immediately.
         try:
@@ -129,6 +167,19 @@ class TaskService:
             return existing
         return task
 
+    async def _attach_project(self, task: TaskModel, binding: ProjectBinding) -> None:
+        destination = Path(settings.agent_workspaces_root) / str(task.id)
+        try:
+            await self.tasks.session.flush()
+            await asyncio.to_thread(clone_project, binding, destination)
+            task.workspace_path = str(destination.resolve())
+            await self.tasks.session.commit()
+            await self.tasks.session.refresh(task)
+        except Exception:
+            await self.tasks.session.rollback()
+            await asyncio.to_thread(shutil.rmtree, destination, ignore_errors=True)
+            raise
+
     async def retry(self, task_id: uuid.UUID) -> TaskModel:
         """Re-run a finished task's goal as a fresh task with the same settings.
         The original stays as-is, so its Receipt/ledger remain an audit record."""
@@ -139,6 +190,11 @@ class TaskService:
             TaskStatus.CANCELLED.value,
         }:
             raise ConflictError(f"Task is {original.status}; only a finished task can be retried.")
+        binding = (
+            await asyncio.to_thread(prepare_project, original.project_relative_path)
+            if original.project_relative_path
+            else None
+        )
         # Re-clamp to the caps in force at retry time — the only creation path that
         # would otherwise skip _resolve_limits and could exceed a lowered ceiling.
         max_steps, token_budget = self._resolve_limits(
@@ -171,8 +227,17 @@ class TaskService:
             steps_used=0,
             tokens_used=0,
             workspace_path=None,
+            project_source_path=str(binding.source) if binding else None,
+            project_relative_path=binding.relative_path if binding else None,
+            project_base_commit=binding.base_commit if binding else None,
+            project_base_branch=binding.branch if binding else None,
+            change_state="pending" if binding else None,
+            applied_patch_sha256=None,
         )
-        await self.tasks.session.commit()
+        if binding is not None:
+            await self._attach_project(task, binding)
+        else:
+            await self.tasks.session.commit()
         return task
 
     async def list_tasks(
@@ -256,8 +321,202 @@ class TaskService:
         return task
 
     async def list_files(self, task_id: uuid.UUID) -> list[tuple[str, int]]:
+        task = await self.get(task_id)
         ws = await self._workspace(task_id)
-        return ws.list_files() if ws else []
+        if ws is None:
+            return []
+        if not task.project_base_commit:
+            return ws.list_files()
+        snapshot = await asyncio.to_thread(
+            inspect_changes, Path(task.workspace_path or ""), task.project_base_commit
+        )
+        paths = [change.path for change in snapshot.files]
+        paths.extend(path for path in ("receipt.json", "RECEIPT.md") if (ws.root / path).is_file())
+        files: list[tuple[str, int]] = []
+        for path in dict.fromkeys(paths):
+            try:
+                target = ws.resolve(path)
+            except ToolError:
+                continue
+            if target.is_file():
+                files.append((path, target.stat().st_size))
+        return files
+
+    async def inspect_change_set(self, task_id: uuid.UUID) -> ChangeSetRead:
+        task = await self.get(task_id)
+        if not task.project_source_path or not task.project_base_commit or not task.workspace_path:
+            raise NotFoundError("This task is not bound to a local Git project.")
+        base_commit = task.project_base_commit
+        snapshot = await asyncio.to_thread(inspect_changes, Path(task.workspace_path), base_commit)
+        state = task.change_state or "pending"
+        blocked_reason: str | None = None
+        if not snapshot.files:
+            blocked_reason = "The isolated checkout has no project changes."
+        elif task.status != TaskStatus.COMPLETED.value or task.stop_reason != (
+            StopReason.GOAL_ACHIEVED.value
+        ):
+            blocked_reason = "Apply is available only after the task completes successfully."
+        elif task.verified_by != "execution" or task.verification_score < (
+            settings.agent_acceptance_score
+        ):
+            blocked_reason = "Apply requires execution-backed verification."
+        elif state in {"pending", "reverted"}:
+            report = await self.get_receipt_report(task_id)
+            receipt_change_set = report["receipt"].get("change_set") if report else None
+            if not report or not report.get("valid"):
+                blocked_reason = "Receipt integrity verification failed."
+            elif (
+                not isinstance(receipt_change_set, dict)
+                or receipt_change_set.get("patch_sha256") != snapshot.patch_sha256
+            ):
+                blocked_reason = "The current diff no longer matches the verified Receipt."
+
+        terminal = task.status in {
+            TaskStatus.COMPLETED.value,
+            TaskStatus.CANCELLED.value,
+            TaskStatus.FAILED.value,
+        }
+        return ChangeSetRead(
+            project_path=task.project_relative_path or ".",
+            base_commit=task.project_base_commit,
+            base_branch=task.project_base_branch,
+            state=state,
+            applied_patch_sha256=task.applied_patch_sha256,
+            patch_sha256=snapshot.patch_sha256,
+            files=[
+                ChangeSetFileRead(
+                    path=change.path,
+                    status=change.status,
+                    additions=change.additions,
+                    deletions=change.deletions,
+                    previous_path=change.previous_path,
+                )
+                for change in snapshot.files
+            ],
+            diff=snapshot.diff,
+            diff_truncated=snapshot.diff_truncated,
+            can_apply=state in {"pending", "reverted"} and blocked_reason is None,
+            can_discard=state in {"pending", "reverted"} and terminal,
+            can_undo=state == "applied",
+            blocked_reason=blocked_reason,
+        )
+
+    async def apply_change_set(self, task_id: uuid.UUID) -> ChangeSetRead:
+        task = await self.get(task_id)
+        if not task.project_source_path:
+            raise NotFoundError("This task is not bound to a local Git project.")
+        lock = await asyncio.to_thread(acquire_source_lock, task.project_source_path)
+        try:
+            await self.tasks.session.refresh(task)
+            return await self._apply_change_set_locked(task)
+        finally:
+            await asyncio.to_thread(release_source_lock, lock)
+
+    async def _apply_change_set_locked(self, task: TaskModel) -> ChangeSetRead:
+        if task.change_state not in {"pending", "reverted"}:
+            state = task.change_state or "unavailable"
+            raise ConflictError(f"Change set is {state} and cannot apply.")
+        preview = await self.inspect_change_set(task.id)
+        if not preview.can_apply:
+            raise ConflictError(preview.blocked_reason or "This change set cannot be applied.")
+        if not task.project_source_path or not task.project_base_commit or not task.workspace_path:
+            raise NotFoundError("This task is not bound to a local Git project.")
+        source_path = task.project_source_path
+        base_commit = task.project_base_commit
+        snapshot = await asyncio.to_thread(inspect_changes, Path(task.workspace_path), base_commit)
+        await asyncio.to_thread(save_patch, task.id, snapshot.patch)
+        try:
+            await asyncio.to_thread(
+                apply_patch,
+                source_path,
+                base_commit,
+                snapshot.patch,
+            )
+        except Exception:
+            await asyncio.to_thread(delete_patch, task.id)
+            raise
+        task.change_state = "applied"
+        task.applied_patch_sha256 = snapshot.patch_sha256
+        try:
+            await self.tasks.session.commit()
+            await self.tasks.session.refresh(task)
+        except Exception:
+            await self.tasks.session.rollback()
+            await asyncio.to_thread(
+                apply_patch,
+                source_path,
+                base_commit,
+                snapshot.patch,
+                reverse=True,
+            )
+            await asyncio.to_thread(delete_patch, task.id)
+            raise
+        return await self.inspect_change_set(task.id)
+
+    async def discard_change_set(self, task_id: uuid.UUID) -> ChangeSetRead:
+        task = await self.get(task_id)
+        if not task.project_source_path:
+            raise NotFoundError("This task is not bound to a local Git project.")
+        lock = await asyncio.to_thread(acquire_source_lock, task.project_source_path)
+        try:
+            await self.tasks.session.refresh(task)
+            return await self._discard_change_set_locked(task)
+        finally:
+            await asyncio.to_thread(release_source_lock, lock)
+
+    async def _discard_change_set_locked(self, task: TaskModel) -> ChangeSetRead:
+        preview = await self.inspect_change_set(task.id)
+        if not preview.can_discard:
+            raise ConflictError(f"Change set is {preview.state} and cannot be discarded.")
+        task.change_state = "discarded"
+        task.applied_patch_sha256 = None
+        await self.tasks.session.commit()
+        await self.tasks.session.refresh(task)
+        await asyncio.to_thread(delete_patch, task.id)
+        return await self.inspect_change_set(task.id)
+
+    async def undo_change_set(self, task_id: uuid.UUID) -> ChangeSetRead:
+        task = await self.get(task_id)
+        if not task.project_source_path:
+            raise NotFoundError("This task is not bound to a local Git project.")
+        lock = await asyncio.to_thread(acquire_source_lock, task.project_source_path)
+        try:
+            await self.tasks.session.refresh(task)
+            return await self._undo_change_set_locked(task)
+        finally:
+            await asyncio.to_thread(release_source_lock, lock)
+
+    async def _undo_change_set_locked(self, task: TaskModel) -> ChangeSetRead:
+        if task.change_state != "applied" or not task.applied_patch_sha256:
+            state = task.change_state or "unavailable"
+            raise ConflictError(f"Change set is {state} and cannot undo.")
+        if not task.project_source_path or not task.project_base_commit:
+            raise NotFoundError("This task is not bound to a local Git project.")
+        source_path = task.project_source_path
+        base_commit = task.project_base_commit
+        patch = await asyncio.to_thread(load_patch, task.id, task.applied_patch_sha256)
+        await asyncio.to_thread(
+            apply_patch,
+            source_path,
+            base_commit,
+            patch,
+            reverse=True,
+        )
+        task.change_state = "reverted"
+        try:
+            await self.tasks.session.commit()
+            await self.tasks.session.refresh(task)
+        except Exception:
+            await self.tasks.session.rollback()
+            await asyncio.to_thread(
+                apply_patch,
+                source_path,
+                base_commit,
+                patch,
+                allow_dirty=True,
+            )
+            raise
+        return await self.inspect_change_set(task.id)
 
     async def get_receipt(self, task_id: uuid.UUID) -> dict[str, Any] | None:
         """The parsed receipt.json from the task's workspace, or None if absent."""

@@ -7,6 +7,7 @@ import { useEffect, useState } from 'react';
 import { AskUserBox } from '@/components/ask-user-box';
 import { AuthorityPanel } from '@/components/authority-panel';
 import { BudgetMeter } from '@/components/budget-meter';
+import { ChangeSetPanel } from '@/components/change-set-panel';
 import { ReceiptPanel } from '@/components/receipt-panel';
 import { StepItem } from '@/components/step-item';
 import { StatusPill, stopReasonLabel } from '@/components/status-pill';
@@ -32,7 +33,11 @@ export default function TaskDetail() {
   // Sub-agents appear as spawn steps; refetch the child tasks when one shows up.
   const spawnCount = steps.filter((s) => s.tool === 'spawn').length;
   useEffect(() => {
-    if (spawnCount > 0) tasksApi.children(id).then(setChildren).catch(() => {});
+    if (spawnCount > 0)
+      tasksApi
+        .children(id)
+        .then(setChildren)
+        .catch(() => {});
   }, [id, spawnCount]);
 
   function resumeAfterAnswer(updated: Task) {
@@ -206,7 +211,11 @@ export default function TaskDetail() {
       {/* Live progress: the hard limits being consumed. */}
       <section className="mt-6 grid gap-4 rounded-2xl border border-black/10 bg-white/40 p-5 dark:border-white/10 dark:bg-white/[0.02] sm:grid-cols-2">
         <BudgetMeter label="Steps" used={task.steps_used} limit={task.limits.max_steps} />
-        <BudgetMeter label="Token budget" used={task.tokens_used} limit={task.limits.token_budget} />
+        <BudgetMeter
+          label="Token budget"
+          used={task.tokens_used}
+          limit={task.limits.token_budget}
+        />
       </section>
 
       <AuthorityPanel task={task} />
@@ -241,9 +250,7 @@ export default function TaskDetail() {
 
       {children.length > 0 && (
         <section className="mt-6">
-          <h2 className="mb-2 text-sm font-medium opacity-70">
-            Sub-agents ({children.length})
-          </h2>
+          <h2 className="mb-2 text-sm font-medium opacity-70">Sub-agents ({children.length})</h2>
           <div className="grid gap-2">
             {children.map((c) => (
               <Link
@@ -271,13 +278,14 @@ export default function TaskDetail() {
 
       {task.receipt_hash && <ReceiptPanel taskId={task.id} />}
 
-      <WorkspaceFiles taskId={task.id} files={files} />
-
-      {task.workspace_path && (
-        <p className="mt-3 break-all font-mono text-[11px] opacity-40">
-          workspace: {task.workspace_path}
-        </p>
+      {task.change_set && (
+        <ChangeSetPanel
+          taskId={task.id}
+          revision={`${task.status}:${task.steps_used}:${task.updated_at}`}
+        />
       )}
+
+      <WorkspaceFiles taskId={task.id} files={files} />
 
       {active ? (
         <button
@@ -311,9 +319,7 @@ export default function TaskDetail() {
                   : 'rounded bg-red-500/15 px-1.5 py-0.5 normal-case text-red-600 dark:text-red-400'
               }
             >
-              {ledger.verified
-                ? 'ledger verified'
-                : `ledger tampered at step ${ledger.broken_at}`}
+              {ledger.verified ? 'ledger verified' : `ledger tampered at step ${ledger.broken_at}`}
             </span>
           )}
         </h2>
@@ -321,9 +327,7 @@ export default function TaskDetail() {
           {[...steps].reverse().map((step) => (
             <StepItem key={step.id} step={step} />
           ))}
-          {steps.length === 0 && (
-            <p className="text-sm opacity-50">Planning the first step…</p>
-          )}
+          {steps.length === 0 && <p className="text-sm opacity-50">Planning the first step…</p>}
         </div>
       </section>
     </main>
