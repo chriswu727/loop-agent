@@ -112,16 +112,16 @@ the two axes a chat-log agent can't retrofit:
   data (tool output, files, memory) is framed so the agent never obeys instructions
   hidden inside it.
 
-| Differentiator                | What it means                                                                                                                   |
-| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| **Verified Completion**       | user criteria + baseline + system/contract checks; complete coverage and no new regression are mandatory                        |
-| **Re-execution Receipt**      | the verifier re-runs the evidence; a failed check overrides the model's "I'm done" and replay can prove it later                |
-| **Tamper-evident ledger**     | each step is hash-chained from a genesis; edit any step and `GET /tasks/{id}/ledger` reports it                                 |
-| **Signed skills**             | a skill bundle's ed25519 signature must verify or it won't load — supply-chain safety                                           |
-| **Typed capability contract** | `loop.capabilities/v1` separates filesystem, execution, shell network, browser, email, calendar, memory, vision, and delegation |
-| **Destination-bound egress**  | shell, browser, and provider runtimes have no direct route; explicit hosts pass through a token-verifying, DNS-pinning proxy    |
-| **Approval gate**             | `require_approval` pauses non-allowlisted commands until you say yes; restart-safe                                              |
-| **Injection quarantine**      | tool output, files and memory are `[DATA]`, never commands                                                                      |
+| Differentiator                | What it means                                                                                                                    |
+| ----------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| **Verified Completion**       | user criteria + baseline + system/contract checks; complete coverage and no new regression are mandatory                         |
+| **Re-execution Receipt**      | the verifier re-runs the evidence; a failed check overrides the model's "I'm done" and replay can prove it later                 |
+| **Tamper-evident ledger**     | each step is hash-chained from a genesis; edit any step and `GET /tasks/{id}/ledger` reports it                                  |
+| **Signed skills**             | a skill bundle's ed25519 signature must verify or it won't load — supply-chain safety                                            |
+| **Typed capability contract** | `loop.capabilities/v1` separates filesystem, execution, network, browser, research, QA, protocol, memory, vision, and delegation |
+| **Destination-bound egress**  | shell, browser, and provider runtimes have no direct route; explicit hosts pass through a token-verifying, DNS-pinning proxy     |
+| **Approval gate**             | `require_approval` pauses non-allowlisted commands until you say yes; restart-safe                                               |
+| **Injection quarantine**      | tool output, files and memory are `[DATA]`, never commands                                                                       |
 
 ## Capabilities
 
@@ -158,6 +158,12 @@ the two axes a chat-log agent can't retrofit:
   navigate, read, click, type, extract. Browser authority does not grant shell
   egress, every destination must be declared before the task starts, and the
   browser's network identity can connect only to the authenticated egress proxy.
+- **Research and test with specialized MCPs** — local/development runs may grant
+  `research.read` for a four-tool, source-bearing Sibyl surface and `qa.browser`
+  for a ten-tool, evidence-first Argus surface. Every tool is namespaced and
+  capability-gated instead of dumping both servers' full catalogs into the model.
+  These subprocesses run outside the task container, are visibly disclosed in the
+  run, and are refused when host providers are disabled (always in production).
 - **Email & calendar** — `use_email` reads the inbox (IMAP, read-only, quarantined)
   and sends (SMTP); `use_calendar` lists and creates events (CalDAV). Anything that
   sends or writes pauses for your approval first.
@@ -288,6 +294,8 @@ See [`.env.example`](./.env.example). Key knobs:
 | `AGENT_EMAIL_GATEWAY_URL` / `AGENT_CALENDAR_GATEWAY_URL` / `AGENT_VISION_GATEWAY_URL`    | independently credentialed protocol services; all three are required in production.                                                                        |
 | `AGENT_EMAIL_EGRESS_HOSTS` / `AGENT_CALENDAR_EGRESS_HOSTS` / `AGENT_VISION_EGRESS_HOSTS` | signed upstream host ceilings for each protocol identity; required in production.                                                                          |
 | `AGENT_BROWSER_GATEWAY_URL`                                                              | credentialless, proxy-only browser service; required separately in production.                                                                             |
+| `AGENT_SIBYL_ENABLED` / `AGENT_SIBYL_COMMAND`                                            | opt-in local Sibyl stdio MCP for `research.read`; host-only and refused in production.                                                                     |
+| `AGENT_ARGUS_ENABLED` / `AGENT_ARGUS_COMMAND`                                            | opt-in local Argus stdio MCP for `qa.browser`; host-only and refused in production.                                                                        |
 | `AGENT_EGRESS_PROXY_URL` / `AGENT_EGRESS_PROXY_AUDIT_URL`                                | authenticated data-plane proxy and worker-only audit endpoint; required in production.                                                                     |
 | `AGENT_MEMORY_ROOT`                                                                      | cross-task memory store.                                                                                                                                   |
 | `AGENT_SANDBOX` / `AGENT_SANDBOX_BACKEND`                                                | `required` fails closed; production selects short-lived Kubernetes Jobs. `preferred` is the explicitly labeled local fallback.                             |

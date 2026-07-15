@@ -12,6 +12,8 @@ const FALLBACK: LimitDefaults = {
   token_budget_default: 60000,
   token_budget_cap: 200000,
   local_projects_enabled: false,
+  sibyl_available: false,
+  argus_available: false,
 };
 
 const EXAMPLES = [
@@ -59,6 +61,8 @@ export function PublishForm({
   const [useEmail, setUseEmail] = useState(false);
   const [useCalendar, setUseCalendar] = useState(false);
   const [useVision, setUseVision] = useState(false);
+  const [useSibyl, setUseSibyl] = useState(false);
+  const [useArgus, setUseArgus] = useState(false);
   const [skill, setSkill] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -112,6 +116,8 @@ export function PublishForm({
       if (useEmail) capabilities.push('email.read', 'email.send');
       if (useCalendar) capabilities.push('calendar.read', 'calendar.write');
       if (useVision) capabilities.push('vision');
+      if (useSibyl) capabilities.push('research.read');
+      if (useArgus) capabilities.push('qa.browser');
       const base = {
         goal: goal.trim(),
         success_criteria: criteria.length > 0 ? criteria : null,
@@ -341,6 +347,26 @@ export function PublishForm({
           />
           Use vision
         </label>
+        {d.sibyl_available && (
+          <label className="flex cursor-pointer items-center gap-1.5 opacity-80">
+            <input
+              type="checkbox"
+              checked={useSibyl}
+              onChange={(e) => setUseSibyl(e.target.checked)}
+            />
+            Use Sibyl research
+          </label>
+        )}
+        {d.argus_available && (
+          <label className="flex cursor-pointer items-center gap-1.5 opacity-80">
+            <input
+              type="checkbox"
+              checked={useArgus}
+              onChange={(e) => setUseArgus(e.target.checked)}
+            />
+            Use Argus QA
+          </label>
+        )}
         {skills.length > 0 && (
           <select
             value={skill}

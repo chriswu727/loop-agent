@@ -80,7 +80,7 @@ from app.tools.calendar import CalendarTools
 from app.tools.egress import EgressAuditClient
 from app.tools.email import EmailTools
 from app.tools.guards import make_egress_guard
-from app.tools.mcp import McpBrowser
+from app.tools.mcp import McpBrowser, McpPool, McpStdioProvider
 from app.tools.policy import Verdict, evaluate_command
 from app.tools.provider_gateway import ProviderGatewayClient, ProviderGatewayPool
 from app.tools.registry import CALENDAR_SPEC, EMAIL_SPEC, VISION_SPEC
@@ -90,7 +90,23 @@ from app.tools.vision import VisionTools
 log = get_logger("agent")
 
 # How many recent steps the planner sees in full; older steps become a bounded state summary.
-_HISTORY_WINDOW = 12
+_HISTORY_WINDOW = 6
+
+_SIBYL_TOOLS = frozenset({"gather_bundle", "gather_sources", "quick_search", "read_url"})
+_ARGUS_TOOLS = frozenset(
+    {
+        "start_session",
+        "observe",
+        "test_action",
+        "test_form",
+        "verify_persistence",
+        "record_bug",
+        "record_observation",
+        "check_layout",
+        "get_errors",
+        "end_session",
+    }
+)
 
 # Below this many tokens left, a spawn is refused rather than floored — flooring
 # would let the sub-tree overshoot the parent's (and the global) token ceiling.
@@ -202,6 +218,7 @@ class AgentReactService:
         self._memory_snapshot = ""  # what the agent remembers, injected into planning
         self._skill_instructions = ""  # instructions from the task's signed skill
         self._browser_specs = ""  # MCP browser tool list, injected into planning
+        self._mcp_specs = ""
         self._notices = ""  # run-time notices for the planner (e.g. a tool went missing)
         self._email_specs = ""  # email tool list, injected into planning
         self._calendar_specs = ""  # calendar tool list, injected into planning
@@ -246,6 +263,7 @@ class AgentReactService:
         self._skill_instructions = ""
         self._mcp_tools = set()
         self._browser_specs = ""
+        self._mcp_specs = ""
         self._email_specs = ""
         self._calendar_specs = ""
         self._vision_specs = ""
@@ -321,8 +339,26 @@ class AgentReactService:
         email_capabilities = {Capability.EMAIL_READ, Capability.EMAIL_SEND}
         calendar_capabilities = {Capability.CALENDAR_READ, Capability.CALENDAR_WRITE}
         vision_capabilities = {Capability.VISION}
+        host_mcp_capabilities = {Capability.RESEARCH_READ, Capability.QA_BROWSER}
         protocol_capabilities = email_capabilities | calendar_capabilities | vision_capabilities
         destination_capabilities = {Capability.NET_SHELL, Capability.NET_BROWSER}
+        unavailable_host_mcp: list[str] = []
+        if Capability.RESEARCH_READ in resolved_capabilities and not (
+            settings.agent_sibyl_enabled and settings.agent_allow_host_providers
+        ):
+            unavailable_host_mcp.append("Sibyl MCP")
+        if Capability.QA_BROWSER in resolved_capabilities and not (
+            settings.agent_argus_enabled and settings.agent_allow_host_providers
+        ):
+            unavailable_host_mcp.append("Argus MCP")
+        if unavailable_host_mcp:
+            task.status = TaskStatus.FAILED.value
+            task.stop_reason = StopReason.ERROR.value
+            task.error = f"Requested capability is unavailable: {', '.join(unavailable_host_mcp)}."
+            task.workspace_path = str(workspace.root)
+            self._ensure_unverified_receipt(task)
+            await self._commit()
+            return
         if (
             settings.agent_require_egress_hosts
             and resolved_capabilities & destination_capabilities
@@ -573,6 +609,7 @@ class AgentReactService:
         )
 
         browser: McpBrowser | None = None
+        host_mcp: McpPool | None = None
         if uses_gateway:
             gateway_clients: list[ProviderGatewayClient] = []
             protocol_grants = resolved_capabilities & protocol_capabilities
@@ -796,6 +833,35 @@ class AgentReactService:
             await self._commit()
             return
 
+        if resolved_capabilities & host_mcp_capabilities:
+            try:
+                host_mcp = await self._start_host_mcp(envelope)
+            except Exception as exc:
+                if browser is not None:
+                    await browser.stop()
+                if provider_gateway is not None:
+                    await provider_gateway.stop()
+                task.status = TaskStatus.FAILED.value
+                task.stop_reason = StopReason.ERROR.value
+                task.error = f"Requested MCP provider is unavailable: {str(exc)[:300]}"
+                task.workspace_path = str(workspace.root)
+                self._ensure_unverified_receipt(task)
+                await self._commit()
+                return
+            executor.auxiliary_mcp = host_mcp
+            self._mcp_tools |= host_mcp.tool_names
+            self._mcp_specs = host_mcp.specs()
+            active = []
+            if Capability.RESEARCH_READ in resolved_capabilities:
+                active.append("Sibyl")
+            if Capability.QA_BROWSER in resolved_capabilities:
+                active.append("Argus")
+            self._notices += (
+                f"Note: {' and '.join(active)} MCP run on the host, OUTSIDE the container "
+                "sandbox. Their network destinations are not enforced by Loop's egress proxy; "
+                "production must keep host providers disabled.\n"
+            )
+
         task.status = TaskStatus.RUNNING.value
         task.workspace_path = str(workspace.root)
         # Rebuild the working memory from whatever has already happened so a
@@ -832,8 +898,11 @@ class AgentReactService:
         finally:
             if browser is not None:
                 await browser.stop()
+            if host_mcp is not None:
+                await host_mcp.stop()
             if needs_authority_token and task.status in {
                 TaskStatus.COMPLETED.value,
+                TaskStatus.STOPPED.value,
                 TaskStatus.CANCELLED.value,
                 TaskStatus.FAILED.value,
             }:
@@ -939,6 +1008,24 @@ class AgentReactService:
             infer_criterion_ids=task.verification_mode != "strict",
         )
 
+    async def _contract_evidence_ready(self, task: TaskModel, workspace: Workspace) -> bool:
+        contract_checks = [
+            check for check in (task.required_checks or []) if check.get("source") == "contract"
+        ]
+        if not contract_checks:
+            return False
+        checks = merge_completion_checks(
+            contract_checks,
+            [],
+            criterion_count=len(task.rubric or []),
+        )
+        results = await self._run_completion_checks(task, workspace, checks)
+        return (
+            bool(results)
+            and completion_gates_pass(results)
+            and execution_coverage_complete(results, len(task.rubric or []))
+        )
+
     async def _start_browser(self, envelope: CapabilityEnvelope) -> McpBrowser | None:
         if not (
             envelope.permits_capability(Capability.NET_BROWSER) and settings.agent_browser_enabled
@@ -952,6 +1039,32 @@ class AgentReactService:
             log.warning("agent.browser_unavailable")
             await browser.stop()
             return None
+
+    async def _start_host_mcp(self, envelope: CapabilityEnvelope) -> McpPool:
+        providers: list[McpStdioProvider] = []
+        if envelope.permits_capability(Capability.RESEARCH_READ):
+            providers.append(
+                McpStdioProvider(
+                    "sibyl",
+                    settings.agent_sibyl_command,
+                    Capability.RESEARCH_READ,
+                    _SIBYL_TOOLS,
+                    call_timeout=settings.agent_command_timeout_seconds,
+                )
+            )
+        if envelope.permits_capability(Capability.QA_BROWSER):
+            providers.append(
+                McpStdioProvider(
+                    "argus",
+                    settings.agent_argus_command,
+                    Capability.QA_BROWSER,
+                    _ARGUS_TOOLS,
+                    call_timeout=settings.agent_command_timeout_seconds,
+                )
+            )
+        pool = McpPool(providers)
+        await pool.start()
+        return pool
 
     async def _run_loop(
         self, task: TaskModel, workspace: Workspace, executor: ToolExecutor, *, start: int
@@ -997,12 +1110,16 @@ class AgentReactService:
         approval_required = task.require_approval or settings.agent_approval_mode == "manual"
         consecutive_no_progress = guard.no_progress
         finish_retries = 0
+        last_rejected_finish_marker: str | None = None
         # Repeated writes to one file without running it = no progress; nudge on
         # the 2nd, hard-block the 3rd so the model is forced to make progress.
         same_path_writes = 0
         last_write_path: str | None = None
+        skipped_step_number: int | None = None
 
         for number in range(start, task.max_steps + 1):
+            if number == skipped_step_number:
+                continue
             await self.session.refresh(task)
             if task.status == TaskStatus.CANCELLED.value:
                 task.stop_reason = StopReason.CANCELLED.value
@@ -1034,6 +1151,7 @@ class AgentReactService:
                 self._memory_snapshot,
                 self._skill_instructions,
                 self._browser_specs,
+                self._mcp_specs,
                 self._email_specs,
                 self._calendar_specs,
                 self._vision_specs,
@@ -1065,11 +1183,28 @@ class AgentReactService:
             thought, tool, args = self._parse_decision(_extract_json(decision.content))
 
             if tool == "finish":
+                finish_marker = workspace.state_marker()
+                if finish_marker == last_rejected_finish_marker:
+                    await self._record_step(
+                        task,
+                        number,
+                        thought,
+                        "finish",
+                        args,
+                        "Blocked: the previous finish attempt failed on this unchanged "
+                        "workspace. Repeating the verifier cannot create evidence; change "
+                        "the workspace or run a new check before finishing again.",
+                        ToolStatus.BLOCKED,
+                        step_tokens,
+                    )
+                    await self._finish(task, StopReason.STUCK)
+                    return
                 accepted, score, summary, _ = await self._handle_finish(
                     task, workspace, args, thought, number, step_tokens
                 )
                 if accepted:
                     return
+                last_rejected_finish_marker = finish_marker
                 finish_retries += 1
                 if finish_retries > settings.agent_max_finish_retries:
                     task.summary = summary
@@ -1230,6 +1365,8 @@ class AgentReactService:
             await self._record_step(
                 task, number, thought, tool or "invalid", args, observation, status, step_tokens
             )
+            if status is ToolStatus.OK:
+                last_rejected_finish_marker = None
 
             guard.observe(
                 tool or "invalid",
@@ -1240,6 +1377,42 @@ class AgentReactService:
                 workspace_changed=workspace.state_marker() != workspace_before,
             )
             consecutive_no_progress = guard.no_progress
+
+            workspace_changed = workspace.state_marker() != workspace_before
+            if (
+                tool in {"write_file", "edit_file"}
+                and status is ToolStatus.OK
+                and workspace_changed
+                and number < task.max_steps
+                and await self._contract_evidence_ready(task, workspace)
+            ):
+                auto_number = number + 1
+                auto_args = {
+                    "summary": (
+                        "Loop submitted the workspace after every user-required check passed."
+                    )
+                }
+                accepted, score, summary, _ = await self._handle_finish(
+                    task,
+                    workspace,
+                    auto_args,
+                    "[Loop] User-required checks pass; submit the result for verification.",
+                    auto_number,
+                    0,
+                )
+                if accepted:
+                    return
+                skipped_step_number = auto_number
+                last_rejected_finish_marker = workspace.state_marker()
+                finish_retries += 1
+                if finish_retries > settings.agent_max_finish_retries:
+                    task.summary = summary
+                    task.verification_score = score
+                    await self._finish(task, StopReason.STUCK)
+                    return
+                if task.tokens_used >= task.token_budget:
+                    await self._finish(task, StopReason.BUDGET_EXHAUSTED)
+                    return
 
             if number >= task.max_steps:
                 await self._finish(task, StopReason.MAX_STEPS)
@@ -1557,7 +1730,9 @@ class AgentReactService:
             token_budget=token_budget,
         )
         parsed = _extract_json(result.content)
-        if isinstance(parsed, list):
+        if isinstance(parsed, dict) and isinstance(parsed.get("criteria"), list):
+            rubric = [str(c).strip() for c in parsed["criteria"] if str(c).strip()][:6]
+        elif isinstance(parsed, list):
             rubric = [str(c).strip() for c in parsed if str(c).strip()][:6]
         else:
             rubric = [ln.strip("-* ").strip() for ln in result.content.splitlines() if ln.strip()][
@@ -1647,8 +1822,17 @@ class AgentReactService:
         else:
             score, missing, llm_met, substantiate = 0, ["verifier returned no verdict"], False, True
 
+        contract_results = [result for result in check_results if result.source == "contract"]
+        contract_substantiation_authoritative = bool(
+            contract_results
+            and completion_gates_pass(contract_results)
+            and execution_coverage_complete(contract_results, len(task.rubric or []))
+        )
         execution_ready = bool(
-            check_results and coverage_complete and gates_passed and substantiate
+            check_results
+            and coverage_complete
+            and gates_passed
+            and (substantiate or contract_substantiation_authoritative)
         )
         verified_by = "execution" if execution_ready else "judgment"
         met = llm_met and score >= settings.agent_acceptance_score and gates_passed
@@ -1658,7 +1842,7 @@ class AgentReactService:
                 missing.append("Every success criterion needs a mapped execution check.")
             if not gates_passed:
                 missing.append("A required check failed or a project quality gate regressed.")
-            if check_results and not substantiate:
+            if check_results and not substantiate and not contract_substantiation_authoritative:
                 missing.append("The proposed checks do not substantiate the task goal.")
         for regression in regressions(check_results):
             missing.append(f"Regression in {regression.target}.")
@@ -1671,6 +1855,11 @@ class AgentReactService:
             verdict += "\nchecks:\n" + checks_summary(check_results)
         if missing:
             verdict += "\nmissing:\n" + "\n".join(f"- {m}" for m in missing)
+        if not met:
+            verdict += (
+                "\nNEXT: Do not call finish again on an unchanged workspace. Repair the "
+                "failing evidence, then run or propose a check that can pass."
+            )
         await self._record_step(
             task,
             number,
@@ -1841,8 +2030,9 @@ class AgentReactService:
             )
         if reason is StopReason.BUDGET_EXHAUSTED:
             return (
-                f"Stopped at the token budget ({task.tokens_used}/{task.token_budget}) without "
-                "a verified result. Retry with a higher token budget if the goal needs more."
+                "Stopped because the remaining token budget could not safely fund another "
+                f"plan and final verification ({task.tokens_used}/{task.token_budget} used). "
+                "Retry with a higher token budget if the goal needs more."
             )
         if reason is StopReason.STUCK:
             return (
@@ -1854,7 +2044,11 @@ class AgentReactService:
         return "Stopped without a verified result."
 
     async def _finish(self, task: TaskModel, reason: StopReason) -> None:
-        task.status = TaskStatus.COMPLETED.value
+        task.status = (
+            TaskStatus.COMPLETED.value
+            if reason is StopReason.GOAL_ACHIEVED
+            else TaskStatus.STOPPED.value
+        )
         task.stop_reason = reason.value
         # The accepted path sets its own summary; for the other stops the agent
         # never wrote one, so give the user a reason-specific explanation.

@@ -10,7 +10,7 @@ import pytest
 
 from app.core.config import settings
 from app.core.llm.base import LLMError
-from app.core.llm.client import FallbackLLMClient
+from app.core.llm.client import FallbackLLMClient, _token_estimate
 from app.core.llm.providers import call_anthropic, call_deepseek, call_ollama
 from app.core.llm.registry import PROVIDERS, configured_providers
 
@@ -23,6 +23,11 @@ def test_registry_lists_all_providers() -> None:
     assert set(PROVIDERS) == {"anthropic", "deepseek", "gemini", "glm", "ollama", "mock"}
 
 
+def test_token_estimate_does_not_treat_ascii_bytes_as_tokens() -> None:
+    assert 2_000 <= _token_estimate("a" * 6_000) <= 2_100
+    assert _token_estimate("中" * 100) >= 200
+
+
 async def test_ollama_adapter_hits_local_openai_endpoint(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(settings, "ollama_model", "llama3.2")
     seen = {}
@@ -30,6 +35,7 @@ async def test_ollama_adapter_hits_local_openai_endpoint(monkeypatch: pytest.Mon
     def handler(request: httpx.Request) -> httpx.Response:
         seen["url"] = str(request.url)
         seen["auth"] = request.headers.get("authorization")
+        seen["payload"] = json.loads(request.content)
         return httpx.Response(
             200,
             json={"choices": [{"message": {"content": "local hi"}}], "usage": {"total_tokens": 5}},
@@ -41,6 +47,7 @@ async def test_ollama_adapter_hits_local_openai_endpoint(monkeypatch: pytest.Mon
     assert content == "local hi" and tokens == 5
     assert seen["url"] == "http://localhost:11434/v1/chat/completions"
     assert seen["auth"] is None  # no API key for a local model
+    assert seen["payload"]["response_format"] == {"type": "json_object"}
 
 
 def test_ollama_configured_only_when_base_url_set(monkeypatch: pytest.MonkeyPatch) -> None:

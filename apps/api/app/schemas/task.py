@@ -14,6 +14,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 from app.core.config import settings
 from app.domain.authority_token import AuthorityTokenError, normalize_hosts
 from app.domain.capability import CAPABILITY_SCHEMA_VERSION, Capability
+from app.domain.task import StopReason, TaskStatus
 from app.schemas.file import FileEntry
 from app.schemas.step import LedgerStatus, StepRead
 
@@ -214,12 +215,16 @@ class TaskRead(BaseModel):
         """Build from the ORM model, folding the flat limit columns into a
         nested object so the wire shape reads cleanly."""
         m = model
+        status = m.status  # type: ignore[attr-defined]
+        stop_reason = m.stop_reason  # type: ignore[attr-defined]
+        if status == TaskStatus.COMPLETED.value and stop_reason != StopReason.GOAL_ACHIEVED.value:
+            status = TaskStatus.STOPPED.value
         return cls(
             id=m.id,  # type: ignore[attr-defined]
             goal=m.goal,  # type: ignore[attr-defined]
             owner_id=m.owner_id,  # type: ignore[attr-defined]
             project_id=m.project_id,  # type: ignore[attr-defined]
-            status=m.status,  # type: ignore[attr-defined]
+            status=status,
             rubric=m.rubric or [],  # type: ignore[attr-defined]
             criteria_source=m.criteria_source,  # type: ignore[attr-defined]
             verification_mode=m.verification_mode,  # type: ignore[attr-defined]
@@ -306,3 +311,5 @@ class LimitDefaults(BaseModel):
     token_budget_default: int = settings.loop_token_budget_default
     token_budget_cap: int = settings.loop_token_budget_cap
     local_projects_enabled: bool = bool(settings.loop_local_projects_root)
+    sibyl_available: bool = settings.agent_sibyl_enabled and settings.agent_allow_host_providers
+    argus_available: bool = settings.agent_argus_enabled and settings.agent_allow_host_providers

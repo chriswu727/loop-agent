@@ -44,7 +44,7 @@ from app.schemas.task import (
 from app.services.runner import trigger_task
 from app.services.task import TaskService
 
-_TERMINAL = {"completed", "cancelled", "failed"}
+_TERMINAL = {"completed", "stopped", "cancelled", "failed"}
 
 router = APIRouter(prefix="/tasks", tags=["tasks"])
 

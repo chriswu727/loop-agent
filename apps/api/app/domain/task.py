@@ -14,7 +14,8 @@ class TaskStatus(enum.StrEnum):
     PENDING = "pending"  # published or resumable, not currently being worked
     RUNNING = "running"  # the agent is working
     AWAITING_INPUT = "awaiting_input"  # paused on an ask_user question
-    COMPLETED = "completed"  # stopped on a stop condition (see StopReason)
+    COMPLETED = "completed"  # verified goal achievement
+    STOPPED = "stopped"  # bounded stop without a verified result
     CANCELLED = "cancelled"  # the user pulled the plug
     FAILED = "failed"  # the agent errored out
 

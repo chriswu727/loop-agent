@@ -48,6 +48,8 @@ describe('PublishForm desktop binding', () => {
       <PublishForm
         defaults={{
           local_projects_enabled: true,
+          sibyl_available: false,
+          argus_available: false,
           max_steps_cap: 40,
           max_steps_default: 12,
           token_budget_cap: 200000,
@@ -80,6 +82,8 @@ describe('PublishForm desktop binding', () => {
       <PublishForm
         defaults={{
           local_projects_enabled: true,
+          sibyl_available: false,
+          argus_available: false,
           max_steps_cap: 40,
           max_steps_default: 12,
           token_budget_cap: 200000,

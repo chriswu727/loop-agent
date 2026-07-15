@@ -30,8 +30,10 @@ def reply_for(task: TaskModel) -> str:
     if task.status == TaskStatus.AWAITING_INPUT.value:
         return task.pending_question or "I need a bit more information to continue."
     if task.status == TaskStatus.COMPLETED.value:
-        if task.stop_reason == StopReason.GOAL_ACHIEVED.value:
-            return f"Done. {task.summary or ''}".strip()
+        if task.stop_reason != StopReason.GOAL_ACHIEVED.value:
+            return f"Stopped ({task.stop_reason}). {task.summary or ''}".strip()
+        return f"Done. {task.summary or ''}".strip()
+    if task.status == TaskStatus.STOPPED.value:
         return f"Stopped ({task.stop_reason}). {task.summary or ''}".strip()
     if task.status == TaskStatus.FAILED.value:
         return f"Failed: {task.error or 'unknown error'}"

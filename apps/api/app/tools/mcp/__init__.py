@@ -1,6 +1,6 @@
-"""MCP client integration — lets the agent use tools from external MCP servers
-(today: a headless browser via @playwright/mcp), bound by the same envelope."""
+"""MCP clients bound by the same task capability envelope as built-in tools."""
 
 from app.tools.mcp.browser import McpBrowser
+from app.tools.mcp.stdio import McpPool, McpStdioProvider
 
-__all__ = ["McpBrowser"]
+__all__ = ["McpBrowser", "McpPool", "McpStdioProvider"]

@@ -4,11 +4,12 @@ The live browser path is exercised by a real run; here we test the wiring."""
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 from typing import ClassVar
 
 from app.domain.capability import Capability
 from app.tools import CapabilityEnvelope, ToolExecutor, ToolStatus, Workspace
-from app.tools.mcp import McpBrowser
+from app.tools.mcp import McpBrowser, McpPool, McpStdioProvider
 
 
 class _FakeMcp:
@@ -79,3 +80,44 @@ def test_browser_specs_formatting() -> None:
     specs = b.specs()
     assert "- browser_navigate: Navigate to a URL" in specs
     assert "- browser_click: Click an element" in specs
+
+
+def test_namespaced_mcp_spec_keeps_required_argument_shape() -> None:
+    tool = SimpleNamespace(
+        description="Search the web quickly.\nMore details.",
+        inputSchema={
+            "type": "object",
+            "properties": {"query": {"type": "string"}, "limit": {"type": "integer"}},
+            "required": ["query"],
+        },
+    )
+
+    spec = McpStdioProvider._format_spec("sibyl_quick_search", tool)
+
+    assert spec == (
+        '- sibyl_quick_search: Search the web quickly. args: {"query":"string*","limit":"integer"}'
+    )
+
+
+async def test_auxiliary_mcp_uses_per_tool_capability(tmp_path: Path) -> None:
+    class _ResearchProvider:
+        tool_names: ClassVar[set[str]] = {"sibyl_quick_search"}
+        capability = Capability.RESEARCH_READ
+
+        async def call(self, _name: str, args: dict) -> str:
+            return f"sources for {args['query']}"
+
+    pool = McpPool([])
+    provider = _ResearchProvider()
+    pool.tool_names = set(provider.tool_names)
+    pool._by_tool["sibyl_quick_search"] = provider  # type: ignore[assignment]
+    executor = ToolExecutor(
+        Workspace(tmp_path / "w"),
+        auxiliary_mcp=pool,
+        envelope=CapabilityEnvelope.from_capabilities(["research.read"]),
+    )
+
+    result = await executor.execute("sibyl_quick_search", {"query": "Loop Agent"})
+
+    assert result.status is ToolStatus.OK
+    assert result.observation == "sources for Loop Agent"

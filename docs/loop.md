@@ -84,20 +84,25 @@ closes the old "shell is fenced, not jailed" gap — verified live: a containeri
 run reported `uname -s` = Linux (not the host's Darwin), and the spike confirmed
 network-deny and that `~/.ssh` is unreadable from inside.
 
-## MCP client + headless browser
+## MCP clients, evidence research, and browser QA
 
-Loop is an MCP client. When a task opts into `use_browser`, the engine spawns an
-MCP server (`@playwright/mcp`, stdio) for the duration of the run, discovers its
-tools, and exposes them to the agent as ordinary tools — navigate, snapshot,
-click, type, extract. They dispatch through the same `ToolExecutor`, so the
-capability envelope and hooks apply like any built-in tool, and the agent's own
-JSON decision stays the only thing that can trigger one. Browsing is network
-egress, so `use_browser` implies the egress grant; a browser-startup failure is
-non-fatal (the task runs without browser tools) and the session is torn down when
-the run ends. This is the same client future connectors (email, calendar) ride —
-adding one is registering another MCP server, not rebuilding the integration.
-Verified live: a task navigated to a page, read it via `browser_snapshot`, wrote
-the heading to a file, and the verifier accepted it by re-execution (score 100).
+Loop is an MCP client. `net.browser` uses the Playwright MCP surface; in production
+that surface is hosted by the credentialless Browser Gateway and bound to the
+task's signed destination authority.
+
+Local/development runs also have a generic stdio MCP provider. A task can explicitly
+grant `research.read` to expose four namespaced Sibyl tools (`sibyl_*`) or
+`qa.browser` to expose ten namespaced Argus tools (`argus_*`). Loop discovers each
+server's real JSON schemas, injects compact argument shapes into the planner, caps
+tool output, and dispatches every call through `ToolExecutor`, so the capability
+envelope and hooks still apply. The small allowlists are intentional: giving a weak
+model every tool from both servers costs tokens and increases wrong-tool selection.
+
+Host MCP subprocesses are outside the task container and therefore explicitly
+marked as such. Production disables them and fails closed; an isolated generic MCP
+gateway with destination enforcement remains future work. Verified live on July 15,
+2026: Loop discovered all 14 allowed Sibyl/Argus tools, executed a Sibyl search, and
+used Argus to start and observe a real headless browser session.
 
 ## The core idea
 
@@ -126,6 +131,7 @@ repeat:
         # resumes here when the user answers (see below)
     else:
         observe = execute_tool(tool, args)       # sandboxed
+        passing user-contract evidence? -> submit for verification immediately
     stop?  step cap | budget | stuck | cancelled
 ```
 
@@ -138,6 +144,14 @@ Tools: `write_file`, `edit_file` (unique-snippet replace), `read_file`,
 verifier decides "done". A model judging its own "I'm finished" inflates
 completion. In the real Fibonacci test run the verifier caught the agent
 printing 13 numbers instead of 12 and sent it back — that gap is the whole point.
+
+**Deterministic evidence outranks verifier taste.** After a workspace mutation,
+Loop re-runs user-authored contract checks; when they pass and cover every
+criterion, it submits the result immediately instead of spending more planner
+turns waiting for the model to remember `finish`. A verifier must still judge the
+goal as met, but it cannot downgrade complete passing user-contract evidence merely
+by claiming that the checks are not meaningful. Agent-proposed checks receive no
+such privilege and remain subject to the substantiation gate.
 
 **Verified Completion is contract-first; it doesn't trust prose (the Receipt).**
 Strict local-project work starts only after the user confirms success criteria.

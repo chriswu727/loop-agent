@@ -185,7 +185,7 @@ if os.environ["RUN_TASK"] == "true":
         },
     )
     deadline = time.monotonic() + 240
-    while task["status"] not in {"completed", "failed", "cancelled"}:
+    while task["status"] not in {"completed", "stopped", "failed", "cancelled"}:
         if time.monotonic() >= deadline:
             raise SystemExit(f"Task timed out: {task}")
         time.sleep(1)

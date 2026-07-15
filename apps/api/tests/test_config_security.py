@@ -53,6 +53,8 @@ def test_secure_production_settings_are_accepted() -> None:
         {"agent_sandbox": "preferred"},
         {"agent_sandbox_image_digest": None},
         {"agent_allow_host_providers": True},
+        {"agent_sibyl_enabled": True},
+        {"agent_argus_enabled": True},
         {"agent_provider_gateway_url": "http://provider-gateway:8090"},
         {"agent_browser_gateway_url": None},
         {"agent_email_gateway_url": None},

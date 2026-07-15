@@ -27,10 +27,11 @@ class HistoryEntry:
 
     def render(self) -> str:
         arg_preview = ", ".join(f"{key}={str(value)[:60]!r}" for key, value in self.args.items())
+        observation_limit = 1_600 if self.tool.startswith(("sibyl_", "argus_", "browser_")) else 600
         obs = (
             self.observation
-            if len(self.observation) <= 600
-            else self.observation[:600] + " …[truncated]"
+            if len(self.observation) <= observation_limit
+            else self.observation[:observation_limit] + " …[truncated]"
         )
         return (
             f"Step {self.number} [{self.tool}] ({self.status.value}): {self.thought}\n"
@@ -86,6 +87,9 @@ def _action_signature(tool: str, args: dict[str, Any], revision: int) -> tuple[s
             f"browser:{revision}:{tool}:{_normalise(target, 240)}",
             any(branch in tool for branch in branches),
         )
+    if tool.startswith("sibyl_"):
+        target = args.get("query") or args.get("url") or args
+        return f"research:{revision}:{tool}:{_normalise(target, 240)}", True
     if tool in {"read_inbox", "list_events", "see_image"}:
         return f"inspect:{revision}:{tool}:{_normalise(args, 240)}", True
     return f"{tool}:{revision}:{_normalise(args, 240)}", False
@@ -141,7 +145,8 @@ class ProgressGuard:
 
     def preflight(self, tool: str, args: dict[str, Any]) -> str | None:
         signature, exploratory = _action_signature(tool, args, self.revision)
-        repeated = self.action_counts[signature] >= settings.agent_repeated_action_limit
+        repeat_limit = 1 if tool.startswith("sibyl_") else settings.agent_repeated_action_limit
+        repeated = self.action_counts[signature] >= repeat_limit
         if tool not in _MUTATION_TOOLS and repeated:
             return (
                 f"Blocked: semantically equivalent action '{signature}' already ran "

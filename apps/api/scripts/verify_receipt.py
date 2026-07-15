@@ -111,16 +111,20 @@ def main(argv: list[str]) -> int:
     print(f"claimed:     {claimed}")
     print(f"recomputed:  {recomputed}")
     print(f"files:       {len(manifest)} checked, {len(file_mismatches)} mismatched")
+    task_verified = (
+        receipt.get("verified_by") == "execution" and receipt.get("checks_passed") is True
+    )
+    print(f"task:        {'VERIFIED' if task_verified else 'NOT VERIFIED'}")
     for m in file_mismatches:
         print(f"  - {m}")
 
     ok = hash_ok and not file_mismatches and sig_status != "INVALID"
     if ok and ("UNCHECKED" in sig_status or sig_status == "unsigned"):
-        print("RESULT:      OK — content hash + files intact (signature NOT verified)")
+        print("INTEGRITY:   OK — content hash + files intact (signature NOT verified)")
     elif ok and sig_status == "VERIFIED":
-        print("RESULT:      OK — receipt is authentic")
+        print("INTEGRITY:   OK — receipt is authentic")
     else:
-        print("RESULT:      TAMPERED — mismatch")
+        print("INTEGRITY:   TAMPERED — mismatch")
     return 0 if ok else 1
 
 

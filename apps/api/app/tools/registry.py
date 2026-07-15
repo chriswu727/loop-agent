@@ -49,7 +49,9 @@ SPAWN_SPEC = (
     "- spawn: delegate a self-contained sub-goal to a fresh sub-agent that runs its "
     "own verified loop in its own sandbox and returns a summary + its output files. "
     'args: {"goal": "...", "max_steps": 8, "token_budget": 20000, '
-    '"allow_egress": false, "use_browser": false, "egress_hosts": []}. '
+    '"capabilities": ["fs.read", "fs.write", "exec"], "egress_hosts": []}. '
+    "Capabilities may only narrow the current task; include research.read or "
+    "qa.browser when the child needs an MCP already granted to the parent. "
     "Use for big tasks that split into independent pieces; its token use counts "
     "against your budget."
 )
@@ -102,6 +104,7 @@ class ToolExecutor:
         before_tool: BeforeHook | None = None,
         after_tool: AfterHook | None = None,
         mcp: Any = None,
+        auxiliary_mcp: Any = None,
         email: Any = None,
         calendar: Any = None,
         vision: Any = None,
@@ -141,6 +144,7 @@ class ToolExecutor:
         # dispatch here too, so the envelope/hooks apply like any built-in tool.
         # Read live in _provider_for so the engine may attach them post-construction.
         self.mcp = mcp
+        self.auxiliary_mcp = auxiliary_mcp
         self.email = email
         self.calendar = calendar
         self.vision = vision
@@ -150,6 +154,7 @@ class ToolExecutor:
         for provider in (
             self.provider_gateway,
             self.mcp,
+            self.auxiliary_mcp,
             self.email,
             self.calendar,
             self.vision,
@@ -160,7 +165,12 @@ class ToolExecutor:
 
     async def execute(self, tool: str, args: dict[str, Any]) -> ToolResult:
         provider = self._provider_for(tool)
-        provider_capability = getattr(provider, "capability", None)
+        capability_for = getattr(provider, "capability_for", None)
+        provider_capability = (
+            capability_for(tool)
+            if callable(capability_for)
+            else getattr(provider, "capability", None)
+        )
         # Capability gate: a tool the envelope doesn't grant never runs.
         if not self.envelope.permits(tool, provider_capability=provider_capability):
             TOOL_DENIALS.labels(tool=tool).inc()

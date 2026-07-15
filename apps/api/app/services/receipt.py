@@ -167,7 +167,9 @@ def build_receipt(
         "score": score,
         "checks": checks,
         "baseline_checks": baseline_checks,
-        "checks_passed": completion_gates_pass(check_results) if checks else None,
+        "checks_passed": (
+            completion_gates_pass(check_results) if checks else (False if required_checks else None)
+        ),
         # Honest coverage: how many success criteria vs how many machine checks,
         # and whether "done" rests on re-execution or on LLM judgment.
         "coverage": {
