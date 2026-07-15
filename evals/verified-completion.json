@@ -1,0 +1,40 @@
+{
+  "schema": "loop.verified-completion-cases/v1",
+  "cases": [
+    {
+      "id": "python-library",
+      "goal": "Create arithmetic.py with add, subtract, multiply, and divide functions. Add a thorough pytest suite. Division by zero must raise ZeroDivisionError.",
+      "success_criteria": [
+        "All four arithmetic operations return correct results for integers and floats.",
+        "Division by zero raises ZeroDivisionError.",
+        "The automated test suite passes."
+      ],
+      "verification_commands": ["python -m pytest -q"],
+      "expected_files": ["arithmetic.py"]
+    },
+    {
+      "id": "structured-output",
+      "goal": "Create report.json containing exactly the object {\"total\": 42, \"items\": [7, 14, 21]} as valid JSON.",
+      "success_criteria": [
+        "report.json is valid JSON.",
+        "The decoded value exactly matches the requested object."
+      ],
+      "verification_commands": [
+        "python -c \"import json; assert json.load(open('report.json')) == {'total': 42, 'items': [7, 14, 21]}\""
+      ],
+      "expected_files": ["report.json"]
+    },
+    {
+      "id": "document-constraints",
+      "goal": "Write SECURITY.md with concise sections named Threat model, Trust boundaries, and Residual risks. Each section must contain at least one concrete item.",
+      "success_criteria": [
+        "SECURITY.md contains all three required section headings.",
+        "Every required section contains concrete non-empty content."
+      ],
+      "verification_commands": [
+        "python -c \"from pathlib import Path; s=Path('SECURITY.md').read_text(); assert all(('# ' + x in s or '## ' + x in s) for x in ['Threat model','Trust boundaries','Residual risks'])\""
+      ],
+      "expected_files": ["SECURITY.md"]
+    }
+  ]
+}

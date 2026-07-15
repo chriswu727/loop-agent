@@ -2,9 +2,8 @@
 
 # Loop
 
-**Give it a goal. It plans the work, runs it in a sandbox, checks its own output by
-re-running it, and produces a receipt you can replay — stopping the moment it hits
-a limit you set.**
+**Hand off a goal and an acceptance contract. Loop works in isolation, proves every
+criterion with re-executed evidence, and returns a Receipt you can replay.**
 
 Most personal agents run chat-first on your own machine — handy, but researchers keep
 pulling real secrets out of them through prompt injection. Loop is built the other way
@@ -45,15 +44,19 @@ flowchart LR
 
 You give Loop a goal; it runs a **think → act → observe** loop (ReAct):
 
-1. **Understand** — turn the goal into a concrete rubric (success criteria).
-2. **Plan** — decide the single next action.
-3. **Act** — call a tool: `write_file`, `edit_file`, `read_file`, `run_command`
+1. **Contract** — you confirm the success criteria and may supply exact verification
+   commands. For a local project, this contract is required before work starts.
+2. **Baseline** — Loop discovers the project's native lint, typecheck, test, and build
+   commands and records which failures already existed before the agent touched it.
+3. **Plan** — decide the single next action.
+4. **Act** — call a tool: `write_file`, `edit_file`, `read_file`, `run_command`
    (inside a per-task sandboxed workspace), `see_image`, `ask_user`, `spawn`,
    `remember`, or `finish`.
-4. **Observe** — feed the result back in, and repeat.
-5. **Finish** — an independent **verifier re-runs the machine checks** on a fresh
-   copy of the workspace. If the work doesn't hold up, the agent keeps going;
-   if it does, Loop writes a tamper-evident **Receipt**.
+5. **Observe** — feed the result back in, and repeat.
+6. **Finish** — an independent **verifier re-runs contract and system checks** on a
+   fresh copy. Every criterion must point to passed evidence and no new regression
+   may appear. Otherwise the agent keeps going; only then does Loop write a
+   tamper-evident **Receipt**.
 
 It stops on the first of: **goal achieved** (verified), **step limit**, **token
 budget**, **stuck** (repeated actions or no new evidence), or **cancelled** — every
@@ -75,7 +78,7 @@ a fact you can replay, not a claim in a chat log.
 
 |                       | Chat-first agents (OpenClaw-style)                | **Loop**                                                                                |
 | --------------------- | ------------------------------------------------- | --------------------------------------------------------------------------------------- |
-| **"Done" means**      | a chat reply — no notion of completion            | a **re-executed, hash-chained Receipt** you can replay                                  |
+| **"Done" means**      | a chat reply — no notion of completion            | a user-confirmed contract, regression gate, and **replayable Receipt**                  |
 | **Shell / tools**     | main session runs on the **host**                 | production uses a fresh locked-down **Kubernetes Job** per command; egress defaults off |
 | **Skills**            | thousands, **unsigned**, injected into the prompt | **ed25519-signed**, capability-scoped, refused if tampered                              |
 | **Inbound email/DMs** | injection has exfiltrated real private keys       | quarantined as `[DATA]`; sending/acting needs your approval                             |
@@ -85,9 +88,12 @@ a fact you can replay, not a claim in a chat log.
 Loop concedes raw breadth for now and is closing that gap — but it wins outright on
 the two axes a chat-log agent can't retrofit:
 
-- **Verifiable completion.** Every task ships a content-addressed,
-  tamper-evident **Receipt** (`receipt.json` + `RECEIPT.md`): the goal, the rubric,
-  every machine check the verifier **re-ran on a fresh copy of the workspace**, a
+- **Verifiable completion.** A strict task cannot finish on model confidence alone.
+  Its user-confirmed criteria, contract checks, discovered project checks, pre-change
+  baseline, criterion-to-evidence mapping, and actual executor/verifier model IDs are
+  persisted. Every terminal task ships a content-addressed, tamper-evident **Receipt**
+  (`receipt.json` + `RECEIPT.md`): the goal, the contract, every machine check the
+  verifier **re-ran on a fresh copy of the workspace**, a
   sha256 of every output file, and the head of a hash-chained step ledger. "Done"
   is a replayable fact — safe to drop into a CI gate (`make verify-receipt`, or
   `scripts/verify_receipt.py` with zero app deps, exits 0/1 and re-hashes the output
@@ -108,7 +114,8 @@ the two axes a chat-log agent can't retrofit:
 
 | Differentiator                | What it means                                                                                                                   |
 | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| **Re-execution Receipt**      | the verifier re-runs the agent's checks; a failed check overrides the model's "I'm done"                                        |
+| **Verified Completion**       | user criteria + baseline + system/contract checks; complete coverage and no new regression are mandatory                        |
+| **Re-execution Receipt**      | the verifier re-runs the evidence; a failed check overrides the model's "I'm done" and replay can prove it later                |
 | **Tamper-evident ledger**     | each step is hash-chained from a genesis; edit any step and `GET /tasks/{id}/ledger` reports it                                 |
 | **Signed skills**             | a skill bundle's ed25519 signature must verify or it won't load — supply-chain safety                                           |
 | **Typed capability contract** | `loop.capabilities/v1` separates filesystem, execution, shell network, browser, email, calendar, memory, vision, and delegation |

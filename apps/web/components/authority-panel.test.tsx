@@ -10,6 +10,10 @@ const baseTask: Task = {
   project_id: 'default',
   status: 'completed',
   rubric: [],
+  criteria_source: 'generated',
+  verification_mode: 'judgment',
+  required_checks: [],
+  baseline_checks: [],
   pending_question: null,
   allowed_tools: null,
   authority: {

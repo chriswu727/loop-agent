@@ -29,6 +29,7 @@ from cryptography.hazmat.primitives.serialization import (
 
 from app.core.config import settings
 from app.db.models.task import TaskModel
+from app.services.completion import completion_gates_pass
 from app.services.verification import CheckResult, as_dicts
 from app.tools import Workspace
 
@@ -60,18 +61,6 @@ def _verify_key() -> Ed25519PublicKey | None:
 def _signing_key_id(key: Ed25519PrivateKey) -> str:
     public = key.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)
     return f"ed25519:{hashlib.sha256(public).hexdigest()[:24]}"
-
-
-def _model_identity(provider: str) -> dict[str, str]:
-    names = {
-        "deepseek": settings.deepseek_model,
-        "ollama": settings.ollama_model,
-        "anthropic": "configured-default",
-        "gemini": "configured-default",
-        "glm": "configured-default",
-        "mock": "deterministic-demo",
-    }
-    return {"provider": provider, "model": names[provider]}
 
 
 def _file_manifest(
@@ -117,6 +106,14 @@ def build_receipt(
     )
     egress_hosts = task.egress_hosts if isinstance(task.egress_hosts, list) else []
     summary = task.summary if isinstance(task.summary, str) or task.summary is None else None
+    criteria_source = task.criteria_source if isinstance(task.criteria_source, str) else "generated"
+    verification_mode = (
+        task.verification_mode if isinstance(task.verification_mode, str) else "judgment"
+    )
+    required_checks = task.required_checks if isinstance(task.required_checks, list) else []
+    baseline_checks = task.baseline_checks if isinstance(task.baseline_checks, list) else []
+    executor_models = task.executor_models if isinstance(task.executor_models, list) else []
+    verifier_model = task.verifier_model if isinstance(task.verifier_model, dict) else None
     criteria = [
         {"id": f"criterion-{index:03d}", "text": criterion}
         for index, criterion in enumerate(task.rubric or [], start=1)
@@ -160,11 +157,17 @@ def build_receipt(
         "summary": summary,
         "rubric": task.rubric or [],
         "criteria": criteria,
+        "contract": {
+            "criteria_source": criteria_source,
+            "verification_mode": verification_mode,
+            "required_checks": required_checks,
+        },
         "verified_by": verified_by,  # "execution" | "judgment"
         "isolation": task.sandbox or "inline",  # "container" | "inline"
         "score": score,
         "checks": checks,
-        "checks_passed": all(c["passed"] for c in checks) if checks else None,
+        "baseline_checks": baseline_checks,
+        "checks_passed": completion_gates_pass(check_results) if checks else None,
         # Honest coverage: how many success criteria vs how many machine checks,
         # and whether "done" rests on re-execution or on LLM judgment.
         "coverage": {
@@ -207,10 +210,9 @@ def build_receipt(
                 "implementation": platform.python_implementation(),
                 "platform": sys.platform,
             },
-            "model": _model_identity(settings.llm_default_provider),
-            "verifier": _model_identity(
-                settings.llm_verifier_provider or settings.llm_default_provider
-            ),
+            "model": executor_models[-1] if executor_models else None,
+            "executor_models": executor_models,
+            "verifier": verifier_model,
             "sandbox": {
                 "mode": task.sandbox or "inline",
                 "image": (
@@ -401,7 +403,17 @@ def _render_markdown(receipt: dict[str, Any]) -> str:
         lines.append("## Checks (re-run on a fresh copy of the workspace)")
         for c in receipt["checks"]:
             mark = "PASS" if c["passed"] else "FAIL"
-            lines.append(f"- [{mark}] `{c['kind']}` {c['target']} — {c['evidence']}")
+            baseline = (
+                " — baseline PASS"
+                if c.get("baseline_passed") is True
+                else (
+                    " — baseline FAIL (pre-existing)" if c.get("baseline_passed") is False else ""
+                )
+            )
+            lines.append(
+                f"- [{mark}] `{c.get('source', 'agent')}:{c['kind']}` "
+                f"{c['target']} — {c['evidence']}{baseline}"
+            )
         lines.append("")
     if receipt["files"]:
         lines.append("## Output files")

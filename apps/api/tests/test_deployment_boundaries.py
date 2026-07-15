@@ -246,10 +246,13 @@ def test_ci_runs_real_redis_enforcement_acceptance() -> None:
     workflow = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text())
     job = workflow["jobs"]["enforcement-acceptance"]
 
-    assert job["name"] == "enforcement · real Redis restart + cross-process revoke"
+    assert job["name"] == "enforcement · Redis restart + worker recovery + revoke"
     assert any(
         step.get("run") == "bash ../../scripts/enforcement-acceptance.sh" for step in job["steps"]
     )
+    harness = (ROOT / "scripts/enforcement-acceptance.sh").read_text()
+    assert harness.index("run_worker_recovery claim") < harness.index('docker stop "$container"')
+    assert harness.index("run_worker_recovery recover") > harness.index('docker start "$container"')
 
 
 def test_ci_runs_disposable_kubernetes_acceptance() -> None:
@@ -302,7 +305,7 @@ def test_kubernetes_acceptance_migrates_runs_task_and_rolls_back() -> None:
     assert "kubectl rollout undo deployment/api" in script
     assert 'task["sandbox"] != "kubernetes"' in script
     assert 'report.get("authentic")' in script
-    assert "0007_verified_changesets" in script
+    assert "0008_verified_completion" in script
     assert "api web worker" in smoke
     assert 'cluster="${LOOP_ACCEPTANCE_CLUSTER:-la-' in script
     assert 'registry_container="$registry"' in script

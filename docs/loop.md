@@ -111,12 +111,14 @@ it stays _within the limit_.
 The loop (`services/agent_react.py`):
 
 ```
-understand(goal) -> rubric                      # once, up front (skipped on resume)
+confirm(goal, user criteria, contract checks)   # persisted; local projects require it
+discover project checks; run pre-change baseline
 repeat:
     plan(goal, rubric, workspace, history) -> {thought, tool, args}
     if tool == finish:
-        verify(goal, rubric, summary, workspace) -> {score, met}
-        met? -> done (goal_achieved)
+        re-run contract + system checks on a fresh copy
+        require every criterion mapped to passing evidence and no new regression
+        execution gates + verifier met? -> done (goal_achieved)
         not met, retries left? -> push the gaps back, keep going
         not met, retries spent? -> stop (stuck)
     elif tool == ask_user:
@@ -137,16 +139,24 @@ verifier decides "done". A model judging its own "I'm finished" inflates
 completion. In the real Fibonacci test run the verifier caught the agent
 printing 13 numbers instead of 12 and sent it back — that gap is the whole point.
 
-**The verifier re-executes; it doesn't trust prose (the Receipt).** `finish` can
-carry machine-checkable `checks` (a command + expected exit/stdout, file-exists,
-file-contains). The verifier re-runs every check on a _fresh copy_ of the
-workspace (`services/verification.py`) through the same command policy, and a run
-with checks is accepted only if its checks actually pass — a failed check
-overrides an LLM `met=true`. Every _terminal_ task writes a content-addressed
+**Verified Completion is contract-first; it doesn't trust prose (the Receipt).**
+Strict local-project work starts only after the user confirms success criteria.
+Optional user commands become immutable contract checks, while Loop discovers the
+project's own lint, typecheck, test, and build scripts. It runs those system checks
+before editing to establish a baseline. At `finish`, contract and system checks are
+re-run on a _fresh copy_ through the same sandbox and command policy. Every criterion
+must map to passed execution evidence, and a new system regression blocks completion;
+a system failure already present in the baseline stays visible but does not make an
+unrelated repair impossible. Agent-proposed checks may add evidence but cannot replace
+the contract or spoof its provenance. Any gate failure overrides `met=true` and sends
+the exact gap back into the loop. Judgment mode remains explicit for work without a
+meaningful executable oracle and is displayed as Reviewed, never execution-Verified.
+
+Every _terminal_ task writes a content-addressed
 **Receipt** (`receipt.json` + `RECEIPT.md`, `services/receipt.py`): goal, rubric,
-per-check verdict, score, `verified_by` (execution|judgment), run accounting, and
-a sha256 of every output file. Goals with no runnable check fall back to
-judgment, labelled `verified_by=judgment` so it's never mistaken for proof. A task
+the acceptance contract and baseline, criterion-to-check mappings, per-check source
+and verdict, actual executor/verifier models, score, run accounting, and a sha256 of
+every output file. A task
 that _didn't_ reach an accepted result (a step/budget limit, a stuck loop, or a
 crash) still gets a Receipt — marked `verified_by=unverified` — so a failure is
 auditable too, not a blank. This
@@ -245,6 +255,10 @@ output cap reduced to fit the call budget.
 **Inline vs worker execution.** The same `AgentReactService.run` is driven two
 ways (`services/runner.py`): `inline` runs it in a FastAPI background task (zero
 infra, SQLite-friendly); `worker` enqueues to Redis for a separate process.
+Redis Streams messages use visibility leases and stale-message claiming. The
+acceptance harness deliberately exits one worker after it claims but before it
+acknowledges a job, restarts Redis, and proves a second process takes over and
+removes the job without dead-lettering it.
 
 **Human-in-the-loop is a resumable loop, not a held-open coroutine.** When the
 agent calls `ask_user`, the run records the question, sets `awaiting_input`, and
@@ -332,9 +346,10 @@ is currently trusted context — formalizing it as quarantined data (differentia
 
 ## Data model
 
-- `tasks` — goal, status, rubric (JSON), `max_steps` + `token_budget`, and live
-  state: summary, verification_score, steps_used, tokens_used,
-  stop_reason, error.
+- `tasks` — goal, status, rubric (JSON), acceptance-contract source/mode/checks,
+  pre-change baseline, actual executor/verifier model provenance,
+  `max_steps` + `token_budget`, and live state: summary, verification_score,
+  steps_used, tokens_used, stop_reason, error.
 - `steps` — one row per agent step: number, thought, tool, tool_args (JSON),
   observation, status (ok/error/blocked), tokens.
 
@@ -356,6 +371,11 @@ classifies commands (and that a dangerous command is blocked, not run).
 stop condition — goal_achieved, max_steps, budget, stuck, and verifier-rejection
 — is deterministic and offline. `tests/test_tasks.py` covers the HTTP surface;
 its conftest stubs the background trigger so publishing never hits a real model.
+`scripts/enforcement-acceptance.sh` fault-injects an abandoned Redis job across
+separate worker processes and a real Redis restart. `evals/verified-completion.json`
+is the paid-model benchmark: solve rate requires a valid, fully covered Receipt
+whose checks pass again on replay; any accepted result that fails those gates is
+reported as a false acceptance.
 
 The live provider calls and real tool execution are verified by an end-to-end
 run (publish a "write and run a script" goal against a real key and watch the
@@ -374,5 +394,8 @@ agent create the file, run it, self-correct, and finish).
 - **Browser sessions are pod-local.** Revocations and proxy audit are shared through
   Redis, but multi-replica Browser Gateway requires sticky run routing or an external
   browser-session backend.
+- **Measured model quality is not yet claimed by code-only tests.** The committed
+  benchmark requires explicit `--allow-model-spend`; publish solve rate and false
+  acceptance rate only from a recorded run against the intended provider/model.
 - **Roadmap:** broader transports, a signed-skill ecosystem, browser-session HA, and
   measured production/adversarial evidence.

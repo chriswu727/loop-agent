@@ -80,6 +80,9 @@ export type { FileContent, FileEntry, LedgerStatus, LimitDefaults, Page, Step, T
 
 export interface PublishBody {
   goal: string;
+  success_criteria?: string[] | null;
+  verification_commands?: string[];
+  verification_mode?: 'strict' | 'judgment';
   project_id?: string;
   project_path?: string | null;
   autostart?: boolean;

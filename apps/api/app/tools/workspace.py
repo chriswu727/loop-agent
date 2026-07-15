@@ -17,6 +17,15 @@ from pathlib import Path
 from app.tools.base import ToolError
 
 MAX_FILE_BYTES = 1_000_000  # refuse to write absurdly large files
+IGNORED_WORKSPACE_DIRS = {
+    ".git",
+    ".next",
+    ".turbo",
+    ".venv",
+    "__pycache__",
+    "node_modules",
+    "venv",
+}
 
 
 def _preview(content: str, *, max_lines: int = 20, max_chars: int = 1000) -> str:
@@ -93,7 +102,9 @@ class Workspace:
         """Every file (not directory) in the workspace as (relative_path, bytes)."""
         files: list[tuple[str, int]] = []
         for current, directories, filenames in os.walk(self.root):
-            directories[:] = sorted(name for name in directories if name != ".git")
+            directories[:] = sorted(
+                name for name in directories if name not in IGNORED_WORKSPACE_DIRS
+            )
             for filename in sorted(filenames):
                 path = Path(current) / filename
                 if filename == ".git" or not path.is_file():
@@ -146,7 +157,9 @@ class Workspace:
         knows what it has already created."""
         entries: list[str] = []
         for current, directories, filenames in os.walk(self.root):
-            directories[:] = sorted(name for name in directories if name != ".git")
+            directories[:] = sorted(
+                name for name in directories if name not in IGNORED_WORKSPACE_DIRS
+            )
             current_path = Path(current)
             for directory in directories:
                 entries.append(f"{(current_path / directory).relative_to(self.root)}/")

@@ -64,6 +64,42 @@ def test_kubernetes_receipt_records_the_sandbox_image(
     assert receipt["provenance"]["sandbox"]["image"] == "registry.example/loop@sha256:abc"
 
 
+def test_receipt_keeps_preexisting_system_failure_visible_but_nonblocking(tmp_path: Path) -> None:
+    from unittest.mock import MagicMock
+
+    from app.services.receipt import build_receipt
+
+    workspace = Workspace(tmp_path / "ws")
+    task = MagicMock(
+        id="t1",
+        goal="repair one feature",
+        rubric=["feature works"],
+        sandbox="inline",
+        steps_used=2,
+        tokens_used=50,
+    )
+    _, receipt = build_receipt(
+        task,
+        [
+            CheckResult(
+                "command",
+                "legacy-test",
+                False,
+                "still failing",
+                check_id="system-test",
+                source="system",
+                baseline_passed=False,
+            )
+        ],
+        score=90,
+        verified_by="execution",
+        workspace=workspace,
+    )
+
+    assert receipt["checks"][0]["passed"] is False
+    assert receipt["checks_passed"] is True
+
+
 def test_verify_full_catches_a_modified_output_file(tmp_path: Path) -> None:
     from app.services.receipt import verify_receipt_full
 

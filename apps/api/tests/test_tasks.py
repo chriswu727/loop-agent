@@ -33,6 +33,23 @@ async def test_defaults_applied_when_limits_omitted(client: AsyncClient) -> None
     assert limits["token_budget"] == 60_000
 
 
+async def test_user_acceptance_contract_round_trips(client: AsyncClient) -> None:
+    response = await client.post(
+        "/api/v1/tasks",
+        json={
+            "goal": "make a rigorously checked result",
+            "success_criteria": ["The output is present", "The complete test suite passes"],
+            "verification_commands": ["pytest -q"],
+        },
+    )
+    assert response.status_code == 201
+    task = response.json()
+    assert task["rubric"] == ["The output is present", "The complete test suite passes"]
+    assert task["criteria_source"] == "user"
+    assert task["verification_mode"] == "strict"
+    assert task["required_checks"][0]["source"] == "contract"
+
+
 async def test_goal_too_short_is_validation_error(client: AsyncClient) -> None:
     resp = await client.post("/api/v1/tasks", json={"goal": "hi"})
     assert resp.status_code == 422

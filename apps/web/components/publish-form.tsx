@@ -15,9 +15,20 @@ const FALLBACK: LimitDefaults = {
 };
 
 const EXAMPLES = [
-  'Write a Python script that prints the first 15 Fibonacci numbers, then run it to confirm the output.',
-  'Attach a spreadsheet, then: add a Total column summing each row, and save it.',
-  'Attach a .docx, then: fix typos and add a one-paragraph summary at the top.',
+  {
+    goal: 'Write a Python script that prints the first 15 Fibonacci numbers, then run it to confirm the output.',
+    criteria:
+      'A runnable Python script is added.\nThe script prints exactly the first 15 Fibonacci numbers.',
+  },
+  {
+    goal: 'Attach a spreadsheet, then: add a Total column summing each row, and save it.',
+    criteria: 'The workbook opens successfully.\nEvery data row has the correct Total formula.',
+  },
+  {
+    goal: 'Attach a .docx, then: fix typos and add a one-paragraph summary at the top.',
+    criteria:
+      'The edited document opens successfully.\nA summary paragraph appears before the original content.',
+  },
 ];
 
 export function PublishForm({
@@ -34,6 +45,8 @@ export function PublishForm({
   const desktopState = useDesktopState();
 
   const [goal, setGoal] = useState('');
+  const [successCriteria, setSuccessCriteria] = useState('');
+  const [verificationCommands, setVerificationCommands] = useState('');
   const [maxSteps, setMaxSteps] = useState(d.max_steps_default);
   const [tokenBudget, setTokenBudget] = useState(d.token_budget_default);
   const [files, setFiles] = useState<File[]>([]);
@@ -51,6 +64,11 @@ export function PublishForm({
   const [error, setError] = useState<string | null>(null);
   const idempotencyKey = useRef(crypto.randomUUID());
   const needsDestinations = allowNetwork || useBrowser;
+  const hasProject = Boolean(projectPath.trim());
+  const criteria = successCriteria
+    .split('\n')
+    .map((item) => item.trim())
+    .filter(Boolean);
 
   async function chooseDesktopProject() {
     setError(null);
@@ -65,6 +83,10 @@ export function PublishForm({
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     if (goal.trim().length < 4 || submitting) return;
+    if (hasProject && criteria.length === 0) {
+      setError('Local project tasks require at least one explicit success criterion.');
+      return;
+    }
     if (needsDestinations && !egressHosts.trim()) {
       setError('Shell and browser network access require at least one destination host.');
       return;
@@ -92,6 +114,13 @@ export function PublishForm({
       if (useVision) capabilities.push('vision');
       const base = {
         goal: goal.trim(),
+        success_criteria: criteria.length > 0 ? criteria : null,
+        verification_commands: verificationCommands
+          .split('\n')
+          .map((item) => item.trim())
+          .filter(Boolean),
+        verification_mode:
+          hasProject || criteria.length > 0 ? ('strict' as const) : ('judgment' as const),
         project_path: projectPath.trim() || null,
         limits,
         capabilities,
@@ -143,16 +172,57 @@ export function PublishForm({
       />
 
       <div className="mt-2 flex flex-wrap gap-2">
-        {EXAMPLES.map((ex) => (
+        {EXAMPLES.map((example) => (
           <button
-            key={ex}
+            key={example.goal}
             type="button"
-            onClick={() => setGoal(ex)}
+            onClick={() => {
+              setGoal(example.goal);
+              setSuccessCriteria(example.criteria);
+            }}
             className="rounded-full border border-black/10 px-2.5 py-1 text-xs opacity-70 hover:opacity-100 dark:border-white/15"
           >
-            {ex.length > 42 ? `${ex.slice(0, 42)}…` : ex}
+            {example.goal.length > 42 ? `${example.goal.slice(0, 42)}…` : example.goal}
           </button>
         ))}
+      </div>
+
+      <div className="mt-4 rounded-xl border border-blue-500/20 bg-blue-500/[0.04] p-3">
+        <label
+          htmlFor="success-criteria"
+          className="text-xs font-semibold text-blue-700 dark:text-blue-300"
+        >
+          Acceptance contract {hasProject ? '(required)' : '(optional)'}
+        </label>
+        <textarea
+          id="success-criteria"
+          aria-label="Acceptance contract"
+          value={successCriteria}
+          onChange={(event) => setSuccessCriteria(event.target.value)}
+          required={hasProject}
+          rows={3}
+          placeholder="One concrete success criterion per line"
+          className="mt-2 w-full resize-y rounded-lg border border-black/10 bg-transparent px-3 py-2 text-xs outline-none focus:border-blue-500/60 dark:border-white/15"
+        />
+        <label
+          htmlFor="verification-commands"
+          className="mt-3 block text-xs font-medium opacity-70"
+        >
+          Required verification commands <span className="font-normal opacity-60">(optional)</span>
+        </label>
+        <textarea
+          id="verification-commands"
+          aria-label="Required verification commands"
+          value={verificationCommands}
+          onChange={(event) => setVerificationCommands(event.target.value)}
+          rows={2}
+          placeholder="One command per line, e.g. pnpm test"
+          className="mt-1 w-full resize-y rounded-lg border border-black/10 bg-transparent px-3 py-2 font-mono text-xs outline-none focus:border-blue-500/60 dark:border-white/15"
+        />
+        <p className="mt-2 text-[11px] opacity-55">
+          In strict mode, every criterion needs passing execution evidence. Loop also discovers
+          repository quality gates and compares them with the pre-change baseline.
+        </p>
       </div>
 
       {d.local_projects_enabled && (
@@ -329,7 +399,10 @@ export function PublishForm({
         <button
           type="submit"
           disabled={
-            goal.trim().length < 4 || submitting || (needsDestinations && !egressHosts.trim())
+            goal.trim().length < 4 ||
+            submitting ||
+            (hasProject && criteria.length === 0) ||
+            (needsDestinations && !egressHosts.trim())
           }
           className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-40"
         >

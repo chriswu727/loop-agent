@@ -14,7 +14,7 @@ import httpx
 
 from app.core.config import settings
 from app.core.llm.base import FallbackEvent, LLMError, LLMResult
-from app.core.llm.providers import wrap_parse_error
+from app.core.llm.providers import provider_model, wrap_parse_error
 from app.core.llm.registry import PROVIDERS, api_key_for, configured_providers, new_http_client
 from app.core.logging import get_logger
 
@@ -105,6 +105,7 @@ class FallbackLLMClient:
                         provider=provider,
                         tokens=spent + success_tokens,
                         fallbacks=fallbacks,
+                        model=provider_model(provider),
                     )
                 except LLMError as exc:
                     last_error = exc

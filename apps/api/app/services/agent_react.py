@@ -30,7 +30,7 @@ from pathlib import Path
 from typing import Any
 
 from app.core.config import settings
-from app.core.llm import LLMClient, LLMError
+from app.core.llm import LLMClient, LLMError, LLMResult
 from app.core.logging import get_logger
 from app.core.redaction import redact_secrets
 from app.db.models.task import TaskModel
@@ -55,13 +55,26 @@ from app.domain.capability import (
 from app.domain.task import StopReason, TaskStatus
 from app.repositories.step import StepRepository
 from app.repositories.task import TaskRepository
+from app.services.completion import (
+    attach_baseline,
+    completion_gates_pass,
+    discover_project_checks,
+    merge_completion_checks,
+    regressions,
+)
 from app.services.ledger import genesis_hash, step_hash
 from app.services.memory import MemoryStore, scoped_memory_root
 from app.services.progress import HistoryEntry, ProgressGuard, compact_history
 from app.services.prompts import plan_prompts, understand_prompts, verify_prompts
 from app.services.receipt import RECEIPT_SCHEMA, build_receipt, refresh_receipt_authority
 from app.services.skills import SkillStore
-from app.services.verification import checks_summary, execution_coverage_complete, run_checks
+from app.services.verification import (
+    CheckResult,
+    as_dicts,
+    checks_summary,
+    execution_coverage_complete,
+    run_checks,
+)
 from app.tools import VALID_TOOLS, CapabilityEnvelope, ToolExecutor, ToolStatus, Workspace
 from app.tools.calendar import CalendarTools
 from app.tools.egress import EgressAuditClient
@@ -792,6 +805,17 @@ class AgentReactService:
             self.memory.snapshot() if envelope.permits_capability(Capability.MEMORY_READ) else ""
         )
         self._conversation = await self._build_conversation(task)  # earlier turns of this chat
+        if task.project_base_commit and not any(
+            check.get("source") == "system" for check in (task.required_checks or [])
+        ):
+            task.required_checks = merge_completion_checks(
+                task.required_checks or [],
+                discover_project_checks(workspace.root),
+                criterion_count=len(task.rubric or []),
+            )
+        if task.steps_used == 0 and task.required_checks and not task.baseline_checks:
+            baseline = await self._run_completion_checks(task, workspace, task.required_checks)
+            task.baseline_checks = as_dicts(baseline)
         await self._commit()
         resuming = task.steps_used > 0
         log.info("agent.start", task_id=str(task.id), resuming=resuming, goal=task.goal[:80])
@@ -879,6 +903,42 @@ class AgentReactService:
         log.warning("agent.sandbox_downgrade", wanted=settings.agent_sandbox)
         return None, "inline", None
 
+    async def _run_completion_checks(
+        self,
+        task: TaskModel,
+        workspace: Workspace,
+        checks: list[dict[str, Any]],
+    ) -> list[CheckResult]:
+        return await run_checks(
+            checks,
+            workspace,
+            approval_mode=settings.agent_approval_mode,
+            command_timeout=settings.agent_command_timeout_seconds,
+            output_limit=settings.agent_command_output_limit,
+            sandbox_image=self._sandbox_image,
+            sandbox_backend=self._sandbox_backend,
+            sandbox_memory=settings.agent_sandbox_memory,
+            sandbox_cpus=settings.agent_sandbox_cpus,
+            egress_allowed=self._egress_allowed,
+            envelope=CapabilityEnvelope.from_capabilities(
+                task.resolved_capabilities,
+                egress_hosts=task.egress_hosts,
+            ),
+            criterion_count=len(task.rubric or []),
+            egress_proxy_url=settings.agent_egress_proxy_url,
+            egress_network=settings.agent_egress_docker_network,
+            egress_token_factory=(
+                lambda: (
+                    self._authority_token_factory(EGRESS_PROXY_AUDIENCE)
+                    if self._authority_token_factory is not None
+                    else ""
+                )
+            ),
+            docker_workspace_volume=settings.agent_docker_workspace_volume,
+            docker_workspace_mount=settings.agent_docker_workspace_mount,
+            infer_criterion_ids=task.verification_mode != "strict",
+        )
+
     async def _start_browser(self, envelope: CapabilityEnvelope) -> McpBrowser | None:
         if not (
             envelope.permits_capability(Capability.NET_BROWSER) and settings.agent_browser_enabled
@@ -900,7 +960,9 @@ class AgentReactService:
         if not task.rubric:  # only on a fresh run, not a resume
             understand_budget = max(0, task.token_budget - task.tokens_used - verification_reserve)
             try:
-                rubric, tokens = await self._understand(task.goal, understand_budget)
+                rubric, understand_result = await self._understand(task.goal, understand_budget)
+                tokens = understand_result.tokens
+                self._record_model_use(task, understand_result)
             except LLMError as exc:
                 # A transient blip on the very first call shouldn't kill the task —
                 # fall back to a generic rubric; the plan phase (with retry) does the
@@ -980,6 +1042,8 @@ class AgentReactService:
                 allow_spawn=task.depth < settings.agent_max_spawn_depth,
                 today=date.today().isoformat(),
                 progress_state=guard.state(verification_reserve),
+                verification_mode=task.verification_mode,
+                required_checks=self._required_checks_view(task.required_checks or []),
             )
             try:
                 decision = await self.llm.complete(
@@ -996,6 +1060,7 @@ class AgentReactService:
                     await self._finish(task, StopReason.BUDGET_EXHAUSTED)
                     return
                 raise
+            self._record_model_use(task, decision)
             step_tokens = decision.tokens
             thought, tool, args = self._parse_decision(_extract_json(decision.content))
 
@@ -1369,6 +1434,10 @@ class AgentReactService:
             project_id=task.project_id,
             status=TaskStatus.PENDING.value,
             rubric=[],
+            criteria_source="generated",
+            verification_mode="judgment",
+            required_checks=[],
+            baseline_checks=[],
             requested_capabilities=sorted_capabilities(child_capabilities),
             resolved_capabilities=[],
             allowed_tools=allowed if isinstance(allowed, list) else None,
@@ -1383,6 +1452,8 @@ class AgentReactService:
             token_budget=child_budget,
             summary=None,
             verification_score=0,
+            executor_models=[],
+            verifier_model=None,
             steps_used=0,
             tokens_used=0,
             workspace_path=None,
@@ -1476,7 +1547,7 @@ class AgentReactService:
 
     # --- LLM phases -------------------------------------------------------
 
-    async def _understand(self, goal: str, token_budget: int) -> tuple[list[str], int]:
+    async def _understand(self, goal: str, token_budget: int) -> tuple[list[str], LLMResult]:
         system, user = understand_prompts(goal, self._conversation)
         result = await self.llm.complete(
             system,
@@ -1492,7 +1563,7 @@ class AgentReactService:
             rubric = [ln.strip("-* ").strip() for ln in result.content.splitlines() if ln.strip()][
                 :6
             ]
-        return (rubric or ["Fully and correctly satisfies the task"]), result.tokens
+        return (rubric or ["Fully and correctly satisfies the task"]), result
 
     async def _handle_finish(
         self,
@@ -1508,41 +1579,22 @@ class AgentReactService:
         verdict. Returns (accepted, score, summary, verify_tokens)."""
         summary = str(args.get("summary", "")).strip() or "(no summary provided)"
         raw_checks = args.get("checks")
-        checks = (
-            [c for c in raw_checks if isinstance(c, dict)] if isinstance(raw_checks, list) else []
+        proposed_checks = (
+            [{**c, "source": "agent"} for c in raw_checks if isinstance(c, dict)]
+            if isinstance(raw_checks, list)
+            else []
         )
-
-        check_results = await run_checks(
-            checks,
-            workspace,
-            approval_mode=settings.agent_approval_mode,
-            command_timeout=settings.agent_command_timeout_seconds,
-            output_limit=settings.agent_command_output_limit,
-            sandbox_image=self._sandbox_image,
-            sandbox_backend=self._sandbox_backend,
-            sandbox_memory=settings.agent_sandbox_memory,
-            sandbox_cpus=settings.agent_sandbox_cpus,
-            egress_allowed=self._egress_allowed,
-            envelope=CapabilityEnvelope.from_capabilities(
-                task.resolved_capabilities,
-                egress_hosts=task.egress_hosts,
-            ),
+        checks = merge_completion_checks(
+            task.required_checks or [],
+            proposed_checks,
             criterion_count=len(task.rubric or []),
-            egress_proxy_url=settings.agent_egress_proxy_url,
-            egress_network=settings.agent_egress_docker_network,
-            egress_token_factory=(
-                lambda: (
-                    self._authority_token_factory(EGRESS_PROXY_AUDIENCE)
-                    if self._authority_token_factory is not None
-                    else ""
-                )
-            ),
-            docker_workspace_volume=settings.agent_docker_workspace_volume,
-            docker_workspace_mount=settings.agent_docker_workspace_mount,
         )
-        checks_passed = all(r.passed for r in check_results) if check_results else None
+        check_results = attach_baseline(
+            await self._run_completion_checks(task, workspace, checks),
+            task.baseline_checks or [],
+        )
+        gates_passed = completion_gates_pass(check_results)
         coverage_complete = execution_coverage_complete(check_results, len(task.rubric or []))
-        verified_by = "execution" if coverage_complete else "judgment"
 
         system, user = verify_prompts(
             task.goal,
@@ -1578,10 +1630,12 @@ class AgentReactService:
                 await self._finish(task, StopReason.BUDGET_EXHAUSTED)
                 return True, 0, summary, exc.tokens_spent
             raise
+        self._record_model_use(task, result, verifier=True)
         parsed = _extract_json(result.content)
         if isinstance(parsed, dict):
             score = _clamp_score(parsed.get("score"))
-            missing = parsed.get("missing") or []
+            raw_missing = parsed.get("missing") or []
+            missing = [str(item) for item in raw_missing] if isinstance(raw_missing, list) else []
             llm_met = bool(parsed.get("met"))
             # Strict parse: omit -> True (prior behavior), but the stronger label
             # must be EARNED, so a string "false"/"no" or a null doesn't slip through
@@ -1593,19 +1647,26 @@ class AgentReactService:
         else:
             score, missing, llm_met, substantiate = 0, ["verifier returned no verdict"], False, True
 
-        # Passing checks that don't actually substantiate the goal (e.g. a tautological
-        # `echo hi`) don't earn the stronger "execution" label — degrade to judgment so
-        # execution-verified always means "checks that really prove the goal passed".
-        if check_results and not substantiate:
-            verified_by = "judgment"
-
-        # A run with checks is accepted only if its checks actually pass; a run
-        # without checks falls back to judgment (and is labelled as such).
-        met = llm_met and score >= settings.agent_acceptance_score
-        if check_results and not checks_passed:
+        execution_ready = bool(
+            check_results and coverage_complete and gates_passed and substantiate
+        )
+        verified_by = "execution" if execution_ready else "judgment"
+        met = llm_met and score >= settings.agent_acceptance_score and gates_passed
+        if task.verification_mode == "strict" and not execution_ready:
             met = False
+            if not coverage_complete:
+                missing.append("Every success criterion needs a mapped execution check.")
+            if not gates_passed:
+                missing.append("A required check failed or a project quality gate regressed.")
+            if check_results and not substantiate:
+                missing.append("The proposed checks do not substantiate the task goal.")
+        for regression in regressions(check_results):
+            missing.append(f"Regression in {regression.target}.")
 
-        verdict = f"verifier: score {score}, met={met}, verified_by={verified_by}"
+        verdict = (
+            f"verifier: score {score}, met={met}, verified_by={verified_by}, "
+            f"mode={task.verification_mode}, coverage_complete={coverage_complete}"
+        )
         if check_results:
             verdict += "\nchecks:\n" + checks_summary(check_results)
         if missing:
@@ -1640,6 +1701,16 @@ class AgentReactService:
         return False, score, summary, result.tokens
 
     # --- Persistence helpers ---------------------------------------------
+
+    @staticmethod
+    def _record_model_use(task: TaskModel, result: LLMResult, *, verifier: bool = False) -> None:
+        identity = {"provider": result.provider, "model": result.model}
+        if verifier:
+            task.verifier_model = identity
+            return
+        used = list(task.executor_models or [])
+        if identity not in used:
+            task.executor_models = [*used, identity]
 
     def _parse_decision(self, decision: Any) -> tuple[str, str | None, dict[str, Any]]:
         if not isinstance(decision, dict):
@@ -1746,6 +1817,17 @@ class AgentReactService:
             + "\n\n[RECENT STEPS]\n"
             + "\n".join(entry.render() for entry in recent)
         )
+
+    @staticmethod
+    def _required_checks_view(checks: list[dict[str, Any]]) -> str:
+        lines = []
+        for check in checks:
+            target = check.get("command") or check.get("path") or "(unknown)"
+            lines.append(
+                f"- {check.get('id', 'check')} [{check.get('source', 'contract')}] "
+                f"{check.get('kind', 'unknown')}: {target}"
+            )
+        return "\n".join(lines)
 
     @staticmethod
     def _stop_summary(task: TaskModel, reason: StopReason) -> str:

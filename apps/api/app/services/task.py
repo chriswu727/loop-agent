@@ -100,12 +100,30 @@ class TaskService:
             else None
         )
         max_steps, token_budget = self._resolve_limits(payload.limits)
+        criteria = list(payload.success_criteria or [])
+        verification_mode = payload.verification_mode or (
+            "strict" if binding is not None or criteria else "judgment"
+        )
+        required_checks = [
+            {
+                "id": f"contract-{index:03d}",
+                "kind": "command",
+                "command": command,
+                "expect_exit": 0,
+                "source": "contract",
+            }
+            for index, command in enumerate(payload.verification_commands, start=1)
+        ]
         task = await self.tasks.create(
             goal=payload.goal.strip(),
             owner_id=self.subject,
             project_id=payload.project_id,
             status=TaskStatus.PENDING.value,
-            rubric=[],
+            rubric=criteria,
+            criteria_source="user" if criteria else "generated",
+            verification_mode=verification_mode,
+            required_checks=required_checks,
+            baseline_checks=[],
             requested_capabilities=(
                 sorted_capabilities(payload.capabilities)
                 if payload.capabilities is not None
@@ -127,6 +145,8 @@ class TaskService:
             token_budget=token_budget,
             summary=None,
             verification_score=0,
+            executor_models=[],
+            verifier_model=None,
             authority_audit=[],
             steps_used=0,
             tokens_used=0,
@@ -205,7 +225,15 @@ class TaskService:
             owner_id=self.subject,
             project_id=original.project_id,
             status=TaskStatus.PENDING.value,
-            rubric=[],
+            rubric=(list(original.rubric or []) if original.criteria_source == "user" else []),
+            criteria_source=original.criteria_source,
+            verification_mode=original.verification_mode,
+            required_checks=[
+                check
+                for check in (original.required_checks or [])
+                if check.get("source") == "contract"
+            ],
+            baseline_checks=[],
             requested_capabilities=original.requested_capabilities,
             resolved_capabilities=[],
             allowed_tools=original.allowed_tools,
@@ -224,6 +252,8 @@ class TaskService:
             token_budget=token_budget,
             summary=None,
             verification_score=0,
+            executor_models=[],
+            verifier_model=None,
             steps_used=0,
             tokens_used=0,
             workspace_path=None,
@@ -363,8 +393,27 @@ class TaskService:
         elif state in {"pending", "reverted"}:
             report = await self.get_receipt_report(task_id)
             receipt_change_set = report["receipt"].get("change_set") if report else None
+            receipt_coverage = report["receipt"].get("coverage") if report else None
+            expected_criteria = {
+                f"criterion-{index:03d}" for index in range(1, len(task.rubric or []) + 1)
+            }
+            covered_criteria = (
+                {
+                    value
+                    for value in receipt_coverage.get("covered_criteria", [])
+                    if isinstance(value, str)
+                }
+                if isinstance(receipt_coverage, dict)
+                else set()
+            )
             if not report or not report.get("valid"):
                 blocked_reason = "Receipt integrity verification failed."
+            elif (
+                not isinstance(receipt_coverage, dict)
+                or receipt_coverage.get("execution_backed") is not True
+                or not expected_criteria <= covered_criteria
+            ):
+                blocked_reason = "Receipt does not prove every acceptance criterion."
             elif (
                 not isinstance(receipt_change_set, dict)
                 or receipt_change_set.get("patch_sha256") != snapshot.patch_sha256
@@ -546,6 +595,7 @@ class TaskService:
         return {"receipt": receipt, **report}
 
     async def replay_receipt(self, task_id: uuid.UUID) -> dict[str, Any]:
+        from app.services.completion import attach_baseline, completion_gates_pass
         from app.services.verification import as_dicts, run_checks
         from app.tools.envelope import CapabilityEnvelope
 
@@ -582,21 +632,25 @@ class TaskService:
         if backend is None and settings.agent_sandbox not in {"off", "inline"}:
             RECEIPT_REPLAYS.labels(outcome="sandbox_refused").inc()
             raise ConflictError("Replay refuses the host because no sandbox is available.")
-        results = await run_checks(
-            definitions,
-            ws,
-            envelope=CapabilityEnvelope.from_capabilities(
-                task.resolved_capabilities, egress_hosts=task.egress_hosts
+        results = attach_baseline(
+            await run_checks(
+                definitions,
+                ws,
+                envelope=CapabilityEnvelope.from_capabilities(
+                    task.resolved_capabilities, egress_hosts=task.egress_hosts
+                ),
+                sandbox_image=settings.agent_sandbox_image if backend else None,
+                sandbox_backend=backend,
+                command_timeout=settings.agent_command_timeout_seconds,
+                output_limit=settings.agent_command_output_limit,
+                sandbox_memory=settings.agent_sandbox_memory,
+                sandbox_cpus=settings.agent_sandbox_cpus,
+                criterion_count=len(task.rubric or []),
+                infer_criterion_ids=False,
             ),
-            sandbox_image=settings.agent_sandbox_image if backend else None,
-            sandbox_backend=backend,
-            command_timeout=settings.agent_command_timeout_seconds,
-            output_limit=settings.agent_command_output_limit,
-            sandbox_memory=settings.agent_sandbox_memory,
-            sandbox_cpus=settings.agent_sandbox_cpus,
-            criterion_count=len(task.rubric or []),
+            receipt.get("baseline_checks") or [],
         )
-        passed = bool(results) and all(result.passed for result in results)
+        passed = bool(results) and completion_gates_pass(results)
         RECEIPT_REPLAYS.labels(outcome="passed" if passed else "failed").inc()
         return {
             "passed": passed,

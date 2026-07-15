@@ -60,10 +60,17 @@ describe('PublishForm desktop binding', () => {
     fireEvent.change(screen.getByLabelText('Publish a task'), {
       target: { value: 'Make the verified desktop change' },
     });
+    fireEvent.change(screen.getByLabelText('Acceptance contract'), {
+      target: { value: 'The requested change is present\nThe complete test suite passes' },
+    });
     fireEvent.click(screen.getByRole('button', { name: /Run the agent/ }));
 
     await waitFor(() => expect(publish).toHaveBeenCalledOnce());
-    expect(publish.mock.calls[0]?.[0]).toMatchObject({ project_path: '.' });
+    expect(publish.mock.calls[0]?.[0]).toMatchObject({
+      project_path: '.',
+      success_criteria: ['The requested change is present', 'The complete test suite passes'],
+      verification_mode: 'strict',
+    });
     expect(JSON.stringify(publish.mock.calls[0]?.[0])).not.toContain('/Users/');
     expect(push).toHaveBeenCalledWith('/tasks/task-1');
   });
@@ -84,6 +91,9 @@ describe('PublishForm desktop binding', () => {
 
     fireEvent.change(screen.getByLabelText('Publish a task'), {
       target: { value: 'Do not race the desktop bridge' },
+    });
+    fireEvent.change(screen.getByLabelText('Acceptance contract'), {
+      target: { value: 'The requested change is present' },
     });
     fireEvent.click(screen.getByRole('button', { name: /Run the agent/ }));
 

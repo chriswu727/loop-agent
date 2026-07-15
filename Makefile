@@ -122,7 +122,7 @@ audit: ## Audit production Python and JavaScript dependencies
 	cd apps/api && . .venv/bin/activate && pip-audit
 
 .PHONY: enforcement-acceptance
-enforcement-acceptance: ## Verify real Redis restart, fail-closed readiness, and cross-process revocation
+enforcement-acceptance: ## Verify Redis restart, worker recovery, fail-closed readiness, and revocation
 	bash scripts/enforcement-acceptance.sh
 
 # ---------- Kubernetes ----------

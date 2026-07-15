@@ -51,6 +51,8 @@ def plan_prompts(
     allow_spawn: bool = False,
     today: str = "",
     progress_state: str = "",
+    verification_mode: str = "judgment",
+    required_checks: str = "",
 ) -> tuple[str, str]:
     system = (
         "You are an autonomous agent that completes a task by taking ONE action at "
@@ -89,6 +91,9 @@ def plan_prompts(
         "- When you finish, attach checks that PROVE the work (run the code, assert "
         "a file exists/contains text); the verifier re-runs them, so unproven "
         "claims will be rejected.\n"
+        "- Map every finish check to the exact success criteria it proves using "
+        "criterion_ids. In strict mode every criterion must have passing execution "
+        "evidence; prose and the verifier's opinion cannot substitute for it.\n"
         "- Call finish ONLY when every success criterion is demonstrably met, with "
         "evidence in your observations.\n"
         "- Watch your remaining step budget. When it is low and the goal is already "
@@ -106,7 +111,12 @@ def plan_prompts(
         "place. Python with openpyxl (xlsx), python-docx (docx) and pandas (csv) "
         "is available for editing spreadsheets and documents."
     )
-    criteria = "\n".join(f"- {c}" for c in rubric) or "- Fully satisfies the task"
+    criteria = (
+        "\n".join(
+            f"- [criterion-{index:03d}] {criterion}" for index, criterion in enumerate(rubric, 1)
+        )
+        or "- [criterion-001] Fully satisfies the task"
+    )
     restriction = ""
     if allowed_tools is not None:
         restriction = (
@@ -140,6 +150,11 @@ def plan_prompts(
     # when shell is off, must ask the user — so dated reports/logs/changelogs break.
     date_block = f"Today's date is {today}.\n\n" if today else ""
     progress_block = f"Execution state: {progress_state}.\n\n" if progress_state else ""
+    verification_block = (
+        f"Verification mode: {verification_mode}.\n"
+        f"Required checks (Loop runs these even if you omit them):\n"
+        f"{required_checks or '(none)'}\n\n"
+    )
     user = (
         f"Goal:\n{goal}\n\n"
         f"Success criteria:\n{criteria}\n\n"
@@ -152,6 +167,7 @@ def plan_prompts(
         f"Workspace files:\n{workspace_tree}\n\n"
         f"What you have done so far:\n{history or '(nothing yet)'}\n\n"
         f"{progress_block}"
+        f"{verification_block}"
         f"Budget left: {steps_left} steps, ~{tokens_left} tokens.\n\n"
         "Decide the single next action. Respond with the JSON object only."
     )
@@ -186,15 +202,18 @@ def verify_prompts(
         f"{contents_block}"
         f"Machine check results (re-run independently):\n{checks_summary}\n\n"
         f"The agent says it is done:\n{summary}\n\n"
-        "The agent WROTE ITS OWN checks, so judge whether they actually substantiate "
-        "the goal or are trivial/irrelevant: a check like `echo hi` (exit 0) passes "
-        "but proves nothing. Set checks_substantiate=false when the checks don't "
-        "meaningfully verify the criteria — the run is then judgment-quality, not "
-        "execution-proof.\n"
+        "Checks are source-labelled: contract checks came from the user, system checks "
+        "were discovered from the project, and agent checks were proposed during the "
+        "run. Judge whether the combined passing evidence actually substantiates the "
+        "criteria rather than being trivial or irrelevant. A system check marked FAIL "
+        "with baseline=FAIL was already broken before this task; keep it visible, but do "
+        "not reject the task solely for that pre-existing failure. Any other failed check "
+        "is blocking. Set checks_substantiate=false when the evidence does not meaningfully "
+        "verify the criteria — the run is then judgment-quality, not execution-proof.\n"
         "Return ONLY a JSON object: "
         '{"score": <0-100>, "met": <true|false>, '
         '"checks_substantiate": <true|false>, '
         '"missing": [<short strings: what is not yet satisfied>]}. '
-        "met=true only if every criterion is clearly satisfied and no check failed."
+        "met=true only if every criterion is clearly satisfied and no blocking check failed."
     )
     return system, user

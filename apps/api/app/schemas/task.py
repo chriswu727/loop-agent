@@ -9,7 +9,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.core.config import settings
 from app.domain.authority_token import AuthorityTokenError, normalize_hosts
@@ -28,6 +28,9 @@ class LimitsIn(BaseModel):
 
 class TaskCreate(BaseModel):
     goal: str = Field(min_length=4, max_length=4_000)
+    success_criteria: list[str] | None = None
+    verification_commands: list[str] = Field(default_factory=list)
+    verification_mode: str | None = Field(default=None, pattern=r"^(strict|judgment)$")
     project_id: str = Field(default="default", min_length=1, max_length=100, pattern=r"^[\w.-]+$")
     # Optional path relative to LOOP_LOCAL_PROJECTS_ROOT. The source repository
     # must be clean; execution happens in a detached, source-unlinked clone.
@@ -60,6 +63,28 @@ class TaskCreate(BaseModel):
     skill: str | None = None
     idempotency_key: str | None = Field(default=None, min_length=8, max_length=128)
 
+    @field_validator("success_criteria")
+    @classmethod
+    def validate_success_criteria(cls, value: list[str] | None) -> list[str] | None:
+        if value is None:
+            return None
+        criteria = [item.strip() for item in value if item.strip()]
+        if not 1 <= len(criteria) <= 12:
+            raise ValueError("success_criteria must contain between 1 and 12 items")
+        if any(len(item) > 500 for item in criteria):
+            raise ValueError("each success criterion must be at most 500 characters")
+        return criteria
+
+    @field_validator("verification_commands")
+    @classmethod
+    def validate_verification_commands(cls, value: list[str]) -> list[str]:
+        commands = [item.strip() for item in value if item.strip()]
+        if len(commands) > 8:
+            raise ValueError("verification_commands may contain at most 8 commands")
+        if any(len(item) > 1_000 for item in commands):
+            raise ValueError("each verification command must be at most 1000 characters")
+        return commands
+
     @model_validator(mode="after")
     def validate_network_authority(self) -> TaskCreate:
         requested = set(self.capabilities or [])
@@ -76,6 +101,8 @@ class TaskCreate(BaseModel):
                 self.egress_hosts = sorted(normalize_hosts(self.egress_hosts))
             except AuthorityTokenError as exc:
                 raise ValueError(str(exc)) from exc
+        if self.project_path and self.verification_mode != "judgment" and not self.success_criteria:
+            raise ValueError("strict local-project tasks require user-confirmed success_criteria")
         return self
 
 
@@ -149,6 +176,10 @@ class TaskRead(BaseModel):
     project_id: str
     status: str
     rubric: list[str]
+    criteria_source: str
+    verification_mode: str
+    required_checks: list[dict[str, object]]
+    baseline_checks: list[dict[str, object]]
     pending_question: str | None
     allowed_tools: list[str] | None
     authority: AuthorityRead
@@ -190,6 +221,10 @@ class TaskRead(BaseModel):
             project_id=m.project_id,  # type: ignore[attr-defined]
             status=m.status,  # type: ignore[attr-defined]
             rubric=m.rubric or [],  # type: ignore[attr-defined]
+            criteria_source=m.criteria_source,  # type: ignore[attr-defined]
+            verification_mode=m.verification_mode,  # type: ignore[attr-defined]
+            required_checks=m.required_checks or [],  # type: ignore[attr-defined]
+            baseline_checks=m.baseline_checks or [],  # type: ignore[attr-defined]
             pending_question=m.pending_question,  # type: ignore[attr-defined]
             allowed_tools=m.allowed_tools,  # type: ignore[attr-defined]
             authority=AuthorityRead(

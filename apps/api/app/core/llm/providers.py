@@ -24,6 +24,17 @@ GLM_MODEL = "glm-4-flash"
 ANTHROPIC_MODEL = "claude-sonnet-4-6"
 
 
+def provider_model(provider: str) -> str:
+    return {
+        "anthropic": ANTHROPIC_MODEL,
+        "deepseek": settings.deepseek_model,
+        "gemini": GEMINI_MODEL,
+        "glm": GLM_MODEL,
+        "ollama": settings.ollama_model,
+        "mock": "deterministic-demo",
+    }.get(provider, "unknown")
+
+
 def _raise_for_status(resp: httpx.Response, provider: str) -> None:
     if resp.status_code >= 400:
         body = resp.text[:500]

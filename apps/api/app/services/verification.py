@@ -42,6 +42,8 @@ class CheckResult:
     check_id: str = ""
     criterion_ids: tuple[str, ...] = ()
     definition: dict[str, Any] | None = None
+    source: str = "agent"
+    baseline_passed: bool | None = None
 
 
 VERIFY_DIR_PREFIX = "verify-"
@@ -81,6 +83,7 @@ async def run_checks(
     egress_token_factory: Callable[[], str] | None = None,
     docker_workspace_volume: str | None = None,
     docker_workspace_mount: str | None = None,
+    infer_criterion_ids: bool = True,
 ) -> list[CheckResult]:
     """Re-run each check on a fresh copy of the workspace. Never raises — a bad
     check definition becomes a failed result the verifier can act on."""
@@ -120,7 +123,7 @@ async def run_checks(
         results: list[CheckResult] = []
         for index, check in enumerate(checks, start=1):
             mapped_check = dict(check)
-            if not mapped_check.get("criterion_ids"):
+            if infer_criterion_ids and not mapped_check.get("criterion_ids"):
                 if criterion_count == 1:
                     mapped_check["criterion_ids"] = ["criterion-001"]
                 elif len(checks) == criterion_count:
@@ -153,6 +156,7 @@ async def _run_one(
             check_id=check_id,
             criterion_ids=criterion_ids,
             definition=definition,
+            source=str(check.get("source") or "agent")[:40],
         )
 
     if kind == "command":
@@ -201,7 +205,10 @@ def checks_summary(results: list[CheckResult]) -> str:
     lines = []
     for r in results:
         mark = "PASS" if r.passed else "FAIL"
-        lines.append(f"[{mark}] {r.kind} {r.target}: {r.evidence}")
+        baseline = ""
+        if r.baseline_passed is not None:
+            baseline = f"; baseline={'PASS' if r.baseline_passed else 'FAIL'}"
+        lines.append(f"[{mark}] {r.source} {r.kind} {r.target}: {r.evidence}{baseline}")
     return "\n".join(lines)
 
 
@@ -213,5 +220,7 @@ def execution_coverage_complete(results: list[CheckResult], criterion_count: int
     if not results or criterion_count <= 0:
         return False
     expected = {f"criterion-{index:03d}" for index in range(1, criterion_count + 1)}
-    covered = {criterion for result in results for criterion in result.criterion_ids}
+    covered = {
+        criterion for result in results if result.passed for criterion in result.criterion_ids
+    }
     return expected <= covered
