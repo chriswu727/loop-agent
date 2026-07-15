@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import { mkdtemp, readdir, readFile, rm, stat } from 'node:fs/promises';
+import { mkdtemp, readdir, readFile, realpath, rm, stat } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -29,7 +29,10 @@ async function findExecutable(directory) {
   return null;
 }
 
-const executable = await findExecutable(outputRoot);
+const configuredExecutable = process.env.LOOP_DESKTOP_EXECUTABLE;
+const executable = configuredExecutable
+  ? await realpath(path.resolve(configuredExecutable))
+  : await findExecutable(outputRoot);
 if (!executable) throw new Error('Could not find the packaged Loop Desktop executable.');
 const fuses = await getCurrentFuseWire(executable);
 const expectedFuses = new Map([
