@@ -15,6 +15,7 @@ COPY apps/web/package.json apps/web/package.json
 COPY packages/eslint-config/package.json packages/eslint-config/package.json
 COPY packages/tsconfig/package.json packages/tsconfig/package.json
 COPY packages/api-contract/package.json packages/api-contract/package.json
+COPY packages/desktop-contract/package.json packages/desktop-contract/package.json
 RUN pnpm install --frozen-lockfile
 
 # ---- builder: build the standalone server ----

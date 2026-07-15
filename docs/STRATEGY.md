@@ -11,10 +11,13 @@
 > resolution, pins DNS, and records durable per-run audit events in horizontally
 > shared Redis state. A local deployment can also bind a clean Git repository to an
 > isolated clone and move its execution-verified, Receipt-bound patch through
-> review, Apply, Discard, and conflict-safe Undo. Remaining work that cannot honestly
-> be marked done: a packaged desktop shell and native project picker, durable desktop
-> crash recovery, a meaningful skill marketplace, broader channels, multi-replica
-> browser-session routing, and production/adoption evidence.
+> review, Apply, Discard, and conflict-safe Undo. A packaged Electron shell now adds
+> a native single-project picker, private provider/runtime credentials, secure IPC,
+> full local-stack supervision, interrupted-session detection, and macOS/Windows/Linux
+> package plus startup-smoke CI. Remaining work that cannot honestly be marked done:
+> signed/notarized public desktop releases and auto-update, a richer per-hunk review
+> UI, a meaningful skill marketplace, broader channels, multi-replica browser-session
+> routing, and production/adoption evidence.
 
 _Synthesized by a multi-agent research workflow (2026-06): 4 verified OpenClaw research dimensions + repo analysis + a 6-lens differentiation panel. Two research dimensions (capabilities, ecosystem) failed structured-output validation and were covered indirectly via the panel; treat those areas as lower-confidence until re-verified._
 
@@ -93,7 +96,7 @@ Generalize Loop's existing restart-safe pause (ask_user -> awaiting_input -> /re
 | Multi-agent routing + Docker-sandboxed non-main sessions | **partial** | Loop is single-agent with per-task workspaces but no containers and no routing. Add universal ephemeral containment (Loop's differentiator — default-on, including the primary path, inverting OpenClaw's posture) now; add per-channel agent routing when chat lands in Phase 4. | L |
 | Sessions (JSONL persistence) + Secure DM per-sender isolation | **partial** | Loop persists per-task steps and isolates workspaces but has no multi-turn session/thread concept or per-sender isolation. Add a session/thread model and per-sender isolation only when chat-app integration lands (Phase 4, per the standing chat-last rule). | M |
 | Local Gateway daemon + typed WebSocket RPC (connect/req/res/event streaming) | **partial** | Loop uses a FastAPI REST control plane with 1.2s polling instead of a long-lived WS gateway — adequate for single-user. Add an SSE/WebSocket event stream for live step streaming (replacing polling) when responsiveness matters; a separate daemon is unnecessary given Loop's server model. | M |
-| Self-host install + daemon + companion node apps | **partial** | Loop ships docker-compose and k8s but no one-command installer or companion apps. Add a `loop onboard` installer that brings up the stack and the preinstalled office/runtime image; Electron/menu-bar companions are post-parity polish. | M |
+| Self-host install + daemon + companion node apps | **partial** | The packaged Electron app now onboards a provider and one native Git project, generates private runtime authority, supervises the full Compose stack, detects interrupted sessions, and packages/smokes on three OSes. Public code signing/notarization, auto-update, and a non-Docker runtime remain. | M |
 | Subscription OAuth auth (ChatGPT/Codex, Claude CLI, Gemini CLI) | **missing** | Optional flat-rate auth path. Low priority relative to capability parity; revisit after the provider registry lands if users want subscription billing instead of metered keys. | M |
 
 ## Roadmap

@@ -12,6 +12,7 @@ around: sandboxed, least-authority, and every task ends in a receipt you can rep
 Runs on a laptop with one LLM API key and no other infrastructure.
 
 [![CI](https://github.com/chriswu727/loop-agent/actions/workflows/ci.yml/badge.svg)](https://github.com/chriswu727/loop-agent/actions/workflows/ci.yml)
+[![Desktop](https://github.com/chriswu727/loop-agent/actions/workflows/desktop.yml/badge.svg)](https://github.com/chriswu727/loop-agent/actions/workflows/desktop.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 [![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/)
 [![Tests](https://img.shields.io/badge/tests-offline-brightgreen.svg)](./apps/api/tests)
@@ -116,6 +117,14 @@ the two axes a chat-log agent can't retrofit:
 
 ## Capabilities
 
+- **Run as a real desktop app** — the Electron shell packages on macOS, Windows,
+  and Linux with a sandboxed, context-isolated renderer and a deliberately narrow
+  preload API. First run stores a provider key in a private desktop state directory,
+  uses the native folder picker to authorize exactly one clean Git repository, and
+  supervises the full local Docker runtime. The renderer sees the project name and
+  relative path `.` — never its native absolute path, Docker socket, runtime keys,
+  or filesystem APIs. An interrupted session is detected on restart; healthy
+  containers are adopted, otherwise the UI offers an explicit checked restart.
 - **Write & run code**, iterating until the checks pass (with self-correction).
 - **Edit an existing local Git project transactionally** — opt a trusted local
   deployment into one projects root, select a clean repository by relative path,
@@ -178,6 +187,32 @@ Open http://localhost:3000, publish anything, and watch it plan → write → ru
 <p align="center">
   <img src="./docs/images/home.png" alt="Loop's publish form: a goal box with example tasks, per-task safety toggles (no shell, allow network, require approval, use browser), a skill picker, and step / token-budget sliders" width="840" />
 </p>
+
+## Desktop app
+
+The desktop path requires Docker Desktop (or Docker Engine with Compose). It runs
+the same API, worker, database, isolated gateways, egress proxy, and per-command
+sandbox as the server deployment rather than replacing them with host execution.
+
+```bash
+corepack enable && pnpm install
+pnpm --filter desktop dev
+```
+
+Enter one supported provider key and choose one clean Git repository. The provider
+key is encrypted through the OS credential service; Loop refuses insecure Linux
+plaintext fallback storage and keeps the key in memory for the current session when
+secure storage is unavailable. Loop then starts the stack, opens the normal task UI,
+and binds every desktop project task to that single repository. Changing projects
+stops the previous runtime before mounting the new one. Runtime credentials and
+ed25519 authority/Receipt keys are generated once, stored with owner-only permissions,
+and reused across clean restarts.
+
+Create the native package/installer for the current OS with
+`pnpm --filter desktop make`; artifacts land under `apps/desktop/out/make`. CI builds
+and startup-smokes macOS, Windows, and Linux artifacts. Public release signing,
+macOS notarization, and auto-update credentials are intentionally not claimed until
+the corresponding platform certificates and release channel are configured.
 
 ## Quickstart (zero infrastructure)
 

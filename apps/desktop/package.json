@@ -1,0 +1,49 @@
+{
+  "name": "desktop",
+  "productName": "Loop Desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Loop's least-authority desktop control plane.",
+  "author": "Loop contributors",
+  "license": "MIT",
+  "type": "module",
+  "main": "dist/main.cjs",
+  "config": {
+    "forge": "forge.config.cjs"
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "pnpm electron:install && pnpm build && electron-forge start",
+    "electron:install": "install-electron --no",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "runtime:stage": "node scripts/stage-runtime.mjs",
+    "package": "pnpm build && pnpm runtime:stage && electron-forge package",
+    "make": "pnpm build && pnpm runtime:stage && electron-forge make",
+    "smoke": "pnpm electron:install && pnpm build && node scripts/smoke.mjs",
+    "smoke:packaged": "node scripts/smoke-packaged.mjs",
+    "clean": "rm -rf dist out runtime"
+  },
+  "devDependencies": {
+    "@electron-forge/cli": "7.11.2",
+    "@electron-forge/maker-deb": "7.11.2",
+    "@electron-forge/maker-squirrel": "7.11.2",
+    "@electron-forge/maker-zip": "7.11.2",
+    "@electron-forge/plugin-fuses": "7.11.2",
+    "@electron-forge/shared-types": "7.11.2",
+    "@electron/fuses": "2.1.3",
+    "@repo/desktop-contract": "workspace:*",
+    "@repo/eslint-config": "workspace:*",
+    "@repo/tsconfig": "workspace:*",
+    "@types/electron-squirrel-startup": "1.0.2",
+    "@types/node": "^26.1.0",
+    "electron": "43.1.0",
+    "electron-squirrel-startup": "1.0.1",
+    "eslint": "9.39.4",
+    "lodash": "4.18.1",
+    "tsup": "8.5.1",
+    "typescript": "5.9.3",
+    "vitest": "4.1.10"
+  }
+}

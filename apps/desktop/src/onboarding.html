@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'none'; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'"
+    />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Loop Desktop</title>
+    <link rel="stylesheet" href="loop-desktop://app/onboarding.css" />
+  </head>
+  <body>
+    <main>
+      <p class="eyebrow">LOOP DESKTOP</p>
+      <h1>Give the agent one project, not your whole machine.</h1>
+      <p class="summary">
+        Loop clones the selected clean Git repository into an isolated workspace. Your source stays
+        untouched until you approve its execution-verified patch.
+      </p>
+      <section aria-live="polite">
+        <div class="status-row">
+          <span id="status-dot" class="dot"></span>
+          <div>
+            <strong id="runtime-status">Checking local runtime…</strong>
+            <p id="project-status">No project selected.</p>
+          </div>
+        </div>
+        <p id="recovery" class="recovery" hidden>
+          Loop detected an interrupted desktop session. Existing containers will be checked before
+          any work resumes.
+        </p>
+        <pre id="error" hidden></pre>
+        <form id="provider-form">
+          <label for="provider">Model provider</label>
+          <div class="provider-fields">
+            <select id="provider" name="provider">
+              <option value="anthropic">Anthropic</option>
+              <option value="deepseek">DeepSeek</option>
+              <option value="gemini">Gemini</option>
+              <option value="glm">GLM</option>
+            </select>
+            <input
+              id="api-key"
+              name="api-key"
+              type="password"
+              minlength="8"
+              maxlength="1024"
+              autocomplete="off"
+              placeholder="Provider API key"
+              required
+            />
+            <button type="submit">Use provider</button>
+          </div>
+          <p id="provider-status">No model provider configured.</p>
+        </form>
+        <div class="actions">
+          <button id="select-project" type="button">Choose a clean Git project</button>
+          <button id="retry" class="secondary" type="button" hidden>Restart local runtime</button>
+        </div>
+      </section>
+      <p class="footnote">
+        The renderer receives only the project name and relative path. Native paths, Docker access,
+        and runtime keys remain in the isolated desktop process.
+      </p>
+    </main>
+    <script src="loop-desktop://app/onboarding.js"></script>
+  </body>
+</html>

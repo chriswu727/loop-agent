@@ -1,0 +1,87 @@
+name: Desktop
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    paths:
+      - '.github/workflows/desktop.yml'
+      - '.npmrc'
+      - 'apps/api/**'
+      - 'apps/desktop/**'
+      - 'apps/provider-gateway-runtime/**'
+      - 'apps/web/**'
+      - 'infra/desktop/**'
+      - 'infra/docker/**'
+      - 'packages/**'
+      - 'docker-compose.yml'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: desktop-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  package:
+    name: package + startup smoke (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Linux packaging tools
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install --yes fakeroot xvfb
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter desktop lint
+      - run: pnpm --filter desktop typecheck
+      - run: pnpm --filter desktop test
+      - name: Desktop Compose boundary
+        if: runner.os == 'Linux'
+        env:
+          LOOP_DESKTOP_API_TOKEN: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+          LOOP_DESKTOP_DOCKER_GID: '998'
+          LOOP_DESKTOP_HOST_GID: '1000'
+          LOOP_DESKTOP_HOST_UID: '1000'
+          LOOP_DESKTOP_PROJECT_SOURCE: /tmp/loop-desktop-project
+          LOOP_DESKTOP_SECRET_KEY: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+          LOOP_DESKTOP_STATE_DIR: /tmp/loop-desktop-state
+        run: |
+          mkdir -p "$LOOP_DESKTOP_PROJECT_SOURCE" "$LOOP_DESKTOP_STATE_DIR"
+          touch "$LOOP_DESKTOP_STATE_DIR/authority-public.pem"
+          docker compose \
+            --project-name loop-desktop \
+            --project-directory . \
+            --file docker-compose.yml \
+            --file infra/desktop/docker-compose.yml \
+            config --quiet
+      - run: pnpm --filter desktop make
+      - name: Packaged startup smoke
+        if: runner.os != 'Linux'
+        run: pnpm --filter desktop smoke:packaged
+      - name: Packaged startup smoke (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          deb_path="$(realpath "$(find apps/desktop/out/make -type f -name '*.deb' -print -quit)")"
+          test -n "$deb_path"
+          sudo apt-get install --yes "$deb_path"
+          LOOP_DESKTOP_EXECUTABLE="$(command -v loop-desktop)" \
+            xvfb-run --auto-servernum pnpm --filter desktop smoke:packaged
+      - uses: actions/upload-artifact@v4
+        with:
+          name: loop-desktop-${{ runner.os }}-${{ runner.arch }}
+          path: apps/desktop/out/make/**
+          if-no-files-found: error

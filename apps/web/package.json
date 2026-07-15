@@ -14,6 +14,7 @@
   },
   "dependencies": {
     "@repo/api-contract": "workspace:*",
+    "@repo/desktop-contract": "workspace:*",
     "jose": "6.1.3",
     "next": "^16.2.0",
     "react": "^19.0.0",

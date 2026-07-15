@@ -2,6 +2,23 @@
 
 Two ways to run the stack.
 
+## Desktop (product path)
+
+Requires Docker Desktop or Docker Engine with Compose.
+
+```bash
+pnpm install
+pnpm --filter desktop dev
+```
+
+The first-run screen accepts a provider key and opens the native directory picker.
+The selected directory must be the root of a clean Git repository. The desktop
+supervisor builds and starts the production-shaped Compose overlay, mounts only that
+repository into the API, and preserves private credentials and crash state below the
+OS user-data directory. `pnpm --filter desktop make` creates the current platform's
+installer; `pnpm --filter desktop smoke:packaged` launches the packaged binary with
+an isolated temporary profile and verifies that its renderer sandbox starts.
+
 ## Docker (recommended)
 
 ```bash
@@ -50,3 +67,5 @@ that exact patch and refuses on an overlap or changed base commit.
 | Apply migrations               | `make migrate`                       |
 | Backend tests only             | `cd apps/api && pytest`              |
 | See all commands               | `make help`                          |
+| Desktop app                    | `pnpm --filter desktop dev`          |
+| Package desktop installer      | `pnpm --filter desktop make`         |
