@@ -61,23 +61,28 @@ not prompt instructions.
 - Email, calendar, and vision credentials exist only in their respective dedicated
   gateways. Chromium runs in a fourth gateway with no provider credentials. All four
   have DNS disabled and no direct internet route; they can reach only the authenticated
-  proxy. The worker uses separate audience-bound grants, and production fails closed
-  if any required gateway or upstream-host policy is missing.
+  proxy and the internal enforcement-state Redis service. The worker uses separate
+  audience-bound grants, and production fails closed if any required gateway,
+  shared-state backend, or upstream-host policy is missing.
 
 ### Exact guarantee boundaries
 
 - Shell containers/Jobs have no direct external route: destination enforcement is a
   network-layer property of the sandbox namespace plus proxy.
 - Browser, SMTP, IMAP, CalDAV, and vision traffic is routed through the authenticated
-  proxy. Each Kubernetes identity may connect only to the proxy port and has DNS
-  disabled. Gateway-local relays inject short-lived proxy authority without exposing
-  it to Chromium or upstream libraries. The gateway and proxy both verify the exact
-  identity, capabilities, and host set before the proxy resolves and pins a public IP.
-- Proxy audit is a bounded SQLite WAL on a dedicated persistent volume, so a proxy
-  restart does not erase events waiting for the worker to embed them in a task and
-  Receipt. The base deployment intentionally has one replica because this local
-  store is not a horizontally shared log. Use an external append-only audit sink if
-  the deployment needs multi-replica proxy HA or compliance-ledger retention.
+  proxy. Each gateway identity may connect only to the proxy and internal Redis ports
+  and has DNS disabled. Gateway-local relays inject short-lived proxy authority
+  without exposing it to Chromium or upstream libraries. The gateway and proxy both
+  verify the exact identity, capabilities, and host set before the proxy resolves and
+  pins a public IP.
+- Proxy audit is a bounded, horizontally shared Redis Stream. Run revocations are a
+  shared sorted set plus Pub/Sub notification, so a revocation observed by one replica
+  tears down live connections on the others. These operational events are embedded in
+  the task and Receipt; use an external append-only sink when compliance retention
+  must exceed the bounded stream.
+- Chromium sessions are still pod-local. The base Browser Gateway remains a single
+  `Recreate` replica; scaling it requires sticky run routing or an external browser
+  session backend.
 - Revocation prevents new calls and closes browser/proxy connections, but cannot roll
   back a completed side effect or guarantee interruption of an SMTP/CalDAV operation
   already executing in an upstream library. API cancellation is observed between

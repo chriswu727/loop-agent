@@ -7,8 +7,6 @@ metadata:
     app.kubernetes.io/component: security
 spec:
   replicas: 1
-  strategy:
-    type: Recreate
   selector:
     matchLabels:
       app.kubernetes.io/name: egress-proxy
@@ -19,6 +17,7 @@ spec:
         app.kubernetes.io/component: security
     spec:
       automountServiceAccountToken: false
+      enableServiceLinks: true
       securityContext:
         runAsNonRoot: true
         runAsUser: 10001
@@ -45,12 +44,10 @@ spec:
               value: 'true'
             - name: EGRESS_PROXY_REQUIRE_DURABLE_AUDIT
               value: 'true'
-            - name: EGRESS_PROXY_AUDIT_DATABASE_PATH
-              value: /var/lib/loop-egress/audit.sqlite3
             - name: EGRESS_PROXY_REQUIRE_DURABLE_REVOCATIONS
               value: 'true'
-            - name: EGRESS_PROXY_REVOCATION_DATABASE_PATH
-              value: /var/lib/loop-egress/audit.sqlite3
+            - name: EGRESS_PROXY_REQUIRE_SHARED_STATE
+              value: 'true'
             - name: EGRESS_PROXY_ALLOWED_PORTS
               value: '80,443,587,993'
           resources:
@@ -64,7 +61,7 @@ spec:
             httpGet: { path: /healthz, port: admin }
             periodSeconds: 10
           readinessProbe:
-            httpGet: { path: /healthz, port: admin }
+            httpGet: { path: /readyz, port: admin }
             periodSeconds: 10
           securityContext:
             allowPrivilegeEscalation: false
@@ -74,11 +71,6 @@ spec:
           volumeMounts:
             - name: tmp
               mountPath: /tmp
-            - name: audit
-              mountPath: /var/lib/loop-egress
       volumes:
         - name: tmp
           emptyDir: { sizeLimit: 64Mi }
-        - name: audit
-          persistentVolumeClaim:
-            claimName: egress-proxy-audit

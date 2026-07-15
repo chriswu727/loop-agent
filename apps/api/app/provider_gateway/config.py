@@ -35,6 +35,21 @@ class ProviderGatewaySettings(BaseSettings):
     require_durable_revocations: bool = Field(
         default=False, validation_alias="PROVIDER_GATEWAY_REQUIRE_DURABLE_REVOCATIONS"
     )
+    state_redis_url: str | None = Field(
+        default=None, validation_alias="PROVIDER_GATEWAY_STATE_REDIS_URL"
+    )
+    state_redis_service_host: str | None = Field(
+        default=None, validation_alias="REDIS_SERVICE_HOST"
+    )
+    state_redis_service_port: int = Field(
+        default=6379, ge=1, le=65535, validation_alias="REDIS_SERVICE_PORT"
+    )
+    state_namespace: str | None = Field(
+        default=None, validation_alias="PROVIDER_GATEWAY_STATE_NAMESPACE"
+    )
+    require_shared_state: bool = Field(
+        default=False, validation_alias="PROVIDER_GATEWAY_REQUIRE_SHARED_STATE"
+    )
     egress_proxy_url: str | None = Field(
         default=None, validation_alias="PROVIDER_GATEWAY_EGRESS_PROXY_URL"
     )
@@ -113,6 +128,16 @@ class ProviderGatewaySettings(BaseSettings):
         if self.egress_proxy_service_host:
             return f"http://{self.egress_proxy_service_host}:{self.egress_proxy_service_port}"
         return None
+
+    def resolved_state_redis_url(self) -> str | None:
+        if self.state_redis_url:
+            return self.state_redis_url
+        if self.state_redis_service_host:
+            return f"redis://{self.state_redis_service_host}:{self.state_redis_service_port}/1"
+        return None
+
+    def resolved_state_namespace(self) -> str:
+        return self.state_namespace or f"loop:{self.service_name}"
 
     @property
     def email_configured(self) -> bool:

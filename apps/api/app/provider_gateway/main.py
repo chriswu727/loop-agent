@@ -33,7 +33,11 @@ class InvokeRequest(BaseModel):
 def create_app(settings: ProviderGatewaySettings | None = None) -> FastAPI:
     config = settings or ProviderGatewaySettings()
     runtime = ProviderGatewayRuntime(config)
-    revocations = AuthorityRevocationStore(config.revocation_database_path)
+    revocations = AuthorityRevocationStore(
+        config.revocation_database_path,
+        redis_url=config.resolved_state_redis_url(),
+        namespace=config.resolved_state_namespace(),
+    )
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
@@ -42,10 +46,17 @@ def create_app(settings: ProviderGatewaySettings | None = None) -> FastAPI:
             raise RuntimeError("Provider gateway requires an Ed25519 authority verification key")
         if config.require_durable_revocations and not revocations.durable:
             raise RuntimeError("Provider gateway requires durable authority revocations")
+        if config.require_shared_state and not revocations.shared:
+            raise RuntimeError("Provider gateway requires shared enforcement state")
         for key in keys.values():
             validate_authority_public_key(key)
-        yield
-        await runtime.close_all()
+        await revocations.ready()
+        await revocations.subscribe(runtime.close)
+        try:
+            yield
+        finally:
+            await runtime.close_all()
+            await revocations.close()
 
     application = FastAPI(title="Loop Provider Gateway", version="1", lifespan=lifespan)
     application.state.runtime = runtime
@@ -111,8 +122,22 @@ def create_app(settings: ProviderGatewaySettings | None = None) -> FastAPI:
             "authority_key_configured": bool(config.public_keyring()),
             "authority_key_count": len(config.public_keyring()),
             "revocations_durable": revocations.durable,
+            "revocations_shared": revocations.shared,
+            "revocation_backend": revocations.backend,
             "providers": runtime.configured_providers(),
         }
+
+    @application.get("/readyz")
+    async def ready() -> dict[str, Any]:
+        try:
+            await revocations.ready()
+        except Exception as exc:
+            log.warning("Provider gateway enforcement state is unavailable")
+            raise HTTPException(
+                status_code=503,
+                detail="Shared enforcement state is unavailable",
+            ) from exc
+        return {"status": "ready", "revocation_backend": revocations.backend}
 
     @application.post("/v1/revocations")
     async def revoke(authority: AuthorityGrant = Depends(control_grant)) -> dict[str, Any]:

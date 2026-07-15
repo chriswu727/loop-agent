@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import uuid
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
@@ -17,6 +18,8 @@ from app.domain.authority_token import (
 )
 from app.egress_proxy.audit import AuditStore
 from app.egress_proxy.config import EgressProxySettings
+
+log = logging.getLogger("loop.egress_proxy.admin")
 
 
 def create_admin_app(
@@ -60,7 +63,28 @@ def create_admin_app(
             "authority_key_configured": bool(settings.public_keyring()),
             "authority_key_count": len(settings.public_keyring()),
             "audit_durable": audit.durable,
+            "audit_shared": audit.shared,
+            "audit_backend": audit.backend,
             "revocations_durable": revocations.durable,
+            "revocations_shared": revocations.shared,
+            "revocation_backend": revocations.backend,
+        }
+
+    @app.get("/readyz")
+    async def ready() -> dict[str, Any]:
+        try:
+            await audit.ready()
+            await revocations.ready()
+        except Exception as exc:
+            log.warning("Egress proxy enforcement state is unavailable")
+            raise HTTPException(
+                status_code=503,
+                detail="Shared enforcement state is unavailable",
+            ) from exc
+        return {
+            "status": "ready",
+            "audit_backend": audit.backend,
+            "revocation_backend": revocations.backend,
         }
 
     @app.post("/v1/revocations")

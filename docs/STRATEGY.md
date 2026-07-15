@@ -6,11 +6,11 @@
 > document uploads, owner/project memory, browser/email/calendar adapters, triggers,
 > SSE, Telegram/Slack, GitHub OAuth, durable Redis Streams workers, and required
 > Kubernetes Job shell isolation. It now also ships isolated email, calendar,
-> vision, and browser gateways; rotatable, revocable audience-bound authority grants; and a network-layer
-> egress proxy that requires explicit hosts, rejects private resolution, pins DNS,
-> and records durable per-run audit events. Remaining work that cannot honestly be
-> marked done: a meaningful skill marketplace, broader channels, horizontally shared
-> proxy audit/session state and
+> vision, and browser gateways; rotatable, revocable audience-bound authority grants;
+> and a network-layer egress proxy that requires explicit hosts, rejects private
+> resolution, pins DNS, and records durable per-run audit events in horizontally
+> shared Redis state. Remaining work that cannot honestly be marked done: a meaningful
+> skill marketplace, broader channels, multi-replica browser-session routing, and
 > production/adoption evidence.
 
 _Synthesized by a multi-agent research workflow (2026-06): 4 verified OpenClaw research dimensions + repo analysis + a 6-lens differentiation panel. Two research dimensions (capabilities, ecosystem) failed structured-output validation and were covered indirectly via the panel; treat those areas as lower-confidence until re-verified._

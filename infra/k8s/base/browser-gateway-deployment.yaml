@@ -50,8 +50,8 @@ spec:
               value: 'true'
             - name: PROVIDER_GATEWAY_REQUIRE_DURABLE_REVOCATIONS
               value: 'true'
-            - name: PROVIDER_GATEWAY_REVOCATION_DATABASE_PATH
-              value: /var/lib/loop-browser/authority.sqlite3
+            - name: PROVIDER_GATEWAY_REQUIRE_SHARED_STATE
+              value: 'true'
             - name: PROVIDER_GATEWAY_BROWSER_ENABLED
               value: 'true'
             - name: HOME
@@ -71,7 +71,7 @@ spec:
             httpGet: { path: /healthz, port: http }
             periodSeconds: 10
           readinessProbe:
-            httpGet: { path: /healthz, port: http }
+            httpGet: { path: /readyz, port: http }
             periodSeconds: 10
           securityContext:
             allowPrivilegeEscalation: false
@@ -81,11 +81,6 @@ spec:
           volumeMounts:
             - name: tmp
               mountPath: /tmp
-            - name: state
-              mountPath: /var/lib/loop-browser
       volumes:
         - name: tmp
           emptyDir: { sizeLimit: 1Gi }
-        - name: state
-          persistentVolumeClaim:
-            claimName: browser-gateway-state

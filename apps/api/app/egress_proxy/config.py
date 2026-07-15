@@ -47,6 +47,21 @@ class EgressProxySettings(BaseSettings):
     require_durable_revocations: bool = Field(
         default=False, validation_alias="EGRESS_PROXY_REQUIRE_DURABLE_REVOCATIONS"
     )
+    state_redis_url: str | None = Field(
+        default=None, validation_alias="EGRESS_PROXY_STATE_REDIS_URL"
+    )
+    state_redis_service_host: str | None = Field(
+        default=None, validation_alias="REDIS_SERVICE_HOST"
+    )
+    state_redis_service_port: int = Field(
+        default=6379, ge=1, le=65535, validation_alias="REDIS_SERVICE_PORT"
+    )
+    state_namespace: str = Field(
+        default="loop:egress-proxy", validation_alias="EGRESS_PROXY_STATE_NAMESPACE"
+    )
+    require_shared_state: bool = Field(
+        default=False, validation_alias="EGRESS_PROXY_REQUIRE_SHARED_STATE"
+    )
     audit_max_events_per_run: int = Field(
         default=200,
         ge=1,
@@ -98,3 +113,10 @@ class EgressProxySettings(BaseSettings):
             if 1 <= port <= 65535:
                 ports.add(port)
         return ports
+
+    def resolved_state_redis_url(self) -> str | None:
+        if self.state_redis_url:
+            return self.state_redis_url
+        if self.state_redis_service_host:
+            return f"redis://{self.state_redis_service_host}:{self.state_redis_service_port}/1"
+        return None

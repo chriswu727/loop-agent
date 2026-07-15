@@ -301,13 +301,12 @@ sessions** with a web chat page, **Telegram + Slack chat inlets**, and a
 **channel-agnostic `/chat` API**, separately credentialed **email, calendar, and
 vision gateways** plus a credentialless **Browser Gateway**, renewable and
 revocable short-lived capability tokens, and **network-layer destination enforcement** with
-durable, bounded audit records and DNS-pinned proxy routing for shell, browser, and
-every provider protocol.
+durable, horizontally shared bounded audit/revocation state and DNS-pinned proxy
+routing for shell, browser, and every provider protocol.
 
-**Next:** broaden the signed skill catalog and channel ecosystem, add shared
-audit/session backends for horizontal HA, and
-accumulate real production/adversarial evidence. Loop's core trust architecture is
-implemented;
+**Next:** broaden the signed skill catalog and channel ecosystem, add multi-replica
+browser-session routing, and accumulate real production/adversarial evidence. Loop's
+core trust architecture is implemented;
 its remaining gap versus mature assistants is ecosystem and operational proof, not
 another missing safety layer.
 

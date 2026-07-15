@@ -4,6 +4,7 @@ import asyncio
 import base64
 import socket
 
+import fakeredis.aioredis
 import httpx
 import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
@@ -52,6 +53,44 @@ def _token(
         egress_hosts=hosts,
         ttl_seconds=ttl_seconds,
     )
+
+
+def test_egress_proxy_resolves_shared_state_from_redis_service_identity(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("REDIS_SERVICE_HOST", "10.96.0.43")
+    monkeypatch.setenv("REDIS_SERVICE_PORT", "6380")
+
+    settings = EgressProxySettings()
+    assert settings.resolved_state_redis_url() == "redis://10.96.0.43:6380/1"
+
+    explicit = EgressProxySettings(state_redis_url="rediss://redis.internal:6379/2")
+    assert explicit.resolved_state_redis_url() == "rediss://redis.internal:6379/2"
+
+
+async def test_egress_admin_readiness_fails_when_enforcement_state_is_down(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    audit = AuditStore()
+    revocations = AuthorityRevocationStore()
+    admin = create_admin_app(
+        EgressProxySettings(),
+        audit,
+        revocations,
+        lambda _run_id: asyncio.sleep(0),
+    )
+
+    async def unavailable() -> bool:
+        raise ConnectionError("redis down")
+
+    monkeypatch.setattr(audit, "ready", unavailable)
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=admin), base_url="http://admin"
+    ) as client:
+        response = await client.get("/readyz")
+
+    assert response.status_code == 503
+    assert response.json()["detail"] == "Shared enforcement state is unavailable"
 
 
 async def _request(proxy_port: int, token: str, target: str) -> bytes:
@@ -340,6 +379,92 @@ async def test_signed_revocation_closes_tunnel_and_blocks_run(tmp_path) -> None:
         await upstream.wait_closed()
 
 
+async def test_redis_revocation_closes_tunnel_on_another_proxy_instance() -> None:
+    private, public = _keys()
+
+    async def hold_open(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+        await reader.read()
+        writer.close()
+        await writer.wait_closed()
+
+    upstream = await asyncio.start_server(hold_open, "127.0.0.1", 0)
+    upstream_port = int(upstream.sockets[0].getsockname()[1])
+
+    async def resolver(_host: str, _port: int) -> tuple[int, str]:
+        return socket.AF_INET, "127.0.0.1"
+
+    redis_server = fakeredis.FakeServer()
+    first_client = fakeredis.aioredis.FakeRedis(server=redis_server, decode_responses=True)
+    second_client = fakeredis.aioredis.FakeRedis(server=redis_server, decode_responses=True)
+    first_revocations = AuthorityRevocationStore(
+        redis_client=first_client,
+        namespace="test:egress:authority",
+    )
+    second_revocations = AuthorityRevocationStore(
+        redis_client=second_client,
+        namespace="test:egress:authority",
+    )
+    settings = EgressProxySettings(
+        authority_public_key=public,
+        allowed_ports=str(upstream_port),
+    )
+    first_proxy = EgressProxy(
+        settings, AuditStore(), resolver=resolver, revocations=first_revocations
+    )
+    second_audit = AuditStore()
+    second_proxy = EgressProxy(
+        settings,
+        second_audit,
+        resolver=resolver,
+        revocations=second_revocations,
+    )
+    await second_revocations.subscribe(second_proxy.revoke)
+    second_server = await asyncio.start_server(second_proxy.handle, "127.0.0.1", 0)
+    second_port = int(second_server.sockets[0].getsockname()[1])
+    token = _token(private, ["browser.example"])
+    control = _token(
+        private,
+        ["browser.example"],
+        audience=AUTHORITY_CONTROL_AUDIENCE,
+    )
+    admin = create_admin_app(settings, AuditStore(), first_revocations, first_proxy.revoke)
+    try:
+        reader, writer = await _connect(
+            second_port,
+            token,
+            f"browser.example:{upstream_port}",
+        )
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=admin), base_url="http://admin"
+        ) as client:
+            revoked = await client.post(
+                "/v1/revocations",
+                headers={"Authorization": f"Bearer {control}"},
+            )
+
+        assert revoked.status_code == 200
+        assert await asyncio.wait_for(reader.read(), timeout=1) == b""
+        assert await second_revocations.is_revoked("task-1:1")
+        blocked = await _request(
+            second_port,
+            token,
+            f"http://browser.example:{upstream_port}/resource",
+        )
+        assert b"403 Forbidden" in blocked
+        assert b"revoked" in blocked
+        writer.close()
+        await writer.wait_closed()
+    finally:
+        second_server.close()
+        upstream.close()
+        await second_server.wait_closed()
+        await upstream.wait_closed()
+        await first_revocations.close()
+        await second_revocations.close()
+        await first_client.aclose()
+        await second_client.aclose()
+
+
 async def test_proxy_blocks_unapproved_port_before_resolving() -> None:
     private, public = _keys()
     resolved = False
@@ -393,6 +518,60 @@ async def test_audit_store_survives_restart_and_enforces_durable_bounds(tmp_path
     assert restarted.durable
     assert await restarted.list("run-one") == [{"id": "two"}, {"id": "three"}]
     assert await restarted.list("run-two") == [{"id": "four"}]
+
+
+async def test_redis_audit_is_shared_and_enforces_global_and_run_bounds() -> None:
+    server = fakeredis.FakeServer()
+    first_client = fakeredis.aioredis.FakeRedis(server=server, decode_responses=True)
+    second_client = fakeredis.aioredis.FakeRedis(server=server, decode_responses=True)
+    first = AuditStore(
+        max_events_per_run=2,
+        max_events_total=3,
+        redis_client=first_client,
+        namespace="test:egress",
+    )
+    second = AuditStore(
+        max_events_per_run=2,
+        max_events_total=3,
+        redis_client=second_client,
+        namespace="test:egress",
+    )
+    try:
+        await first.append("run-one", {"id": "one"})
+        await first.append("run-one", {"id": "two"})
+        await first.append("run-one", {"id": "three"})
+        await second.append("run-two", {"id": "four"})
+
+        assert first.shared and second.shared
+        assert first.backend == second.backend == "redis"
+        assert await second.list("run-one") == [{"id": "two"}, {"id": "three"}]
+        assert await first.list("run-two") == [{"id": "four"}]
+    finally:
+        await first.close()
+        await second.close()
+        await first_client.aclose()
+        await second_client.aclose()
+
+
+async def test_redis_audit_pages_backwards_without_losing_run_order() -> None:
+    client = fakeredis.aioredis.FakeRedis(decode_responses=True)
+    audit = AuditStore(
+        max_events_per_run=2,
+        max_events_total=250,
+        redis_client=client,
+        namespace="test:paged-audit",
+    )
+    try:
+        await audit.append("target", {"id": "one"})
+        await audit.append("target", {"id": "two"})
+        for index in range(120):
+            await audit.append("noise", {"id": index})
+        await audit.append("target", {"id": "three"})
+
+        assert await audit.list("target") == [{"id": "two"}, {"id": "three"}]
+    finally:
+        await audit.close()
+        await client.aclose()
 
 
 async def test_default_resolver_rejects_private_destinations() -> None:

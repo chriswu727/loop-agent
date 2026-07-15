@@ -54,13 +54,22 @@ upstream hostnames used by its gateway. Add a custom provider port to
 Set `AGENT_SANDBOX_IMAGE_DIGEST=sha256:...` in the production ConfigMap after
 publishing the sandbox image; production rejects mutable tag-only execution.
 
-The egress proxy keeps audit and revocations on its dedicated `egress-proxy-audit`
-PVC. Email, calendar, vision, and browser revocations use separate
-`email-gateway-state`, `calendar-gateway-state`, `vision-gateway-state`, and
-`browser-gateway-state` PVCs, while live browser sessions remain in memory. These
-stateful enforcement deployments therefore use one replica: security state survives
-a pod restart, but horizontal proxy or gateway session HA still requires shared
-external stores.
+Provision durable Redis before the Loop workloads. The base manifests expect a
+ClusterIP Service named `redis`; its backing pods must carry
+`app.kubernetes.io/name=redis` so the included NetworkPolicies admit only port 6379.
+The Kubernetes service-link IP lets the DNS-disabled gateways reach Redis without a
+general DNS channel. If your Redis is managed outside the namespace, supply an
+explicit `*_STATE_REDIS_URL` and adapt the CNI egress policy to its fixed private
+endpoint.
+
+The egress proxy stores bounded audit events and run revocations in Redis. Redis
+Pub/Sub distributes revocations so every proxy and protocol-gateway replica closes
+the affected connections or sessions. Email, calendar, vision, and egress proxy are
+therefore safe to roll and scale horizontally. Live Chromium processes remain local
+to one Browser Gateway pod, so the base deliberately keeps that deployment at one
+replica with `Recreate` until session-affinity or external browser-session routing is
+added. Redis durability and HA are part of the production trust boundary; use AOF or
+a managed replicated service and monitor persistence failures.
 
 ## 4. Apply
 

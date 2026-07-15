@@ -15,7 +15,8 @@
 >   capability-scoped audience-bound authority tokens, and a destination-enforcing
 >   egress proxy with private-address rejection, DNS pinning and durable Receipt audit.
 >   Browser, shell, SMTP/IMAP, CalDAV, and vision identities are now proxy-only and
->   destination-bound; horizontally shared audit remains deployment hardening work.
+>   destination-bound. Proxy audit and revocations now use horizontally shared Redis;
+>   Browser Gateway sessions remain pod-local and single-replica.
 >
 > **Update (2026-07-04, after this comparison):** several concrete weaknesses this
 > analysis found were then fixed (and adversarially re-audited — the fixes had their

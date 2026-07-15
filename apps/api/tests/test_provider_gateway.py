@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import json
+import socket
 from datetime import UTC, datetime, timedelta
 from typing import Any, ClassVar
 from urllib.parse import urlsplit
@@ -26,6 +27,7 @@ from app.domain.capability import Capability
 from app.provider_gateway.config import ProviderGatewaySettings
 from app.provider_gateway.main import create_app
 from app.provider_gateway.providers import (
+    EmailProvider,
     _AuthenticatedProxyRelay,
     _AuthenticatedTunnelRelay,
     _browser_subprocess_env,
@@ -169,10 +171,12 @@ async def test_browser_gateway_rejects_provider_audience_token() -> None:
             },
         )
         health = await client.get("/healthz")
+        ready = await client.get("/readyz")
 
     assert rejected.status_code == 403
     assert accepted.status_code == 200
     assert health.json()["service"] == "browser-gateway"
+    assert ready.json() == {"status": "ready", "revocation_backend": "memory"}
 
 
 def test_browser_gateway_resolves_proxy_from_service_identity(
@@ -188,6 +192,56 @@ def test_browser_gateway_resolves_proxy_from_service_identity(
         egress_proxy_service_host="10.96.0.42",
     )
     assert explicit.resolved_egress_proxy_url() == "http://127.0.0.1:8080"
+
+
+def test_gateway_resolves_shared_state_from_redis_service_identity(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("REDIS_SERVICE_HOST", "10.96.0.43")
+    monkeypatch.setenv("REDIS_SERVICE_PORT", "6380")
+
+    settings = ProviderGatewaySettings(service_name="email-gateway")
+    assert settings.resolved_state_redis_url() == "redis://10.96.0.43:6380/1"
+    assert settings.resolved_state_namespace() == "loop:email-gateway"
+
+    explicit = ProviderGatewaySettings(
+        service_name="email-gateway",
+        state_redis_url="rediss://redis.internal:6379/2",
+        state_namespace="custom:email",
+    )
+    assert explicit.resolved_state_redis_url() == "rediss://redis.internal:6379/2"
+    assert explicit.resolved_state_namespace() == "custom:email"
+
+
+async def test_gateway_fails_startup_without_required_shared_state() -> None:
+    app = create_app(
+        ProviderGatewaySettings(
+            browser_enabled=False,
+            require_shared_state=True,
+        )
+    )
+
+    with pytest.raises(RuntimeError, match="requires shared enforcement state"):
+        async with app.router.lifespan_context(app):
+            pass
+
+
+async def test_gateway_readiness_fails_when_enforcement_state_is_down(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    app = create_app(ProviderGatewaySettings(browser_enabled=False))
+
+    async def unavailable() -> bool:
+        raise ConnectionError("redis down")
+
+    monkeypatch.setattr(app.state.revocations, "ready", unavailable)
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://gateway"
+    ) as client:
+        response = await client.get("/readyz")
+
+    assert response.status_code == 503
+    assert response.json()["detail"] == "Shared enforcement state is unavailable"
 
 
 async def test_gateway_revokes_run_with_signed_control_token(tmp_path) -> None:
@@ -618,6 +672,79 @@ async def test_browser_proxy_relay_injects_and_rotates_egress_authority() -> Non
     ]
 
 
+async def test_browser_relay_reaches_http_only_through_enforcing_proxy() -> None:
+    from app.egress_proxy.audit import AuditStore
+    from app.egress_proxy.config import EgressProxySettings
+    from app.egress_proxy.proxy import EgressProxy
+
+    private, public = _keys()
+
+    async def http_handler(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+        request = await reader.readuntil(b"\r\n\r\n")
+        assert request.startswith(b"GET /proof HTTP/1.1\r\n")
+        body = b"enforced-path"
+        writer.write(
+            b"HTTP/1.1 200 OK\r\nConnection: close\r\nContent-Length: "
+            + str(len(body)).encode()
+            + b"\r\n\r\n"
+            + body
+        )
+        await writer.drain()
+        writer.close()
+        await writer.wait_closed()
+
+    http = await asyncio.start_server(http_handler, "127.0.0.1", 0)
+    http_port = int(http.sockets[0].getsockname()[1])
+
+    async def resolver(host: str, port: int) -> tuple[int, str]:
+        assert (host, port) == ("docs.example.com", http_port)
+        return socket.AF_INET, "127.0.0.1"
+
+    audit = AuditStore()
+    egress = EgressProxy(
+        EgressProxySettings(authority_public_key=public, allowed_ports=str(http_port)),
+        audit,
+        resolver=resolver,
+    )
+    proxy = await asyncio.start_server(egress.handle, "127.0.0.1", 0)
+    proxy_port = int(proxy.sockets[0].getsockname()[1])
+    token = _token(
+        private,
+        [Capability.NET_BROWSER],
+        audience=EGRESS_PROXY_AUDIENCE,
+        egress_hosts=["docs.example.com"],
+    )
+    relay = _AuthenticatedProxyRelay(f"http://127.0.0.1:{proxy_port}", token)
+    await relay.start()
+    parsed = urlsplit(relay.proxy_url)
+    reader, writer = await asyncio.open_connection(parsed.hostname, parsed.port)
+    try:
+        writer.write(
+            (
+                f"GET http://docs.example.com:{http_port}/proof HTTP/1.1\r\n"
+                f"Host: docs.example.com:{http_port}\r\nConnection: close\r\n\r\n"
+            ).encode()
+        )
+        await writer.drain()
+        response = await asyncio.wait_for(reader.read(), timeout=5)
+    finally:
+        writer.close()
+        await writer.wait_closed()
+        await relay.close()
+        proxy.close()
+        http.close()
+        await proxy.wait_closed()
+        await http.wait_closed()
+
+    assert b"200 OK" in response
+    assert response.endswith(b"enforced-path")
+    events = await audit.list("task-1:1")
+    assert len(events) == 1
+    assert events[0]["decision"] == "allowed"
+    assert events[0]["host"] == "docs.example.com"
+    assert events[0]["method"] == "GET"
+
+
 async def test_provider_tunnel_relay_binds_connect_target_and_egress_authority() -> None:
     requests: list[str] = []
 
@@ -659,6 +786,104 @@ async def test_provider_tunnel_relay_binds_connect_target_and_egress_authority()
         if line.lower().startswith("proxy-authorization:")
     )
     assert base64.b64decode(authorization.partition(" ")[2]).decode() == ("loop:email-egress-token")
+
+
+async def test_email_provider_reaches_smtp_only_through_enforcing_proxy() -> None:
+    from app.egress_proxy.audit import AuditStore
+    from app.egress_proxy.config import EgressProxySettings
+    from app.egress_proxy.proxy import EgressProxy
+
+    private, public = _keys()
+    messages: list[bytes] = []
+
+    async def smtp_handler(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+        writer.write(b"220 smtp.test ESMTP\r\n")
+        await writer.drain()
+        awaiting_password = False
+        while line := await reader.readline():
+            command = line.decode("ascii").rstrip("\r\n")
+            upper = command.upper()
+            if awaiting_password:
+                awaiting_password = False
+                writer.write(b"235 2.7.0 Authentication successful\r\n")
+            elif upper.startswith("EHLO"):
+                writer.write(b"250-smtp.test\r\n250 AUTH LOGIN\r\n")
+            elif upper.startswith("AUTH LOGIN"):
+                awaiting_password = True
+                writer.write(b"334 UGFzc3dvcmQ6\r\n")
+            elif upper.startswith(("MAIL FROM:", "RCPT TO:")):
+                writer.write(b"250 2.1.0 Ok\r\n")
+            elif upper == "DATA":
+                writer.write(b"354 End data with <CR><LF>.<CR><LF>\r\n")
+                await writer.drain()
+                data = bytearray()
+                while data_line := await reader.readline():
+                    if data_line == b".\r\n":
+                        break
+                    data.extend(data_line)
+                messages.append(bytes(data))
+                writer.write(b"250 2.0.0 Queued\r\n")
+            elif upper == "QUIT":
+                writer.write(b"221 2.0.0 Bye\r\n")
+                await writer.drain()
+                break
+            else:
+                writer.write(b"250 Ok\r\n")
+            await writer.drain()
+        writer.close()
+        await writer.wait_closed()
+
+    smtp = await asyncio.start_server(smtp_handler, "127.0.0.1", 0)
+    smtp_port = int(smtp.sockets[0].getsockname()[1])
+
+    async def resolver(host: str, port: int) -> tuple[int, str]:
+        assert (host, port) == ("smtp.example.com", smtp_port)
+        return socket.AF_INET, "127.0.0.1"
+
+    audit = AuditStore()
+    egress = EgressProxy(
+        EgressProxySettings(authority_public_key=public, allowed_ports=str(smtp_port)),
+        audit,
+        resolver=resolver,
+    )
+    proxy = await asyncio.start_server(egress.handle, "127.0.0.1", 0)
+    proxy_port = int(proxy.sockets[0].getsockname()[1])
+    settings = ProviderGatewaySettings(
+        browser_enabled=False,
+        egress_proxy_url=f"http://127.0.0.1:{proxy_port}",
+        smtp_host="smtp.example.com",
+        smtp_port=smtp_port,
+        smtp_user="sender@example.com",
+        smtp_password="secret",
+        smtp_starttls=False,
+    )
+    token = _token(
+        private,
+        [Capability.EMAIL_SEND],
+        audience=EGRESS_PROXY_AUDIENCE,
+        egress_hosts=["smtp.example.com"],
+    )
+    try:
+        result = await EmailProvider(settings).call(
+            "send_email",
+            {"to": "recipient@example.com", "subject": "Proxy proof", "body": "Delivered"},
+            token,
+        )
+    finally:
+        proxy.close()
+        smtp.close()
+        await proxy.wait_closed()
+        await smtp.wait_closed()
+
+    assert result == "Email sent to recipient@example.com (subject: 'Proxy proof')."
+    assert len(messages) == 1
+    assert b"Subject: Proxy proof" in messages[0]
+    assert b"Delivered" in messages[0]
+    events = await audit.list("task-1:1")
+    assert len(events) == 1
+    assert events[0]["decision"] == "allowed"
+    assert events[0]["host"] == "smtp.example.com"
+    assert events[0]["method"] == "CONNECT"
 
 
 async def test_browser_proxy_relay_drops_old_connections_when_authority_rotates() -> None:
