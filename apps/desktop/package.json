@@ -8,6 +8,9 @@
   "license": "MIT",
   "type": "module",
   "main": "dist/main.cjs",
+  "config": {
+    "forge": "forge.config.cjs"
+  },
   "scripts": {
     "build": "tsup",
     "dev": "pnpm electron:install && pnpm build && electron-forge start",

@@ -1,12 +1,12 @@
-import path from 'node:path';
-import { MakerDeb } from '@electron-forge/maker-deb';
-import { MakerSquirrel } from '@electron-forge/maker-squirrel';
-import { MakerZIP } from '@electron-forge/maker-zip';
-import { FuseV1Options, FuseVersion } from '@electron/fuses';
-import { FusesPlugin } from '@electron-forge/plugin-fuses';
-import type { ForgeConfig } from '@electron-forge/shared-types';
+const path = require('node:path');
+const { MakerDeb } = require('@electron-forge/maker-deb');
+const { MakerSquirrel } = require('@electron-forge/maker-squirrel');
+const { MakerZIP } = require('@electron-forge/maker-zip');
+const { FuseV1Options, FuseVersion } = require('@electron/fuses');
+const { FusesPlugin } = require('@electron-forge/plugin-fuses');
 
-const config: ForgeConfig = {
+/** @type {import('@electron-forge/shared-types').ForgeConfig} */
+const config = {
   packagerConfig: {
     appBundleId: 'com.loopagent.desktop',
     appCategoryType: 'public.app-category.developer-tools',
@@ -49,4 +49,4 @@ const config: ForgeConfig = {
   ],
 };
 
-export default config;
+module.exports = config;

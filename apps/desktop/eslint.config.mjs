@@ -5,4 +5,10 @@ export default [
   {
     ignores: ['runtime/**', 'out/**'],
   },
+  {
+    files: ['forge.config.cjs'],
+    rules: {
+      '@typescript-eslint/no-require-imports': 'off',
+    },
+  },
 ];
