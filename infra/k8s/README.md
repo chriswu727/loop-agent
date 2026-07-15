@@ -22,7 +22,8 @@ overlays/
 - **PodDisruptionBudgets** — keep ≥1 replica during node drains.
 - **Ingress** — TLS, `/api` → api, `/` → web.
 - **NetworkPolicies** — default-deny ingress plus explicit worker-to-gateway and
-  gateway-to-proxy allows. Provider and browser identities have no other egress.
+  gateway-to-proxy/Redis allows. Provider and browser identities have no direct
+  public egress.
 - **ConfigMap / Secret** — config vs. secrets split (secret is an example; use a
   real secret manager in production).
 
@@ -34,6 +35,9 @@ kubectl kustomize infra/k8s/overlays/prod | less
 
 # Apply
 kubectl apply -k infra/k8s/overlays/prod
+
+# After rollout, prove proxy/Redis reachability and direct-egress denial.
+make k8s-enforcement-smoke namespace=loop-prod
 ```
 
 > Prefer Helm? The same topology maps 1:1 to a chart. Kustomize is the default

@@ -94,6 +94,21 @@ Run one task without network and one with `net.shell` plus a single disposable t
 host. Confirm the first Job has no egress, the second cannot reach any undeclared
 host, and its Receipt contains an allowed proxy audit event for the declared host.
 
+Then run the post-deploy enforcement smoke test. It waits for every critical
+Deployment and creates a temporary pod under the provider egress policy. The probe
+must reach only the egress proxy and Redis while a direct public-IP connection fails:
+
+```bash
+make k8s-enforcement-smoke namespace=loop-prod
+```
+
+Before promoting a new Redis topology or enforcement image, also run the local/CI
+acceptance harness against an ephemeral Redis 7 AOF volume:
+
+```bash
+make enforcement-acceptance
+```
+
 ## 5. Migrations
 
 Run Alembic as a one-shot Job (or an init container) before the new pods take
@@ -109,5 +124,6 @@ kubectl run migrate --rm -it --restart=Never \
 
 ## Rollout & rollback
 
-- Deploys are `RollingUpdate` with `maxUnavailable: 0` — no dropped requests.
+- API, worker, protocol gateways, and egress proxy use rolling updates. Browser
+  Gateway remains single-replica `Recreate` because Chromium sessions are pod-local.
 - Roll back: `kubectl rollout undo deployment/api -n loop-prod`.
