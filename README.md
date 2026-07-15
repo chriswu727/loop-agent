@@ -289,6 +289,11 @@ the ledger detects tampering (and survives a legitimate human answer), skills re
 bad signatures, egress is default-denied, the shell env is scrubbed of secrets, and
 the provider cascade falls over correctly.
 
+Run `make enforcement-acceptance` with Docker available to exercise a real Redis 7
+instance with AOF: a proxy in a separate process holds a live tunnel, another process
+revokes it, readiness fails while Redis is stopped, and audit/revocation state is
+verified again after restart.
+
 ## Roadmap
 
 **Delivered:** tool-using agent core, re-execution Receipts, tamper-evident ledger,

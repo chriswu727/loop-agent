@@ -121,6 +121,10 @@ audit: ## Audit production Python and JavaScript dependencies
 	pnpm audit --prod
 	cd apps/api && . .venv/bin/activate && pip-audit
 
+.PHONY: enforcement-acceptance
+enforcement-acceptance: ## Verify real Redis restart, fail-closed readiness, and cross-process revocation
+	bash scripts/enforcement-acceptance.sh
+
 # ---------- Kubernetes ----------
 .PHONY: k8s-dev
 k8s-dev: ## Render the dev overlay (kustomize) to stdout
@@ -129,3 +133,7 @@ k8s-dev: ## Render the dev overlay (kustomize) to stdout
 .PHONY: k8s-apply-dev
 k8s-apply-dev: ## Apply the dev overlay to the current kube-context
 	kubectl apply -k infra/k8s/overlays/dev
+
+.PHONY: k8s-enforcement-smoke
+k8s-enforcement-smoke: ## Verify rollout and enforcement NetworkPolicy in a deployed namespace
+	bash scripts/k8s-enforcement-smoke.sh $(or $(namespace),loop-prod)

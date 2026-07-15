@@ -119,4 +119,7 @@ not prompt instructions.
   task, queue, capability-denial, and Receipt-replay metrics.
 - Redis Streams jobs have visibility leases, cross-pod reclaim, bounded retries, and
   a dead-letter stream. Task execution uses an atomic pending-to-running claim.
+- CI exercises enforcement against real Redis with AOF, including cross-process live
+  tunnel revocation, fail-closed readiness during outage, and state recovery after
+  restart. The post-deploy smoke script separately verifies the cluster egress policy.
 - Ingress must terminate TLS and add HSTS. NetworkPolicies default-deny ingress.

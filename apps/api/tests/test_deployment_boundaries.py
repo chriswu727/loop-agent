@@ -217,3 +217,13 @@ def test_kubernetes_provider_secrets_are_protocol_specific() -> None:
         "CALDAV_PASSWORD",
     }
     assert secrets["vision-gateway-secrets"] == verifier | {"PROVIDER_GATEWAY_GEMINI_API_KEY"}
+
+
+def test_ci_runs_real_redis_enforcement_acceptance() -> None:
+    workflow = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text())
+    job = workflow["jobs"]["enforcement-acceptance"]
+
+    assert job["name"] == "enforcement · real Redis restart + cross-process revoke"
+    assert any(
+        step.get("run") == "bash ../../scripts/enforcement-acceptance.sh" for step in job["steps"]
+    )

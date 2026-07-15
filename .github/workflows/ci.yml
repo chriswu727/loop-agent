@@ -101,3 +101,21 @@ jobs:
           grep -q 'value: loop-browser-gateway' /tmp/loop-k8s-prod.yaml
           grep -q 'value: 80,443,587,993' /tmp/loop-k8s-prod.yaml
           grep -q 'loop.openai.com/egress: proxied' /tmp/loop-k8s-prod.yaml
+
+  enforcement-acceptance:
+    name: enforcement · real Redis restart + cross-process revoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: apps/api
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: pip
+      - run: pip install uv==0.11.15
+      - run: uv sync --frozen --extra dev
+      - name: Acceptance harness
+        run: bash ../../scripts/enforcement-acceptance.sh
