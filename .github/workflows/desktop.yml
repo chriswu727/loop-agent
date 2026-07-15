@@ -75,7 +75,7 @@ jobs:
       - name: Packaged startup smoke (Linux)
         if: runner.os == 'Linux'
         run: |
-          deb_path="$(find apps/desktop/out/make -type f -name '*.deb' -print -quit)"
+          deb_path="$(realpath "$(find apps/desktop/out/make -type f -name '*.deb' -print -quit)")"
           test -n "$deb_path"
           sudo apt-get install --yes "$deb_path"
           LOOP_DESKTOP_EXECUTABLE="$(command -v loop-desktop)" \
