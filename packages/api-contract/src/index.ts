@@ -95,6 +95,10 @@ export interface Task {
   project_id: string;
   status: TaskStatus;
   rubric: string[];
+  criteria_source: 'user' | 'generated';
+  verification_mode: 'strict' | 'judgment';
+  required_checks: Array<Record<string, unknown>>;
+  baseline_checks: Array<Record<string, unknown>>;
   pending_question: string | null;
   allowed_tools: string[] | null;
   authority: Authority;

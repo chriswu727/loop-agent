@@ -8,6 +8,7 @@ from datetime import date
 from pathlib import Path
 from typing import Any
 
+from app.services.completion import attach_baseline
 from app.services.prompts import verify_prompts
 from app.services.receipt import verify_receipt_full
 from app.services.verification import as_dicts, run_checks
@@ -88,12 +89,15 @@ async def _replay(
         resolved if isinstance(resolved, list) else [],
         egress_hosts=hosts if isinstance(hosts, list) else [],
     )
-    results = await run_checks(
-        definitions,
-        workspace,
-        envelope=envelope,
-        sandbox_image=None if allow_host and sandbox_image is None else sandbox_image,
-        criterion_count=len(receipt.get("criteria") or receipt.get("rubric") or []),
+    results = attach_baseline(
+        await run_checks(
+            definitions,
+            workspace,
+            envelope=envelope,
+            sandbox_image=None if allow_host and sandbox_image is None else sandbox_image,
+            criterion_count=len(receipt.get("criteria") or receipt.get("rubric") or []),
+        ),
+        [item for item in receipt.get("baseline_checks", []) if isinstance(item, dict)],
     )
     return as_dicts(results)
 
@@ -197,7 +201,11 @@ def main(argv: list[str] | None = None) -> int:
     for result in results:
         status = "PASS" if result["passed"] else "FAIL"
         print(f"[{status}] {result['check_id']} {result['kind']} {result['target']}")
-    replayed = bool(results) and all(result["passed"] for result in results)
+    replayed = bool(results) and all(
+        result["passed"]
+        or (result.get("source") == "system" and result.get("baseline_passed") is False)
+        for result in results
+    )
     print(f"result:      {'replay passed' if replayed else 'replay failed'}")
     return 0 if replayed else 1
 

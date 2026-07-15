@@ -35,6 +35,13 @@ run_acceptance() {
   )
 }
 
+run_worker_recovery() {
+  (
+    cd "$root/apps/api"
+    uv run --frozen --extra dev python scripts/worker_recovery_acceptance.py "$@"
+  )
+}
+
 trap cleanup EXIT
 docker volume create "$volume" >/dev/null
 docker run -d \
@@ -52,9 +59,11 @@ wait_for_redis
 redis_url="$(current_redis_url)"
 
 run_acceptance exercise --redis-url "$redis_url" --namespace "$namespace"
+run_worker_recovery claim --redis-url "$redis_url" --allow-destructive-test
 docker stop "$container" >/dev/null
 run_acceptance verify-unavailable --redis-url "$redis_url" --namespace "$namespace"
 docker start "$container" >/dev/null
 wait_for_redis
 redis_url="$(current_redis_url)"
 run_acceptance verify-recovery --redis-url "$redis_url" --namespace "$namespace"
+run_worker_recovery recover --redis-url "$redis_url" --allow-destructive-test

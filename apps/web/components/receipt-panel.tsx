@@ -10,6 +10,12 @@ interface ReceiptCheck {
   target: string;
   passed: boolean;
   evidence: string;
+  source?: string;
+  baseline_passed?: boolean | null;
+}
+interface ReceiptCriterion {
+  id: string;
+  text: string;
 }
 interface ReceiptFile {
   path: string;
@@ -24,14 +30,25 @@ interface Receipt {
   isolation?: string;
   score: number;
   checks?: ReceiptCheck[];
+  baseline_checks?: ReceiptCheck[];
+  criteria?: ReceiptCriterion[];
+  contract?: {
+    criteria_source?: string;
+    verification_mode?: string;
+  };
+  coverage?: {
+    execution_backed?: boolean;
+    covered_criteria?: string[];
+  };
   ledger_head?: string;
   files?: ReceiptFile[];
   authority?: { resolved?: string[]; egress_hosts?: string[] };
   provenance?: {
     revision?: string;
     sandbox?: { mode?: string; image?: string; image_digest?: string | null };
-    model?: { provider?: string; model?: string };
-    verifier?: { provider?: string; model?: string };
+    model?: { provider?: string; model?: string } | null;
+    verifier?: { provider?: string; model?: string } | null;
+    executor_models?: Array<{ provider?: string; model?: string }>;
   };
 }
 
@@ -75,6 +92,8 @@ export function ReceiptPanel({ taskId }: { taskId: string }) {
 
   if (!data) return null;
   const r = data.receipt;
+  const checks = r.checks ?? [];
+  const baselineChecks = r.baseline_checks ?? [];
 
   async function replay() {
     setReplaying(true);
@@ -130,6 +149,51 @@ export function ReceiptPanel({ taskId }: { taskId: string }) {
             <b>{r.score}/100</b>
           </p>
 
+          {r.criteria && r.criteria.length > 0 && (
+            <div>
+              <p className="mb-1 opacity-50">
+                Acceptance contract · {r.contract?.criteria_source ?? 'unknown'} ·{' '}
+                {r.contract?.verification_mode ?? 'legacy'}
+              </p>
+              <ul className="space-y-1.5">
+                {r.criteria.map((criterion) => {
+                  const evidence = checks.filter((check) =>
+                    check.criterion_ids?.includes(criterion.id),
+                  );
+                  const proven = evidence.length > 0 && evidence.every((check) => check.passed);
+                  return (
+                    <li
+                      key={criterion.id}
+                      className="rounded-lg border border-black/10 p-2 dark:border-white/10"
+                    >
+                      <div className="flex items-start gap-2">
+                        <span
+                          className={`mt-1 h-1.5 w-1.5 shrink-0 rounded-full ${proven ? 'bg-green-500' : 'bg-amber-500'}`}
+                        />
+                        <div>
+                          <p>
+                            <span className="font-mono opacity-45">{criterion.id}</span>{' '}
+                            {criterion.text}
+                          </p>
+                          <p className="mt-0.5 font-mono text-[10px] opacity-45">
+                            {evidence.length > 0
+                              ? evidence
+                                  .map(
+                                    (check) =>
+                                      `${check.check_id ?? check.kind} [${check.source ?? 'agent'}]`,
+                                  )
+                                  .join(' · ')
+                              : 'No mapped execution evidence'}
+                          </p>
+                        </div>
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          )}
+
           {/* Layered integrity: content hash, ed25519 signature, DB anchor, file re-hash. */}
           <ul className="space-y-0.5">
             <IntegrityRow ok={data.valid} label="content hash" />
@@ -154,11 +218,11 @@ export function ReceiptPanel({ taskId }: { taskId: string }) {
             )}
           </ul>
 
-          {r.checks && r.checks.length > 0 && (
+          {checks.length > 0 && (
             <div>
               <p className="mb-1 opacity-50">Checks (re-run on a fresh copy of the workspace)</p>
               <ul className="space-y-1">
-                {r.checks.map((c, i) => (
+                {checks.map((c, i) => (
                   <li key={i} className="font-mono">
                     <span
                       className={
@@ -169,11 +233,28 @@ export function ReceiptPanel({ taskId }: { taskId: string }) {
                     >
                       [{c.passed ? 'PASS' : 'FAIL'}]
                     </span>{' '}
-                    {c.check_id ? `${c.check_id} ` : ''}
-                    {c.kind} {c.target} — {c.evidence}
+                    {c.check_id ? `${c.check_id} ` : ''}[{c.source ?? 'agent'}] {c.kind} {c.target}{' '}
+                    — {c.evidence}
                     {c.criterion_ids && c.criterion_ids.length > 0
                       ? ` (${c.criterion_ids.join(', ')})`
                       : ''}
+                    {c.baseline_passed !== undefined && c.baseline_passed !== null
+                      ? ` (baseline ${c.baseline_passed ? 'PASS' : 'FAIL'})`
+                      : ''}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {baselineChecks.length > 0 && (
+            <div>
+              <p className="mb-1 opacity-50">Pre-change baseline</p>
+              <ul className="space-y-1">
+                {baselineChecks.map((check, index) => (
+                  <li key={index} className="font-mono opacity-70">
+                    [{check.passed ? 'PASS' : 'FAIL'}] {check.check_id ?? check.kind} [
+                    {check.source ?? 'system'}] {check.target}
                   </li>
                 ))}
               </ul>
@@ -203,6 +284,20 @@ export function ReceiptPanel({ taskId }: { taskId: string }) {
               <p className="break-all">
                 sandbox: {r.provenance.sandbox.mode} {r.provenance.sandbox.image ?? ''}{' '}
                 {r.provenance.sandbox.image_digest ?? ''}
+              </p>
+            ) : null}
+            {r.provenance?.executor_models && r.provenance.executor_models.length > 0 ? (
+              <p className="break-all">
+                executor:{' '}
+                {r.provenance.executor_models
+                  .map((model) => `${model.provider ?? '?'}:${model.model ?? '?'}`)
+                  .join(' → ')}
+              </p>
+            ) : null}
+            {r.provenance?.verifier ? (
+              <p className="break-all">
+                verifier: {r.provenance.verifier.provider ?? '?'}:
+                {r.provenance.verifier.model ?? '?'}
               </p>
             ) : null}
           </div>

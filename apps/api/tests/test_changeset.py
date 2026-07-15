@@ -13,6 +13,7 @@ from app.db.models.task import TaskModel
 from app.domain.task import StopReason, TaskStatus
 from app.services.changeset import acquire_source_lock, release_source_lock
 from app.services.receipt import RECEIPT_SCHEMA, build_receipt
+from app.services.verification import CheckResult
 from app.tools.workspace import Workspace
 
 
@@ -52,7 +53,17 @@ async def _mark_verified(engine: AsyncEngine, task_id: str) -> None:
         task.summary = "Updated and checked the project."
         receipt_hash, _ = build_receipt(
             task,
-            [],
+            [
+                CheckResult(
+                    "command",
+                    "verified project test",
+                    True,
+                    "exit code 0",
+                    check_id="check-001",
+                    criterion_ids=("criterion-001",),
+                    definition={"kind": "command", "command": "true", "expect_exit": 0},
+                )
+            ],
             score=100,
             verified_by="execution",
             workspace=Workspace(Path(task.workspace_path)),
@@ -87,6 +98,7 @@ async def test_verified_change_set_apply_undo_and_discard(
         "/api/v1/tasks",
         json={
             "goal": "Update the project and verify it",
+            "success_criteria": ["The project contains the requested verified update."],
             "project_path": "project",
             "autostart": False,
             "idempotency_key": "verified-project-task",
@@ -101,6 +113,7 @@ async def test_verified_change_set_apply_undo_and_discard(
         "/api/v1/tasks",
         json={
             "goal": "Update the project and verify it",
+            "success_criteria": ["The project contains the requested verified update."],
             "project_path": "project",
             "autostart": False,
             "idempotency_key": "verified-project-task",
@@ -204,14 +217,24 @@ async def test_project_binding_refuses_dirty_and_escaping_sources(
     (source / "app.py").write_text("dirty\n")
     dirty = await client.post(
         "/api/v1/tasks",
-        json={"goal": "Change a dirty project", "project_path": "project", "autostart": False},
+        json={
+            "goal": "Change a dirty project",
+            "success_criteria": ["The project change is complete."],
+            "project_path": "project",
+            "autostart": False,
+        },
     )
     assert dirty.status_code == 409
     assert "uncommitted changes" in dirty.json()["detail"]
 
     escaping = await client.post(
         "/api/v1/tasks",
-        json={"goal": "Escape the project root", "project_path": "../outside", "autostart": False},
+        json={
+            "goal": "Escape the project root",
+            "success_criteria": ["The project change is complete."],
+            "project_path": "../outside",
+            "autostart": False,
+        },
     )
     assert escaping.status_code == 422
 
@@ -231,7 +254,12 @@ async def test_apply_refuses_a_diff_changed_after_receipt(
     created = (
         await client.post(
             "/api/v1/tasks",
-            json={"goal": "Make a verified edit", "project_path": "project", "autostart": False},
+            json={
+                "goal": "Make a verified edit",
+                "success_criteria": ["The verified edit is present."],
+                "project_path": "project",
+                "autostart": False,
+            },
         )
     ).json()
     isolated = await _workspace_path(engine, created["id"])

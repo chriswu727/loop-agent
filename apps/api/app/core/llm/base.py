@@ -49,6 +49,7 @@ class LLMResult:
     provider: str
     tokens: int
     fallbacks: list[FallbackEvent] = field(default_factory=list)
+    model: str = "unknown"
 
 
 # A small set of substrings that mark an error as worth retrying on another

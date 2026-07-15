@@ -9,6 +9,7 @@ build/
 *.tsbuildinfo
 .turbo/
 coverage/
+/evals/results/
 
 # ---------- Python ----------
 __pycache__/

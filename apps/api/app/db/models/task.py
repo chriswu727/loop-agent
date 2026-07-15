@@ -30,6 +30,14 @@ class TaskModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         String(20), nullable=False, default=TaskStatus.PENDING.value, index=True
     )
     rubric: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    criteria_source: Mapped[str] = mapped_column(String(20), nullable=False, default="generated")
+    verification_mode: Mapped[str] = mapped_column(String(20), nullable=False, default="judgment")
+    required_checks: Mapped[list[dict[str, Any]]] = mapped_column(
+        JSON, nullable=False, default=list
+    )
+    baseline_checks: Mapped[list[dict[str, Any]]] = mapped_column(
+        JSON, nullable=False, default=list
+    )
     pending_question: Mapped[str | None] = mapped_column(Text, nullable=True)
     authority_schema: Mapped[str] = mapped_column(
         String(40), nullable=False, default="loop.capabilities/v1"
@@ -71,6 +79,10 @@ class TaskModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     summary: Mapped[str | None] = mapped_column(Text, nullable=True)
     verification_score: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     verified_by: Mapped[str | None] = mapped_column(String(20), nullable=True)  # execution|judgment
+    executor_models: Mapped[list[dict[str, str]]] = mapped_column(
+        JSON, nullable=False, default=list
+    )
+    verifier_model: Mapped[dict[str, str] | None] = mapped_column(JSON, nullable=True)
     receipt_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     receipt_schema: Mapped[str | None] = mapped_column(String(40), nullable=True)
     # Destination/provider decisions returned by isolated enforcement services.

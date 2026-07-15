@@ -40,7 +40,8 @@ yourself (an ambiguous goal, a missing value). Never to confirm work or ask \
 the verifier re-runs to PROVE the work: \
 {"kind":"command","command":"...","expect_exit":0,"expect_stdout":"..."}, \
 {"kind":"file_exists","path":"..."}, or {"kind":"file_contains","path":"...","text":"..."}. \
-Always include checks when the goal involves files or runnable code.\
+Every check must include "criterion_ids":["criterion-001", ...] for the success \
+criteria it proves. Always include checks when the goal involves files or runnable code.\
 """
 
 # Offered to the planner only when the task may still delegate (depth-limited).

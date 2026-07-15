@@ -312,7 +312,7 @@ migration="$(
   kubectl exec deployment/postgres --namespace "$namespace" -- \
     psql -U app -d app -tAc 'SELECT version_num FROM alembic_version'
 )"
-if [[ "$migration" != "0007_verified_changesets" ]]; then
+if [[ "$migration" != "0008_verified_completion_contract" ]]; then
   echo "Unexpected Alembic revision: $migration" >&2
   exit 1
 fi

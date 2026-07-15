@@ -19,6 +19,15 @@
 > UI, a meaningful skill marketplace, broader channels, multi-replica browser-session
 > routing, and production/adoption evidence.
 
+> **Verified Completion v1 (2026-07-15):** Strict local-project tasks now begin with
+> a persisted, user-confirmed acceptance contract. Loop discovers native project
+> checks, records a pre-change baseline, re-runs contract and system gates in the
+> sandbox, requires complete criterion-to-evidence coverage, records actual model
+> provenance, and refuses Apply unless the Receipt retains that coverage. The fault
+> harness proves worker takeover after an unacknowledged job and Redis restart. A
+> spend-gated benchmark now measures solve rate and false acceptance; no real-model
+> score is claimed until that benchmark is deliberately run.
+
 _Synthesized by a multi-agent research workflow (2026-06): 4 verified OpenClaw research dimensions + repo analysis + a 6-lens differentiation panel. Two research dimensions (capabilities, ecosystem) failed structured-output validation and were covered indirectly via the panel; treat those areas as lower-confidence until re-verified._
 
 ## Positioning
@@ -28,6 +37,11 @@ Loop is the autonomous agent you can actually trust to run unattended: the only 
 ## Differentiators (ranked)
 
 ### 1. Re-execution-verified Receipt (provably-done) _(effort: M (check-based verification) + M (Receipt artifact + hash-chained ledger))_
+
+**Shipped as Verified Completion v1.** User criteria and contract checks are
+persisted, project checks are discovered and baselined before edits, strict finish
+requires complete passing evidence with no new regression, and the Receipt exposes
+the mappings, baseline, replay definitions, and actual model provenance.
 
 Turn Loop's seed verifier into the product spine. Today _handle_finish in agent_react.py grades only from workspace.tree() (file names + byte sizes) plus the agent's own prose summary — it never opens a file or re-runs a command, so it largely trusts the claim it checks. Extend the finish tool to require machine-checkable checks (shell command + expected exit code / stdout substring / file sha256); the verifier re-runs each in a fresh executor over a copy of the workspace, and every rubric criterion from _understand must map to at least one passing check. Serialize the whole run into one content-addressed bundle (receipt.json + RECEIPT.md): goal, approved rubric, per-criterion verdict pointing at the proving check, the full step trace, a sha256-per-file manifest, score, model/provider actually used, and token/step accounting — replayable with one command.
 

@@ -48,6 +48,8 @@ def test_prompts_inject_the_current_date() -> None:
     assert "Today's date is 2026-07-05." in plan_user
     _, verify_user = verify_prompts("g", ["c"], "sum", "tree", "checks", today="2026-07-05")
     assert "Today's date is 2026-07-05." in verify_user
+    assert "baseline=FAIL" in verify_user
+    assert "pre-existing failure" in verify_user
     # Absent when not supplied (no misleading blank date line).
     _, no_date = plan_prompts("g", ["c"], "tree", "hist", 5, 1000)
     assert "Today's date" not in no_date
@@ -83,12 +85,19 @@ class ScriptedLLM:
         token_budget: int | None = None,
     ) -> LLMResult:
         if "JSON array of 3 to 6" in user:  # understand
-            return LLMResult('["produce a correct result"]', "fake", self.understand_tokens)
+            return LLMResult(
+                '["produce a correct result"]',
+                "fake",
+                self.understand_tokens,
+                model="fixture-v1",
+            )
         if '"met"' in user:  # verify
-            return LLMResult(json.dumps(self._verify), "fake", self.verify_tokens)
+            return LLMResult(
+                json.dumps(self._verify), "fake", self.verify_tokens, model="fixture-v1"
+            )
         decision = self._plans[min(self._i, len(self._plans) - 1)]  # plan
         self._i += 1
-        return LLMResult(json.dumps(decision), "fake", self.plan_tokens)
+        return LLMResult(json.dumps(decision), "fake", self.plan_tokens, model="fixture-v1")
 
 
 async def _make_task(
@@ -99,12 +108,19 @@ async def _make_task(
     require_approval: bool = False,
     skill: str | None = None,
     depth: int = 0,
+    rubric: list[str] | None = None,
+    verification_mode: str = "judgment",
+    required_checks: list[dict[str, Any]] | None = None,
 ):
     repo = TaskRepository(session)
     task = await repo.create(
         goal="do the thing",
         status=TaskStatus.PENDING.value,
-        rubric=[],
+        rubric=rubric or [],
+        criteria_source="user" if rubric else "generated",
+        verification_mode=verification_mode,
+        required_checks=required_checks or [],
+        baseline_checks=[],
         require_approval=require_approval,
         skill=skill,
         depth=depth,
@@ -112,6 +128,8 @@ async def _make_task(
         token_budget=token_budget,
         summary=None,
         verification_score=0,
+        executor_models=[],
+        verifier_model=None,
         steps_used=0,
         tokens_used=0,
         workspace_path=None,
@@ -559,6 +577,95 @@ async def test_failing_check_blocks_acceptance(session: AsyncSession) -> None:
     assert task.receipt_hash is not None
     receipt = json.loads(Workspace(Path(task.workspace_path)).read("receipt.json"))
     assert receipt["verified_by"] == "unverified"
+
+
+async def test_strict_contract_runs_required_check_and_maps_every_criterion(
+    session: AsyncSession,
+) -> None:
+    plans = [
+        {
+            "thought": "write the contracted output",
+            "tool": "write_file",
+            "args": {"path": "contract.txt", "content": "ready"},
+        },
+        {"thought": "finish", "tool": "finish", "args": {"summary": "ready"}},
+    ]
+    task = await _make_task(
+        session,
+        max_steps=8,
+        token_budget=1_000_000,
+        rubric=["contract.txt contains ready"],
+        verification_mode="strict",
+        required_checks=[
+            {
+                "id": "contract-001",
+                "kind": "file_contains",
+                "path": "contract.txt",
+                "text": "ready",
+                "source": "contract",
+            }
+        ],
+    )
+    await _service(session, ScriptedLLM(plans)).run(task.id)
+
+    await session.refresh(task)
+    assert task.stop_reason == StopReason.GOAL_ACHIEVED.value
+    assert task.verified_by == "execution"
+    receipt = json.loads(Workspace(Path(task.workspace_path)).read("receipt.json"))
+    assert receipt["contract"]["verification_mode"] == "strict"
+    assert receipt["checks"][0]["criterion_ids"] == ["criterion-001"]
+    assert receipt["checks"][0]["baseline_passed"] is False
+    assert receipt["provenance"]["model"]["provider"] == "fake"
+    assert receipt["provenance"]["model"]["model"] == "fixture-v1"
+    assert receipt["provenance"]["verifier"]["model"] == "fixture-v1"
+
+
+async def test_strict_contract_refuses_judgment_only_finish(session: AsyncSession) -> None:
+    plans = [{"thought": "claim done", "tool": "finish", "args": {"summary": "done"}}]
+    task = await _make_task(
+        session,
+        max_steps=8,
+        token_budget=1_000_000,
+        rubric=["The requested result is proven."],
+        verification_mode="strict",
+    )
+    await _service(session, ScriptedLLM(plans)).run(task.id)
+
+    await session.refresh(task)
+    assert task.stop_reason == StopReason.STUCK.value
+    assert task.verified_by is None
+
+
+async def test_strict_contract_refuses_implicitly_mapped_agent_check(
+    session: AsyncSession,
+) -> None:
+    plans = [
+        {
+            "thought": "write",
+            "tool": "write_file",
+            "args": {"path": "proof.txt", "content": "done"},
+        },
+        {
+            "thought": "claim",
+            "tool": "finish",
+            "args": {
+                "summary": "done",
+                "checks": [{"kind": "file_exists", "path": "proof.txt"}],
+            },
+        },
+    ]
+    task = await _make_task(
+        session,
+        max_steps=8,
+        token_budget=1_000_000,
+        rubric=["The requested result is proven."],
+        verification_mode="strict",
+    )
+    await _service(session, ScriptedLLM(plans)).run(task.id)
+
+    await session.refresh(task)
+    assert task.stop_reason == StopReason.STUCK.value
+    assert task.verified_by is None
 
 
 def _install_signed_skill(tmp_path: Path, monkeypatch, *, name: str, manifest: dict) -> None:
@@ -1133,6 +1240,8 @@ async def test_crash_mid_run_fails_cleanly_with_unverified_receipt(session: Asyn
     assert task.receipt_hash  # a crash is auditable too
     receipt = json.loads(Workspace(Path(task.workspace_path)).read("receipt.json"))
     assert receipt["verified_by"] == "unverified"
+    assert receipt["provenance"]["executor_models"] == []
+    assert receipt["provenance"]["verifier"] is None
 
 
 async def test_spawned_child_cost_folds_into_parent_budget(session: AsyncSession) -> None:

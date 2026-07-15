@@ -107,7 +107,7 @@ jobs:
           grep -q 'name: allow-postgres-from-loop-runtimes' /tmp/loop-k8s-acceptance.yaml
 
   enforcement-acceptance:
-    name: enforcement · real Redis restart + cross-process revoke
+    name: enforcement · Redis restart + worker recovery + revoke
     runs-on: ubuntu-latest
     timeout-minutes: 10
     defaults:

@@ -29,6 +29,12 @@ describe('ReceiptPanel', () => {
         verified_by: 'execution',
         isolation: 'kubernetes',
         score: 100,
+        criteria: [{ id: 'criterion-001', text: 'The verified output exists' }],
+        contract: { criteria_source: 'user', verification_mode: 'strict' },
+        provenance: {
+          executor_models: [{ provider: 'anthropic', model: 'claude-sonnet-4-6' }],
+          verifier: { provider: 'gemini', model: 'gemini-2.5-flash' },
+        },
         checks: [
           {
             check_id: 'check-001',
@@ -37,6 +43,18 @@ describe('ReceiptPanel', () => {
             target: 'result.txt',
             passed: true,
             evidence: 'present',
+            source: 'contract',
+            baseline_passed: false,
+          },
+        ],
+        baseline_checks: [
+          {
+            check_id: 'system-js-test',
+            kind: 'command',
+            target: 'pnpm test',
+            passed: false,
+            evidence: 'missing dependency',
+            source: 'system',
           },
         ],
       },
@@ -49,7 +67,12 @@ describe('ReceiptPanel', () => {
     fireEvent.click(await screen.findByRole('button', { name: /Receipt/ }));
 
     expect(screen.getByText('authentic')).toBeInTheDocument();
-    expect(screen.getByText(/criterion-001/)).toBeInTheDocument();
+    expect(screen.getAllByText(/criterion-001/)).toHaveLength(2);
+    expect(screen.getByText(/The verified output exists/)).toBeInTheDocument();
+    expect(screen.getAllByText(/check-001 \[contract\]/)).toHaveLength(2);
+    expect(screen.getByText(/executor: anthropic:claude-sonnet-4-6/)).toBeInTheDocument();
+    expect(screen.getByText('Pre-change baseline')).toBeInTheDocument();
+    expect(screen.getByText(/system-js-test \[system\] pnpm test/)).toBeInTheDocument();
     expect(screen.getByText('matches independent DB anchor')).toBeInTheDocument();
   });
 
