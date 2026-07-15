@@ -81,3 +81,22 @@ def test_sandbox_digest_must_be_a_sha256_reference() -> None:
 
     digest = "sha256:" + "a" * 64
     assert production(agent_sandbox_image_digest=digest).agent_sandbox_image_digest == digest
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ("https://app.example.com", ["https://app.example.com"]),
+        (
+            "https://app.example.com,https://admin.example.com",
+            ["https://app.example.com", "https://admin.example.com"],
+        ),
+        ('["https://app.example.com"]', ["https://app.example.com"]),
+    ],
+)
+def test_cors_origins_parse_environment_values(
+    monkeypatch: pytest.MonkeyPatch, raw: str, expected: list[str]
+) -> None:
+    monkeypatch.setenv("CORS_ORIGINS", raw)
+
+    assert Settings(_env_file=None).cors_origins == expected
