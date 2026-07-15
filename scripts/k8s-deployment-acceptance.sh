@@ -2,7 +2,7 @@
 set -euo pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-cluster="${LOOP_ACCEPTANCE_CLUSTER:-loop-acceptance-${GITHUB_RUN_ID:-local}-${GITHUB_RUN_ATTEMPT:-0}-$$}"
+cluster="${LOOP_ACCEPTANCE_CLUSTER:-la-${GITHUB_RUN_ID:-local}-${GITHUB_RUN_ATTEMPT:-0}-$$}"
 namespace="loop-acceptance"
 ingress_namespace="ingress-nginx"
 overlay="$root/infra/k8s/overlays/acceptance"

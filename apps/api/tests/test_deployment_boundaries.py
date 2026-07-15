@@ -278,3 +278,5 @@ def test_kubernetes_acceptance_migrates_runs_task_and_rolls_back() -> None:
     assert 'report.get("authentic")' in script
     assert "0006_authority_audit" in script
     assert "api web worker" in smoke
+    assert 'cluster="${LOOP_ACCEPTANCE_CLUSTER:-la-' in script
+    assert len("la-29386447741-1-2695") <= 32
