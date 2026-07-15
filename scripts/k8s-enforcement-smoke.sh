@@ -3,7 +3,7 @@ set -euo pipefail
 
 namespace="${1:-loop-prod}"
 probe="loop-enforcement-smoke-$$"
-deployments=(api worker email-gateway calendar-gateway vision-gateway browser-gateway egress-proxy)
+deployments=(api web worker email-gateway calendar-gateway vision-gateway browser-gateway egress-proxy)
 
 cleanup() {
   kubectl delete pod "$probe" --namespace "$namespace" --ignore-not-found --wait=false >/dev/null 2>&1 || true

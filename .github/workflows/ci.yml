@@ -17,7 +17,7 @@ jobs:
       run:
         working-directory: apps/api
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
@@ -46,11 +46,11 @@ jobs:
     name: web · lint + typecheck + build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       # No version here: it's read from the root package.json "packageManager"
       # field. Specifying both errors (ERR_PNPM_BAD_PM_VERSION).
       - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: pnpm
@@ -65,8 +65,8 @@ jobs:
     name: runtime · locks + compose + kubernetes
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
@@ -82,6 +82,7 @@ jobs:
         run: |
           kubectl kustomize infra/k8s/overlays/dev >/tmp/loop-k8s-dev.yaml
           kubectl kustomize infra/k8s/overlays/prod >/tmp/loop-k8s-prod.yaml
+          kubectl kustomize infra/k8s/overlays/acceptance >/tmp/loop-k8s-acceptance.yaml
           grep -q 'name: email-gateway' /tmp/loop-k8s-prod.yaml
           grep -q 'name: calendar-gateway' /tmp/loop-k8s-prod.yaml
           grep -q 'name: vision-gateway' /tmp/loop-k8s-prod.yaml
@@ -101,6 +102,9 @@ jobs:
           grep -q 'value: loop-browser-gateway' /tmp/loop-k8s-prod.yaml
           grep -q 'value: 80,443,587,993' /tmp/loop-k8s-prod.yaml
           grep -q 'loop.openai.com/egress: proxied' /tmp/loop-k8s-prod.yaml
+          grep -q 'name: postgres' /tmp/loop-k8s-acceptance.yaml
+          grep -q 'name: redis' /tmp/loop-k8s-acceptance.yaml
+          grep -q 'name: allow-postgres-from-loop-runtimes' /tmp/loop-k8s-acceptance.yaml
 
   enforcement-acceptance:
     name: enforcement · real Redis restart + cross-process revoke
@@ -110,7 +114,7 @@ jobs:
       run:
         working-directory: apps/api
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
@@ -119,3 +123,20 @@ jobs:
       - run: uv sync --frozen --extra dev
       - name: Acceptance harness
         run: bash ../../scripts/enforcement-acceptance.sh
+
+  kubernetes-acceptance:
+    name: kubernetes · deploy + task + rollback
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v7
+      - uses: docker/setup-buildx-action@v4
+      - name: Install k3d
+        run: |
+          curl --fail --show-error --location --output /tmp/k3d \
+            https://github.com/k3d-io/k3d/releases/download/v5.9.0/k3d-linux-amd64
+          echo '06d8f25bc3a971c4eb29e0ff08429b180402db0f4dec838c9eac427e296800a0  /tmp/k3d' | sha256sum --check
+          sudo install /tmp/k3d /usr/local/bin/k3d
+          k3d version
+      - name: Disposable cluster acceptance
+        run: bash scripts/k8s-deployment-acceptance.sh

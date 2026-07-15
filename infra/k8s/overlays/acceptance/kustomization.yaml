@@ -1,0 +1,48 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: loop-acceptance
+resources:
+  - ../../base
+  - dependencies.yaml
+
+replicas:
+  - name: api
+    count: 1
+  - name: web
+    count: 1
+  - name: worker
+    count: 1
+  - name: email-gateway
+    count: 1
+  - name: calendar-gateway
+    count: 1
+  - name: vision-gateway
+    count: 1
+  - name: browser-gateway
+    count: 1
+  - name: egress-proxy
+    count: 1
+
+images:
+  - name: app-api
+    newName: loop-api
+    newTag: acceptance
+  - name: app-web
+    newName: loop-web
+    newTag: acceptance
+  - name: app-provider-gateway
+    newName: loop-provider-gateway
+    newTag: acceptance
+
+patches:
+  - path: patch-config.yaml
+  - target:
+      kind: HorizontalPodAutoscaler
+    patch: |-
+      - op: replace
+        path: /spec/minReplicas
+        value: 1
+      - op: replace
+        path: /spec/maxReplicas
+        value: 1

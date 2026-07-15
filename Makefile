@@ -137,3 +137,7 @@ k8s-apply-dev: ## Apply the dev overlay to the current kube-context
 .PHONY: k8s-enforcement-smoke
 k8s-enforcement-smoke: ## Verify rollout and enforcement NetworkPolicy in a deployed namespace
 	bash scripts/k8s-enforcement-smoke.sh $(or $(namespace),loop-prod)
+
+.PHONY: k8s-deployment-acceptance
+k8s-deployment-acceptance: ## Build and verify production mode in a disposable k3d cluster
+	bash scripts/k8s-deployment-acceptance.sh

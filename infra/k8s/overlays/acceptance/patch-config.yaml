@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: app-config
+data:
+  ENVIRONMENT: 'production'
+  CORS_ORIGINS: 'http://web'
+  APP_BASE_URL: 'http://web'
+  DEMO_MODE: 'true'
+  LLM_DEFAULT_PROVIDER: 'mock'
+  PROMETHEUS_ENABLED: 'false'
+  AGENT_SANDBOX_IMAGE: 'loop-sandbox:acceptance'
+  AGENT_SANDBOX_IMAGE_DIGEST: 'sha256:0000000000000000000000000000000000000000000000000000000000000000'

@@ -227,3 +227,54 @@ def test_ci_runs_real_redis_enforcement_acceptance() -> None:
     assert any(
         step.get("run") == "bash ../../scripts/enforcement-acceptance.sh" for step in job["steps"]
     )
+
+
+def test_ci_runs_disposable_kubernetes_acceptance() -> None:
+    workflow = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text())
+    job = workflow["jobs"]["kubernetes-acceptance"]
+
+    assert job["name"] == "kubernetes · deploy + task + rollback"
+    assert job["timeout-minutes"] == 25
+    assert any(
+        step.get("run") == "bash scripts/k8s-deployment-acceptance.sh" for step in job["steps"]
+    )
+    install = next(step["run"] for step in job["steps"] if step.get("name") == "Install k3d")
+    assert "v5.9.0/k3d-linux-amd64" in install
+    assert "06d8f25bc3a971c4eb29e0ff08429b180402db0f4dec838c9eac427e296800a0" in install
+
+
+def test_kubernetes_acceptance_is_production_mode_with_ephemeral_dependencies() -> None:
+    overlay = yaml.safe_load(
+        (ROOT / "infra/k8s/overlays/acceptance/kustomization.yaml").read_text()
+    )
+    config = _documents("infra/k8s/overlays/acceptance/patch-config.yaml")[0]["data"]
+    dependencies = _documents("infra/k8s/overlays/acceptance/dependencies.yaml")
+    resources = {(document["kind"], document["metadata"]["name"]) for document in dependencies}
+
+    assert overlay["namespace"] == "loop-acceptance"
+    assert overlay["resources"] == ["../../base", "dependencies.yaml"]
+    assert config["ENVIRONMENT"] == "production"
+    assert config["DEMO_MODE"] == "true"
+    assert config["LLM_DEFAULT_PROVIDER"] == "mock"
+    assert config["AGENT_SANDBOX_IMAGE"] == "loop-sandbox:acceptance"
+    assert config["AGENT_SANDBOX_IMAGE_DIGEST"] == "sha256:" + "0" * 64
+    assert ("Deployment", "postgres") in resources
+    assert ("Deployment", "redis") in resources
+    assert ("NetworkPolicy", "allow-postgres-from-loop-runtimes") in resources
+
+
+def test_kubernetes_acceptance_migrates_runs_task_and_rolls_back() -> None:
+    migration = _documents("infra/k8s/overlays/acceptance/migration-job.yaml")[0]
+    script = (ROOT / "scripts/k8s-deployment-acceptance.sh").read_text()
+    smoke = (ROOT / "scripts/k8s-enforcement-smoke.sh").read_text()
+
+    container = migration["spec"]["template"]["spec"]["containers"][0]
+    assert container["image"] == "loop-api:acceptance"
+    assert container["imagePullPolicy"] == "Never"
+    assert container["command"] == ["alembic", "upgrade", "head"]
+    assert "run_cluster_probe before-rollback true" in script
+    assert "kubectl rollout undo deployment/api" in script
+    assert 'task["sandbox"] != "kubernetes"' in script
+    assert 'report.get("authentic")' in script
+    assert "0006_authority_audit" in script
+    assert "api web worker" in smoke
