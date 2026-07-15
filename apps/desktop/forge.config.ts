@@ -25,8 +25,10 @@ const config: ForgeConfig = {
       platforms: ['linux'],
       config: {
         options: {
+          bin: 'loop-desktop',
           homepage: 'https://github.com/chriswu727/loop-agent',
           maintainer: 'Loop contributors',
+          name: 'loop-desktop',
         },
       },
     },
