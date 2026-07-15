@@ -190,10 +190,24 @@ def test_kubernetes_egress_proxy_requires_shared_state_without_local_pvc() -> No
     assert environment["EGRESS_PROXY_REQUIRE_SHARED_STATE"] == "true"
     assert environment["EGRESS_PROXY_REQUIRE_DURABLE_AUDIT"] == "true"
     assert environment["EGRESS_PROXY_REQUIRE_DURABLE_REVOCATIONS"] == "true"
+    assert environment["EGRESS_PROXY_PORT"] == "8080"
     assert spec["enableServiceLinks"] is True
     assert container["readinessProbe"]["httpGet"]["path"] == "/readyz"
     assert spec["volumes"] == [{"name": "tmp", "emptyDir": {"sizeLimit": "64Mi"}}]
     assert deployment["spec"].get("strategy", {}).get("type") != "Recreate"
+
+
+def test_kubernetes_app_workloads_use_explicit_runtime_identities_and_discovery() -> None:
+    for name in ("api", "worker"):
+        spec = _documents(f"infra/k8s/base/{name}-deployment.yaml")[0]["spec"]["template"]["spec"]
+        assert spec["enableServiceLinks"] is False
+        assert spec["securityContext"]["runAsUser"] == 10001
+
+    web_spec = _documents("infra/k8s/base/web-deployment.yaml")[0]["spec"]["template"]["spec"]
+    assert web_spec["enableServiceLinks"] is False
+    assert web_spec["securityContext"]["runAsUser"] == 1001
+    assert web_spec["securityContext"]["runAsGroup"] == 1001
+    assert "USER 1001:1001" in (ROOT / "infra/docker/web.Dockerfile").read_text()
 
 
 def test_kubernetes_provider_secrets_are_protocol_specific() -> None:
@@ -248,16 +262,19 @@ def test_kubernetes_acceptance_is_production_mode_with_ephemeral_dependencies() 
         (ROOT / "infra/k8s/overlays/acceptance/kustomization.yaml").read_text()
     )
     config = _documents("infra/k8s/overlays/acceptance/patch-config.yaml")[0]["data"]
+    storage = _documents("infra/k8s/overlays/acceptance/patch-storage.yaml")[0]["spec"]
     dependencies = _documents("infra/k8s/overlays/acceptance/dependencies.yaml")
     resources = {(document["kind"], document["metadata"]["name"]) for document in dependencies}
 
     assert overlay["namespace"] == "loop-acceptance"
     assert overlay["resources"] == ["../../base", "dependencies.yaml"]
+    assert {"path": "patch-storage.yaml"} in overlay["patches"]
     assert config["ENVIRONMENT"] == "production"
     assert config["DEMO_MODE"] == "true"
     assert config["LLM_DEFAULT_PROVIDER"] == "mock"
     assert config["AGENT_SANDBOX_IMAGE"] == "loop-sandbox:acceptance"
     assert config["AGENT_SANDBOX_IMAGE_DIGEST"] == "sha256:" + "0" * 64
+    assert storage["accessModes"] == ["ReadWriteOnce"]
     assert ("Deployment", "postgres") in resources
     assert ("Deployment", "redis") in resources
     assert ("NetworkPolicy", "allow-postgres-from-loop-runtimes") in resources

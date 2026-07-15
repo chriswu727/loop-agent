@@ -37,6 +37,7 @@ images:
 
 patches:
   - path: patch-config.yaml
+  - path: patch-storage.yaml
   - target:
       kind: HorizontalPodAutoscaler
     patch: |-
