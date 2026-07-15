@@ -87,16 +87,14 @@ jobs:
           grep -q 'name: vision-gateway' /tmp/loop-k8s-prod.yaml
           grep -q 'name: browser-gateway' /tmp/loop-k8s-prod.yaml
           grep -q 'name: egress-proxy' /tmp/loop-k8s-prod.yaml
-          grep -q 'claimName: egress-proxy-audit' /tmp/loop-k8s-prod.yaml
           grep -q 'name: EGRESS_PROXY_REQUIRE_DURABLE_AUDIT' /tmp/loop-k8s-prod.yaml
           grep -q 'name: EGRESS_PROXY_REQUIRE_DURABLE_REVOCATIONS' /tmp/loop-k8s-prod.yaml
-          grep -q 'claimName: email-gateway-state' /tmp/loop-k8s-prod.yaml
-          grep -q 'claimName: calendar-gateway-state' /tmp/loop-k8s-prod.yaml
-          grep -q 'claimName: vision-gateway-state' /tmp/loop-k8s-prod.yaml
-          grep -q 'claimName: browser-gateway-state' /tmp/loop-k8s-prod.yaml
+          grep -q 'name: EGRESS_PROXY_REQUIRE_SHARED_STATE' /tmp/loop-k8s-prod.yaml
           grep -q 'name: PROVIDER_GATEWAY_REQUIRE_DURABLE_REVOCATIONS' /tmp/loop-k8s-prod.yaml
+          grep -q 'name: PROVIDER_GATEWAY_REQUIRE_SHARED_STATE' /tmp/loop-k8s-prod.yaml
           grep -q 'name: restrict-browser-gateway-egress' /tmp/loop-k8s-prod.yaml
           grep -q 'name: restrict-provider-gateways-egress' /tmp/loop-k8s-prod.yaml
+          grep -q 'name: allow-redis-from-loop-runtimes' /tmp/loop-k8s-prod.yaml
           grep -q 'value: loop-email-gateway' /tmp/loop-k8s-prod.yaml
           grep -q 'value: loop-calendar-gateway' /tmp/loop-k8s-prod.yaml
           grep -q 'value: loop-vision-gateway' /tmp/loop-k8s-prod.yaml

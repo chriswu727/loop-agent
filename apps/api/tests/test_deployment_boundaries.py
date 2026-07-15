@@ -47,9 +47,11 @@ def test_compose_provider_gateways_have_separate_credentials_and_proxy_only_netw
         assert environment["PROVIDER_GATEWAY_AUTHORITY_AUDIENCE"] == audience
         assert environment["PROVIDER_GATEWAY_BROWSER_ENABLED"] == "false"
         assert environment["PROVIDER_GATEWAY_EGRESS_PROXY_URL"] == "http://172.32.0.2:8080"
+        assert environment["PROVIDER_GATEWAY_REQUIRE_SHARED_STATE"] == "true"
+        assert environment["PROVIDER_GATEWAY_STATE_REDIS_URL"] == "redis://172.33.0.2:6379/1"
         assert required_secrets <= environment.keys()
         assert not forbidden_secrets & environment.keys()
-        assert set(gateway["networks"]) == {"provider-egress"}
+        assert set(gateway["networks"]) == {"provider-egress", "enforcement-state"}
         assert gateway["dns"] == ["127.0.0.1"]
 
     worker_environment = services["worker"]["environment"]
@@ -58,9 +60,12 @@ def test_compose_provider_gateways_have_separate_credentials_and_proxy_only_netw
     assert worker_environment["AGENT_CALENDAR_GATEWAY_URL"] == "http://calendar-gateway:8090"
     assert worker_environment["AGENT_VISION_GATEWAY_URL"] == "http://vision-gateway:8090"
     assert compose["networks"]["provider-egress"]["internal"] is True
+    assert compose["networks"]["enforcement-state"]["internal"] is True
+    assert services["redis"]["networks"]["enforcement-state"]["ipv4_address"] == "172.33.0.2"
     assert services["egress-proxy"]["environment"]["EGRESS_PROXY_ALLOWED_PORTS"] == (
         "80,443,587,993"
     )
+    assert services["egress-proxy"]["environment"]["EGRESS_PROXY_REQUIRE_SHARED_STATE"] == "true"
 
 
 def test_compose_browser_has_no_credentials_or_direct_network() -> None:
@@ -72,6 +77,8 @@ def test_compose_browser_has_no_credentials_or_direct_network() -> None:
     assert browser["build"]["target"] == "provider-gateway"
     assert browser_environment["PROVIDER_GATEWAY_AUTHORITY_AUDIENCE"] == ("loop-browser-gateway")
     assert browser_environment["PROVIDER_GATEWAY_EGRESS_PROXY_URL"] == ("http://172.31.0.2:8080")
+    assert browser_environment["PROVIDER_GATEWAY_REQUIRE_SHARED_STATE"] == "true"
+    assert browser_environment["PROVIDER_GATEWAY_STATE_REDIS_URL"] == ("redis://172.33.0.2:6379/1")
     assert (
         not {
             "SMTP_HOST",
@@ -83,7 +90,7 @@ def test_compose_browser_has_no_credentials_or_direct_network() -> None:
         }
         & browser_environment.keys()
     )
-    assert set(browser["networks"]) == {"browser-egress"}
+    assert set(browser["networks"]) == {"browser-egress", "enforcement-state"}
     assert browser["dns"] == ["127.0.0.1"]
     assert compose["networks"]["browser-egress"]["internal"] is True
     assert services["worker"]["environment"]["AGENT_BROWSER_GATEWAY_URL"] == (
@@ -107,7 +114,9 @@ def test_kubernetes_browser_can_egress_only_to_proxy() -> None:
     assert browser_spec["dnsConfig"]["nameservers"] == ["127.0.0.1"]
     assert browser_container["image"] == "app-provider-gateway:latest"
     assert browser_container["envFrom"] == [{"secretRef": {"name": "browser-gateway-secrets"}}]
+    assert browser_container["readinessProbe"]["httpGet"]["path"] == "/readyz"
     assert browser_env["PROVIDER_GATEWAY_AUTHORITY_AUDIENCE"] == "loop-browser-gateway"
+    assert browser_env["PROVIDER_GATEWAY_REQUIRE_SHARED_STATE"] == "true"
     assert "PROVIDER_GATEWAY_EGRESS_PROXY_URL" not in browser_env
 
     restriction = policies["restrict-browser-gateway-egress"]["spec"]
@@ -119,7 +128,11 @@ def test_kubernetes_browser_can_egress_only_to_proxy() -> None:
         {
             "to": [{"podSelector": {"matchLabels": {"app.kubernetes.io/name": "egress-proxy"}}}],
             "ports": [{"protocol": "TCP", "port": 8080}],
-        }
+        },
+        {
+            "to": [{"podSelector": {"matchLabels": {"app.kubernetes.io/name": "redis"}}}],
+            "ports": [{"protocol": "TCP", "port": 6379}],
+        },
     ]
 
 
@@ -140,11 +153,14 @@ def test_kubernetes_provider_gateways_can_egress_only_to_proxy() -> None:
         assert spec["dnsConfig"]["nameservers"] == ["127.0.0.1"]
         assert container["image"] == "app-api:latest"
         assert container["envFrom"] == [{"secretRef": {"name": f"{gateway_name}-secrets"}}]
+        assert container["readinessProbe"]["httpGet"]["path"] == "/readyz"
         assert environment["PROVIDER_GATEWAY_SERVICE_NAME"] == gateway_name
         assert environment["PROVIDER_GATEWAY_AUTHORITY_AUDIENCE"] == audience
+        assert environment["PROVIDER_GATEWAY_REQUIRE_SHARED_STATE"] == "true"
         assert environment["PROVIDER_GATEWAY_BROWSER_ENABLED"] == "false"
         assert "PROVIDER_GATEWAY_EGRESS_PROXY_URL" not in environment
-        assert spec["volumes"][1]["persistentVolumeClaim"]["claimName"] == (f"{gateway_name}-state")
+        assert spec["volumes"] == [{"name": "tmp", "emptyDir": {"sizeLimit": "256Mi"}}]
+        assert deployment["spec"].get("strategy", {}).get("type") != "Recreate"
 
     policies = {
         document["metadata"]["name"]: document
@@ -157,8 +173,27 @@ def test_kubernetes_provider_gateways_can_egress_only_to_proxy() -> None:
         {
             "to": [{"podSelector": {"matchLabels": {"app.kubernetes.io/name": "egress-proxy"}}}],
             "ports": [{"protocol": "TCP", "port": 8080}],
-        }
+        },
+        {
+            "to": [{"podSelector": {"matchLabels": {"app.kubernetes.io/name": "redis"}}}],
+            "ports": [{"protocol": "TCP", "port": 6379}],
+        },
     ]
+
+
+def test_kubernetes_egress_proxy_requires_shared_state_without_local_pvc() -> None:
+    deployment = _documents("infra/k8s/base/egress-proxy-deployment.yaml")[0]
+    spec = deployment["spec"]["template"]["spec"]
+    container = spec["containers"][0]
+    environment = {item["name"]: item["value"] for item in container["env"]}
+
+    assert environment["EGRESS_PROXY_REQUIRE_SHARED_STATE"] == "true"
+    assert environment["EGRESS_PROXY_REQUIRE_DURABLE_AUDIT"] == "true"
+    assert environment["EGRESS_PROXY_REQUIRE_DURABLE_REVOCATIONS"] == "true"
+    assert spec["enableServiceLinks"] is True
+    assert container["readinessProbe"]["httpGet"]["path"] == "/readyz"
+    assert spec["volumes"] == [{"name": "tmp", "emptyDir": {"sizeLimit": "64Mi"}}]
+    assert deployment["spec"].get("strategy", {}).get("type") != "Recreate"
 
 
 def test_kubernetes_provider_secrets_are_protocol_specific() -> None:

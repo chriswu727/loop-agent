@@ -6,7 +6,9 @@ import json
 import sqlite3
 from collections import defaultdict, deque
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
+
+import redis.asyncio as aioredis
 
 
 class AuditStore:
@@ -16,22 +18,65 @@ class AuditStore:
         *,
         max_events_per_run: int = 200,
         max_events_total: int = 50_000,
+        redis_url: str | None = None,
+        namespace: str = "loop:egress",
+        redis_client: aioredis.Redis | None = None,
     ) -> None:
         self.max_events_per_run = max_events_per_run
         self.max_events_total = max_events_total
         self.database_path = Path(database_path).expanduser() if database_path else None
+        self._redis = redis_client or (
+            aioredis.from_url(
+                redis_url,
+                decode_responses=True,
+                socket_connect_timeout=5,
+                socket_timeout=5,
+            )
+            if redis_url
+            else None
+        )
+        self._owns_redis = redis_client is None and self._redis is not None
+        self._stream_key = f"{namespace}:audit"
         self._events: dict[str, deque[dict[str, Any]]] = defaultdict(
             lambda: deque(maxlen=self.max_events_per_run)
         )
         self._lock = asyncio.Lock()
-        if self.database_path is not None:
+        if self.database_path is not None and self._redis is None:
             self._initialize_database()
 
     @property
     def durable(self) -> bool:
-        return self.database_path is not None
+        return self._redis is not None or self.database_path is not None
+
+    @property
+    def shared(self) -> bool:
+        return self._redis is not None
+
+    @property
+    def backend(self) -> str:
+        if self._redis is not None:
+            return "redis"
+        return "sqlite" if self.database_path is not None else "memory"
+
+    async def ready(self) -> bool:
+        return bool(await self._redis.ping()) if self._redis is not None else True
+
+    async def close(self) -> None:
+        if self._redis is not None and self._owns_redis:
+            await self._redis.aclose()
 
     async def append(self, run_id: str, event: dict[str, Any]) -> None:
+        if self._redis is not None:
+            await self._redis.xadd(
+                self._stream_key,
+                {
+                    "run_id": run_id,
+                    "event_json": json.dumps(event, separators=(",", ":"), sort_keys=True),
+                },
+                maxlen=self.max_events_total,
+                approximate=False,
+            )
+            return
         async with self._lock:
             if self.database_path is None:
                 self._events[run_id].append(event)
@@ -39,6 +84,32 @@ class AuditStore:
             await asyncio.to_thread(self._append_database, run_id, event)
 
     async def list(self, run_id: str) -> list[dict[str, Any]]:
+        if self._redis is not None:
+            events: list[dict[str, Any]] = []
+            cursor = "+"
+            batch_size = max(100, min(self.max_events_per_run * 2, 1_000))
+            while len(events) < self.max_events_per_run:
+                rows = cast(
+                    list[tuple[str, dict[str, str]]],
+                    await self._redis.xrevrange(
+                        self._stream_key,
+                        max=cursor,
+                        min="-",
+                        count=batch_size,
+                    ),
+                )
+                if not rows:
+                    break
+                for _, fields in rows:
+                    if fields.get("run_id") == run_id and "event_json" in fields:
+                        events.append(json.loads(fields["event_json"]))
+                        if len(events) == self.max_events_per_run:
+                            break
+                if len(rows) < batch_size:
+                    break
+                cursor = f"({rows[-1][0]}"
+            events.reverse()
+            return events
         async with self._lock:
             if self.database_path is None:
                 return list(self._events.get(run_id, ()))

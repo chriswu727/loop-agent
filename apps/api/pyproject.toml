@@ -44,6 +44,7 @@ dev = [
     "mypy==2.1.0",
     "pip-audit==2.10.1",
     "uv==0.11.15",
+    "fakeredis==2.36.2",
 ]
 # Preinstalled in the runtime image so the agent can edit real documents:
 # spreadsheets (openpyxl), Word docs (python-docx), and tabular data (pandas).

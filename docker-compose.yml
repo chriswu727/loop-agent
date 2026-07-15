@@ -158,25 +158,9 @@ services:
   data-init:
     image: alpine:3.22
     user: '0:0'
-    command:
-      [
-        'chown',
-        '-R',
-        '10001:10001',
-        '/var/lib/loop',
-        '/var/lib/loop-egress',
-        '/var/lib/loop-email',
-        '/var/lib/loop-calendar',
-        '/var/lib/loop-vision',
-        '/var/lib/loop-browser',
-      ]
+    command: ['chown', '-R', '10001:10001', '/var/lib/loop']
     volumes:
       - loopdata:/var/lib/loop
-      - egressaudit:/var/lib/loop-egress
-      - emailstate:/var/lib/loop-email
-      - calendarstate:/var/lib/loop-calendar
-      - visionstate:/var/lib/loop-vision
-      - browserstate:/var/lib/loop-browser
     restart: 'no'
 
   email-gateway:
@@ -192,7 +176,8 @@ services:
       PROVIDER_GATEWAY_AUTHORITY_PUBLIC_KEY: ${AGENT_AUTHORITY_PUBLIC_KEY:-}
       PROVIDER_GATEWAY_AUTHORITY_PUBLIC_KEYS: ${AGENT_AUTHORITY_PUBLIC_KEYS:-{}}
       PROVIDER_GATEWAY_REQUIRE_DURABLE_REVOCATIONS: 'true'
-      PROVIDER_GATEWAY_REVOCATION_DATABASE_PATH: /var/lib/loop-email/authority.sqlite3
+      PROVIDER_GATEWAY_REQUIRE_SHARED_STATE: 'true'
+      PROVIDER_GATEWAY_STATE_REDIS_URL: redis://172.33.0.2:6379/1
       PROVIDER_GATEWAY_BROWSER_ENABLED: 'false'
       PROVIDER_GATEWAY_EGRESS_PROXY_URL: http://172.32.0.2:8080
       SMTP_HOST: ${SMTP_HOST:-}
@@ -205,14 +190,14 @@ services:
       EMAIL_FROM: ${EMAIL_FROM:-}
     volumes:
       - ./apps/api:/app:ro
-      - emailstate:/var/lib/loop-email
     depends_on:
-      data-init:
-        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
       egress-proxy:
         condition: service_healthy
     networks:
       provider-egress:
+      enforcement-state:
     dns:
       - 127.0.0.1
     healthcheck:
@@ -221,7 +206,7 @@ services:
           'CMD',
           'python',
           '-c',
-          "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8090/healthz').status==200 else 1)",
+          "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8090/readyz').status==200 else 1)",
         ]
       interval: 10s
       timeout: 3s
@@ -242,7 +227,8 @@ services:
       PROVIDER_GATEWAY_AUTHORITY_PUBLIC_KEY: ${AGENT_AUTHORITY_PUBLIC_KEY:-}
       PROVIDER_GATEWAY_AUTHORITY_PUBLIC_KEYS: ${AGENT_AUTHORITY_PUBLIC_KEYS:-{}}
       PROVIDER_GATEWAY_REQUIRE_DURABLE_REVOCATIONS: 'true'
-      PROVIDER_GATEWAY_REVOCATION_DATABASE_PATH: /var/lib/loop-calendar/authority.sqlite3
+      PROVIDER_GATEWAY_REQUIRE_SHARED_STATE: 'true'
+      PROVIDER_GATEWAY_STATE_REDIS_URL: redis://172.33.0.2:6379/1
       PROVIDER_GATEWAY_BROWSER_ENABLED: 'false'
       PROVIDER_GATEWAY_EGRESS_PROXY_URL: http://172.32.0.2:8080
       CALDAV_URL: ${CALDAV_URL:-}
@@ -251,14 +237,14 @@ services:
       CALDAV_CALENDAR: ${CALDAV_CALENDAR:-}
     volumes:
       - ./apps/api:/app:ro
-      - calendarstate:/var/lib/loop-calendar
     depends_on:
-      data-init:
-        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
       egress-proxy:
         condition: service_healthy
     networks:
       provider-egress:
+      enforcement-state:
     dns:
       - 127.0.0.1
     healthcheck:
@@ -267,7 +253,7 @@ services:
           'CMD',
           'python',
           '-c',
-          "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8090/healthz').status==200 else 1)",
+          "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8090/readyz').status==200 else 1)",
         ]
       interval: 10s
       timeout: 3s
@@ -288,20 +274,21 @@ services:
       PROVIDER_GATEWAY_AUTHORITY_PUBLIC_KEY: ${AGENT_AUTHORITY_PUBLIC_KEY:-}
       PROVIDER_GATEWAY_AUTHORITY_PUBLIC_KEYS: ${AGENT_AUTHORITY_PUBLIC_KEYS:-{}}
       PROVIDER_GATEWAY_REQUIRE_DURABLE_REVOCATIONS: 'true'
-      PROVIDER_GATEWAY_REVOCATION_DATABASE_PATH: /var/lib/loop-vision/authority.sqlite3
+      PROVIDER_GATEWAY_REQUIRE_SHARED_STATE: 'true'
+      PROVIDER_GATEWAY_STATE_REDIS_URL: redis://172.33.0.2:6379/1
       PROVIDER_GATEWAY_BROWSER_ENABLED: 'false'
       PROVIDER_GATEWAY_EGRESS_PROXY_URL: http://172.32.0.2:8080
       PROVIDER_GATEWAY_GEMINI_API_KEY: ${PROVIDER_GATEWAY_GEMINI_API_KEY:-}
     volumes:
       - ./apps/api:/app:ro
-      - visionstate:/var/lib/loop-vision
     depends_on:
-      data-init:
-        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
       egress-proxy:
         condition: service_healthy
     networks:
       provider-egress:
+      enforcement-state:
     dns:
       - 127.0.0.1
     healthcheck:
@@ -310,7 +297,7 @@ services:
           'CMD',
           'python',
           '-c',
-          "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8090/healthz').status==200 else 1)",
+          "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8090/readyz').status==200 else 1)",
         ]
       interval: 10s
       timeout: 3s
@@ -331,19 +318,20 @@ services:
       PROVIDER_GATEWAY_AUTHORITY_PUBLIC_KEY: ${AGENT_AUTHORITY_PUBLIC_KEY:-}
       PROVIDER_GATEWAY_AUTHORITY_PUBLIC_KEYS: ${AGENT_AUTHORITY_PUBLIC_KEYS:-{}}
       PROVIDER_GATEWAY_REQUIRE_DURABLE_REVOCATIONS: 'true'
-      PROVIDER_GATEWAY_REVOCATION_DATABASE_PATH: /var/lib/loop-browser/authority.sqlite3
+      PROVIDER_GATEWAY_REQUIRE_SHARED_STATE: 'true'
+      PROVIDER_GATEWAY_STATE_REDIS_URL: redis://172.33.0.2:6379/1
       PROVIDER_GATEWAY_BROWSER_ENABLED: 'true'
       PROVIDER_GATEWAY_EGRESS_PROXY_URL: http://172.31.0.2:8080
     volumes:
       - ./apps/api:/app:ro
-      - browserstate:/var/lib/loop-browser
     depends_on:
-      data-init:
-        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
       egress-proxy:
         condition: service_healthy
     networks:
       browser-egress:
+      enforcement-state:
     dns:
       - 127.0.0.1
     healthcheck:
@@ -352,7 +340,7 @@ services:
           'CMD',
           'python',
           '-c',
-          "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8090/healthz').status==200 else 1)",
+          "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8090/readyz').status==200 else 1)",
         ]
       interval: 10s
       timeout: 3s
@@ -371,15 +359,13 @@ services:
       EGRESS_PROXY_AUTHORITY_PUBLIC_KEY: ${AGENT_AUTHORITY_PUBLIC_KEY:-}
       EGRESS_PROXY_AUTHORITY_PUBLIC_KEYS: ${AGENT_AUTHORITY_PUBLIC_KEYS:-{}}
       EGRESS_PROXY_REQUIRE_DURABLE_AUDIT: 'true'
-      EGRESS_PROXY_AUDIT_DATABASE_PATH: /var/lib/loop-egress/audit.sqlite3
       EGRESS_PROXY_REQUIRE_DURABLE_REVOCATIONS: 'true'
-      EGRESS_PROXY_REVOCATION_DATABASE_PATH: /var/lib/loop-egress/audit.sqlite3
+      EGRESS_PROXY_REQUIRE_SHARED_STATE: 'true'
+      EGRESS_PROXY_STATE_REDIS_URL: redis://172.33.0.2:6379/1
       EGRESS_PROXY_ALLOWED_PORTS: 80,443,587,993
-    volumes:
-      - egressaudit:/var/lib/loop-egress
     depends_on:
-      data-init:
-        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
     networks:
       default:
       sandbox-egress:
@@ -388,13 +374,14 @@ services:
         ipv4_address: 172.31.0.2
       provider-egress:
         ipv4_address: 172.32.0.2
+      enforcement-state:
     healthcheck:
       test:
         [
           'CMD',
           'python',
           '-c',
-          "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8081/healthz').status==200 else 1)",
+          "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8081/readyz').status==200 else 1)",
         ]
       interval: 10s
       timeout: 3s
@@ -452,6 +439,10 @@ services:
       - '${LOOP_REDIS_PORT:-6379}:6379'
     volumes:
       - redisdata:/data
+    networks:
+      default:
+      enforcement-state:
+        ipv4_address: 172.33.0.2
     healthcheck:
       test: ['CMD', 'redis-cli', 'ping']
       interval: 5s
@@ -463,11 +454,6 @@ volumes:
   pgdata:
   redisdata:
   loopdata:
-  egressaudit:
-  emailstate:
-  calendarstate:
-  visionstate:
-  browserstate:
 
 networks:
   sandbox-egress:
@@ -485,3 +471,8 @@ networks:
     ipam:
       config:
         - subnet: 172.32.0.0/24
+  enforcement-state:
+    internal: true
+    ipam:
+      config:
+        - subnet: 172.33.0.0/24

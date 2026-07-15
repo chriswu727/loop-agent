@@ -356,8 +356,8 @@ agent create the file, run it, self-correct, and finish).
 - **Protocol operations already in flight are not transactional.** Revocation closes
   proxy connections and prevents new calls, but cannot roll back an email or calendar
   side effect that the upstream service already accepted.
-- **Proxy audit is durable but single-replica.** A bounded SQLite WAL survives proxy
-  restarts and events are embedded into tasks after calls; horizontal HA requires a
-  shared append-only sink.
-- **Roadmap:** broader transports, a signed-skill ecosystem, shared enforcement-state
-  backends for HA, and measured production/adversarial evidence.
+- **Browser sessions are pod-local.** Revocations and proxy audit are shared through
+  Redis, but multi-replica Browser Gateway requires sticky run routing or an external
+  browser-session backend.
+- **Roadmap:** broader transports, a signed-skill ecosystem, browser-session HA, and
+  measured production/adversarial evidence.
