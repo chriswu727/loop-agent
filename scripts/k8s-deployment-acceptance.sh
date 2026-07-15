@@ -233,7 +233,7 @@ k3d image import --cluster "$cluster" \
 
 sandbox_digest="$(
   docker exec "k3d-${cluster}-server-0" ctr --namespace k8s.io images list |
-    awk '$1 ~ /loop-sandbox:acceptance/ {print $3; exit}'
+    awk '$1 ~ /loop-sandbox:acceptance/ {digest = $3} END {print digest}'
 )"
 if [[ ! "$sandbox_digest" =~ ^sha256:[0-9a-f]{64}$ ]]; then
   echo "Could not resolve the imported sandbox manifest digest: $sandbox_digest" >&2
