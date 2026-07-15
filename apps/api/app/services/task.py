@@ -206,6 +206,7 @@ class TaskService:
         original = await self.get(task_id)
         if original.status not in {
             TaskStatus.COMPLETED.value,
+            TaskStatus.STOPPED.value,
             TaskStatus.FAILED.value,
             TaskStatus.CANCELLED.value,
         }:
@@ -422,6 +423,7 @@ class TaskService:
 
         terminal = task.status in {
             TaskStatus.COMPLETED.value,
+            TaskStatus.STOPPED.value,
             TaskStatus.CANCELLED.value,
             TaskStatus.FAILED.value,
         }
@@ -621,6 +623,11 @@ class TaskService:
             if isinstance(raw_checks, list)
             else []
         )
+        if not definitions:
+            contract = receipt.get("contract")
+            required = contract.get("required_checks") if isinstance(contract, dict) else None
+            if isinstance(required, list):
+                definitions = [check for check in required if isinstance(check, dict)]
         if not definitions:
             RECEIPT_REPLAYS.labels(outcome="not_replayable").inc()
             raise ConflictError("This Receipt has no replayable check definitions.")

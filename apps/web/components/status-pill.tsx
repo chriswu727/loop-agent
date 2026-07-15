@@ -6,6 +6,7 @@ const STYLES: Record<TaskStatus, string> = {
   running: 'bg-blue-500/15 text-blue-600 dark:text-blue-400',
   awaiting_input: 'bg-purple-500/15 text-purple-600 dark:text-purple-400',
   completed: 'bg-green-500/15 text-green-600 dark:text-green-400',
+  stopped: 'bg-amber-500/15 text-amber-600 dark:text-amber-400',
   cancelled: 'bg-amber-500/15 text-amber-600 dark:text-amber-400',
   failed: 'bg-red-500/15 text-red-600 dark:text-red-400',
 };
@@ -15,6 +16,7 @@ const LABELS: Record<TaskStatus, string> = {
   running: 'Running',
   awaiting_input: 'Needs you',
   completed: 'Done',
+  stopped: 'Stopped',
   cancelled: 'Cancelled',
   failed: 'Failed',
 };

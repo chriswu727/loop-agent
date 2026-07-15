@@ -50,9 +50,16 @@ def test_reply_for_each_state() -> None:
     assert reply_for(done) == "Done. wrote the report"
 
     stopped = TaskModel(
-        status=TaskStatus.COMPLETED.value, stop_reason=StopReason.MAX_STEPS.value, summary="partial"
+        status=TaskStatus.STOPPED.value, stop_reason=StopReason.MAX_STEPS.value, summary="partial"
     )
     assert "Stopped (max_steps)" in reply_for(stopped)
+
+    legacy_stopped = TaskModel(
+        status=TaskStatus.COMPLETED.value,
+        stop_reason=StopReason.MAX_STEPS.value,
+        summary="partial",
+    )
+    assert "Stopped (max_steps)" in reply_for(legacy_stopped)
 
     failed = TaskModel(status=TaskStatus.FAILED.value, error="boom")
     assert reply_for(failed) == "Failed: boom"

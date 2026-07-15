@@ -15,7 +15,7 @@ from app.services.evaluation import aggregate_verified_completion, score_verifie
 
 ROOT = Path(__file__).parents[3]
 DEFAULT_CASES = ROOT / "evals" / "verified-completion.json"
-TERMINAL = {"completed", "failed", "cancelled"}
+TERMINAL = {"completed", "stopped", "failed", "cancelled"}
 
 
 def _load_cases(path: Path) -> list[dict[str, Any]]:

@@ -55,7 +55,7 @@ class FallbackLLMClient:
         fallbacks: list[FallbackEvent] = []
         last_error: LLMError | None = None
         spent = 0
-        input_bound = _token_upper_bound(system, user)
+        input_bound = _token_estimate(system, user)
 
         for index, provider in enumerate(chain):
             adapter = PROVIDERS[provider].adapter
@@ -96,7 +96,7 @@ class FallbackLLMClient:
                     if tokens:
                         success_tokens = tokens
                     else:
-                        estimated = _token_upper_bound(system, user, content)
+                        estimated = _token_estimate(system, user, content)
                         success_tokens = (
                             estimated if remaining is None else min(estimated, remaining)
                         )
@@ -137,8 +137,13 @@ _client: FallbackLLMClient | None = None
 _verifier_client: FallbackLLMClient | None = None
 
 
-def _token_upper_bound(*parts: str) -> int:
-    return 32 + sum(len(part.encode("utf-8")) + 16 for part in parts)
+def _token_estimate(*parts: str) -> int:
+    total = 32
+    for part in parts:
+        ascii_chars = sum(character.isascii() for character in part)
+        non_ascii_chars = len(part) - ascii_chars
+        total += 16 + (ascii_chars + 2) // 3 + non_ascii_chars * 2
+    return total
 
 
 def _failed_attempt_charge(error: LLMError, input_bound: int, output_bound: int) -> int:

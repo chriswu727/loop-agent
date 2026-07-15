@@ -12,7 +12,7 @@ interface Msg {
   status?: string;
 }
 
-const TERMINAL = new Set(['completed', 'cancelled', 'failed']);
+const TERMINAL = new Set(['completed', 'stopped', 'cancelled', 'failed']);
 
 function replyFor(t: Task): string {
   if (t.status === 'awaiting_input') return t.pending_question ?? 'I need a bit more to continue.';
@@ -20,6 +20,7 @@ function replyFor(t: Task): string {
     return t.stop_reason === 'goal_achieved'
       ? t.summary || 'Done.'
       : `Stopped (${t.stop_reason}). ${t.summary ?? ''}`.trim();
+  if (t.status === 'stopped') return `Stopped (${t.stop_reason}). ${t.summary ?? ''}`.trim();
   if (t.status === 'failed') return `Failed: ${t.error ?? 'unknown error'}`;
   return `…${t.status}`;
 }
@@ -83,7 +84,10 @@ export default function ChatPage() {
       } else {
         task = await tasksApi.publish({ goal: text, chat_id: sessionId.current });
       }
-      setMessages((m) => [...m, { role: 'agent', text: '…thinking', taskId: task.id, status: task.status }]);
+      setMessages((m) => [
+        ...m,
+        { role: 'agent', text: '…thinking', taskId: task.id, status: task.status },
+      ]);
       await pollUntilDone(task.id);
     } catch {
       setMessages((m) => [...m, { role: 'agent', text: 'Could not reach the agent.' }]);

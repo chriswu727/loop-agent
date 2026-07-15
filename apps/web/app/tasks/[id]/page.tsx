@@ -15,7 +15,7 @@ import { WorkspaceFiles } from '@/components/workspace-files';
 import { ApiError, tasksApi } from '@/lib/api-client';
 import { apiBaseUrl } from '@/lib/env';
 
-const TERMINAL = new Set(['completed', 'cancelled', 'failed']);
+const TERMINAL = new Set(['completed', 'stopped', 'cancelled', 'failed']);
 const POLL_MS = 1200;
 
 export default function TaskDetail() {
@@ -158,13 +158,8 @@ export default function TaskDetail() {
         <StatusPill status={task.status} />
       </div>
 
-      {reason && task.status === 'completed' && (
-        <p className="mt-2 text-xs opacity-60">
-          Stopped: {reason}
-          {achieved &&
-            ` · ${task.verified_by === 'execution' ? 'verified' : 'reviewed'} ${task.verification_score}/100`}
-          .
-        </p>
+      {reason && task.status === 'stopped' && (
+        <p className="mt-2 text-xs opacity-60">Stopped: {reason}.</p>
       )}
       {achieved && task.verified_by && (
         <div className="mt-2 flex items-center gap-2 text-xs">

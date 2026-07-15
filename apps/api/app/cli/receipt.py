@@ -38,15 +38,19 @@ def _report(receipt: dict[str, Any], report: dict[str, Any]) -> None:
 
 def _definitions(receipt: dict[str, Any]) -> list[dict[str, Any]]:
     checks = receipt.get("checks")
-    if not isinstance(checks, list):
-        return []
     definitions: list[dict[str, Any]] = []
-    for check in checks:
+    for check in checks if isinstance(checks, list) else []:
         if not isinstance(check, dict):
             continue
         definition = check.get("definition")
         if isinstance(definition, dict):
             definitions.append(definition)
+    if definitions:
+        return definitions
+    contract = receipt.get("contract")
+    required = contract.get("required_checks") if isinstance(contract, dict) else None
+    if isinstance(required, list):
+        definitions.extend(check for check in required if isinstance(check, dict))
     return definitions
 
 

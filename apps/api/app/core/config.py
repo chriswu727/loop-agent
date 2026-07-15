@@ -299,6 +299,10 @@ class Settings(BaseSettings):
     agent_browser_enabled: bool = True
     agent_allow_host_providers: bool = True
     agent_browser_command: str = "npx -y @playwright/mcp@0.0.78 --headless --isolated"
+    agent_sibyl_enabled: bool = False
+    agent_sibyl_command: str = "sibyl-mcp"
+    agent_argus_enabled: bool = False
+    agent_argus_command: str = "argus-mcp --tool-profile core"
     # Legacy shared endpoint remains available outside production for upgrades.
     agent_provider_gateway_url: str | None = None
     agent_browser_gateway_url: str | None = None
@@ -349,6 +353,8 @@ class Settings(BaseSettings):
             raise ValueError("production requires an immutable sandbox image digest")
         if self.agent_allow_host_providers:
             raise ValueError("production host providers must be disabled")
+        if self.agent_sibyl_enabled or self.agent_argus_enabled:
+            raise ValueError("production host MCP providers must be disabled")
         if self.agent_provider_gateway_url:
             raise ValueError("production forbids the legacy shared Provider Gateway")
         if not self.agent_email_gateway_url or not self.agent_email_egress_hosts.strip():

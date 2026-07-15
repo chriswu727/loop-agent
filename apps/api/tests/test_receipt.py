@@ -268,6 +268,56 @@ async def test_receipt_replay_checks_integrity_before_execution(
         await service.replay_receipt(task.id)
 
 
+async def test_unverified_receipt_replays_contract_checks(
+    session: AsyncSession, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from app.services.receipt import build_receipt
+
+    monkeypatch.setattr(settings, "agent_sandbox", "off")
+    required = [
+        {
+            "id": "contract-001",
+            "kind": "file_contains",
+            "path": "report.json",
+            "text": '"total": 42',
+            "source": "contract",
+            "criterion_ids": ["criterion-001"],
+        }
+    ]
+    repo = TaskRepository(session)
+    task = await repo.create(
+        goal="produce a report",
+        status="stopped",
+        stop_reason="max_steps",
+        rubric=["report contains the total"],
+        required_checks=required,
+        resolved_capabilities=["fs.read"],
+        max_steps=8,
+        token_budget=10_000,
+        summary="stopped",
+        verification_score=0,
+        steps_used=8,
+        tokens_used=100,
+        workspace_path=None,
+        sandbox="inline",
+    )
+    workspace = Workspace(tmp_path / str(task.id))
+    workspace.write("report.json", "{}")
+    task.workspace_path = str(workspace.root)
+    receipt_hash, receipt = build_receipt(
+        task, [], score=0, verified_by="unverified", workspace=workspace
+    )
+    task.receipt_hash = receipt_hash
+    await session.commit()
+
+    assert receipt["checks"] == []
+    assert receipt["checks_passed"] is False
+    replayed = await TaskService(repo, StepRepository(session)).replay_receipt(task.id)
+    assert replayed["passed"] is False
+    assert replayed["checks"][0]["source"] == "contract"
+    assert "text not found" in replayed["checks"][0]["evidence"]
+
+
 def test_verify_receipt_script_stays_in_sync_with_library(tmp_path: Path) -> None:
     # scripts/verify_receipt.py duplicates the canonical-hash algorithm so it can
     # verify a Receipt with zero app dependencies. Guard the two staying in sync:
@@ -291,7 +341,10 @@ def test_verify_receipt_script_stays_in_sync_with_library(tmp_path: Path) -> Non
     rp = tmp_path / "ws" / "receipt.json"
     script = Path(__file__).resolve().parents[1] / "scripts" / "verify_receipt.py"
 
-    assert subprocess.run([sys.executable, str(script), str(rp)]).returncode == 0
+    intact = subprocess.run([sys.executable, str(script), str(rp)], capture_output=True, text=True)
+    assert intact.returncode == 0
+    assert "task:        NOT VERIFIED" in intact.stdout
+    assert "INTEGRITY:   OK" in intact.stdout
 
     d = json.loads(rp.read_text())
     d["goal"] = "tampered after signing"

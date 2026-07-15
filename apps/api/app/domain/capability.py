@@ -19,6 +19,8 @@ class Capability(enum.StrEnum):
     CALENDAR_READ = "calendar.read"
     CALENDAR_WRITE = "calendar.write"
     VISION = "vision"
+    RESEARCH_READ = "research.read"
+    QA_BROWSER = "qa.browser"
     MEMORY_READ = "memory.read"
     MEMORY_WRITE = "memory.write"
     TASK_SPAWN = "task.spawn"

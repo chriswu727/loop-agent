@@ -207,6 +207,7 @@ async def call_ollama(
                 ],
                 "max_tokens": max_tokens,
                 "temperature": temperature,
+                "response_format": {"type": "json_object"},
             },
         )
     except httpx.HTTPError as exc:
@@ -276,9 +277,14 @@ async def call_mock(
     write fib.py, run it, finish with checks the verifier re-runs — so a fresh
     clone shows the full verified loop (and a Receipt) with no API key. It reads
     the run history in the prompt to decide the next step, so it self-sequences."""
-    if "JSON array of 3 to 6" in user:  # understand
+    if '"criteria" array of 3 to 6' in user:  # understand
         content = json.dumps(
-            ["Prints the first 12 Fibonacci numbers", "The script runs without error"]
+            {
+                "criteria": [
+                    "Prints the first 12 Fibonacci numbers",
+                    "The script runs without error",
+                ]
+            }
         )
     elif '"met"' in user:  # verify
         content = json.dumps({"met": True, "score": 96, "missing": []})

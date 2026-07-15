@@ -5,7 +5,7 @@
  */
 
 export type TaskStatus =
-  'pending' | 'running' | 'awaiting_input' | 'completed' | 'cancelled' | 'failed';
+  'pending' | 'running' | 'awaiting_input' | 'completed' | 'stopped' | 'cancelled' | 'failed';
 
 export type StopReason =
   'goal_achieved' | 'max_steps' | 'budget_exhausted' | 'stuck' | 'cancelled' | 'error';
@@ -23,6 +23,8 @@ export type Capability =
   | 'calendar.read'
   | 'calendar.write'
   | 'vision'
+  | 'research.read'
+  | 'qa.browser'
   | 'memory.read'
   | 'memory.write'
   | 'task.spawn';
@@ -191,6 +193,8 @@ export interface LimitDefaults {
   token_budget_default: number;
   token_budget_cap: number;
   local_projects_enabled: boolean;
+  sibyl_available: boolean;
+  argus_available: boolean;
 }
 
 export interface FileEntry {
