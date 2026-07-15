@@ -4,6 +4,7 @@ import type { Capability, LimitDefaults, SkillInfo } from '@repo/api-contract';
 import { useRouter } from 'next/navigation';
 import { useRef, useState } from 'react';
 import { ApiError, tasksApi } from '@/lib/api-client';
+import { useDesktopState } from '@/lib/desktop';
 
 const FALLBACK: LimitDefaults = {
   max_steps_default: 12,
@@ -22,18 +23,21 @@ const EXAMPLES = [
 export function PublishForm({
   defaults,
   skills = [],
+  isDesktop = false,
 }: {
   defaults: LimitDefaults | null;
   skills?: SkillInfo[];
+  isDesktop?: boolean;
 }) {
   const d = defaults ?? FALLBACK;
   const router = useRouter();
+  const desktopState = useDesktopState();
 
   const [goal, setGoal] = useState('');
   const [maxSteps, setMaxSteps] = useState(d.max_steps_default);
   const [tokenBudget, setTokenBudget] = useState(d.token_budget_default);
   const [files, setFiles] = useState<File[]>([]);
-  const [projectPath, setProjectPath] = useState('');
+  const [projectPath, setProjectPath] = useState(isDesktop ? '.' : '');
   const [noShell, setNoShell] = useState(false);
   const [allowNetwork, setAllowNetwork] = useState(false);
   const [egressHosts, setEgressHosts] = useState('');
@@ -48,11 +52,25 @@ export function PublishForm({
   const idempotencyKey = useRef(crypto.randomUUID());
   const needsDestinations = allowNetwork || useBrowser;
 
+  async function chooseDesktopProject() {
+    setError(null);
+    const state = await window.loopDesktop?.selectProject();
+    if (state?.project) {
+      setProjectPath(state.project.relativePath);
+      router.refresh();
+    }
+    if (state?.lastError) setError(state.lastError);
+  }
+
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     if (goal.trim().length < 4 || submitting) return;
     if (needsDestinations && !egressHosts.trim()) {
       setError('Shell and browser network access require at least one destination host.');
+      return;
+    }
+    if (isDesktop && desktopState?.runtime !== 'ready') {
+      setError('The desktop runtime must be ready before publishing a project task.');
       return;
     }
     setSubmitting(true);
@@ -142,13 +160,31 @@ export function PublishForm({
           <label htmlFor="project-path" className="text-xs font-medium opacity-70">
             Local Git project <span className="font-normal opacity-60">(optional)</span>
           </label>
-          <input
-            id="project-path"
-            value={projectPath}
-            onChange={(event) => setProjectPath(event.target.value)}
-            placeholder="Path relative to LOOP_LOCAL_PROJECTS_ROOT"
-            className="mt-1 w-full rounded-lg border border-black/10 bg-transparent px-3 py-1.5 text-xs outline-none focus:border-blue-500/60 dark:border-white/15"
-          />
+          {isDesktop ? (
+            <div className="mt-1 flex items-center gap-2">
+              <input
+                id="project-path"
+                readOnly
+                value={desktopState?.project?.name ?? 'Selected desktop project'}
+                className="min-w-0 flex-1 truncate rounded-lg border border-black/10 bg-black/[0.02] px-3 py-1.5 text-xs dark:border-white/15 dark:bg-white/[0.03]"
+              />
+              <button
+                type="button"
+                onClick={() => void chooseDesktopProject()}
+                className="rounded-lg border border-black/10 px-3 py-1.5 text-xs font-medium hover:bg-black/5 dark:border-white/15 dark:hover:bg-white/5"
+              >
+                Change…
+              </button>
+            </div>
+          ) : (
+            <input
+              id="project-path"
+              value={projectPath}
+              onChange={(event) => setProjectPath(event.target.value)}
+              placeholder="Path relative to LOOP_LOCAL_PROJECTS_ROOT"
+              className="mt-1 w-full rounded-lg border border-black/10 bg-transparent px-3 py-1.5 text-xs outline-none focus:border-blue-500/60 dark:border-white/15"
+            />
+          )}
           <p className="mt-1 text-[11px] opacity-50">
             Loop requires a clean repository, works in an isolated clone, and applies only the
             Receipt-verified patch you approve.

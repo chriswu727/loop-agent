@@ -4,6 +4,7 @@ node_modules/
 .next/
 out/
 dist/
+apps/desktop/runtime/
 build/
 *.tsbuildinfo
 .turbo/

@@ -1,0 +1,138 @@
+# Production-shaped desktop overlay. The main compose file remains the single
+# topology definition; this overlay swaps development bind mounts for runtime
+# images and grants the API access to exactly one selected repository.
+services:
+  web:
+    build:
+      target: runner
+    environment:
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      NODE_ENV: production
+      API_INTERNAL_URL: http://api:8000
+      APP_BASE_URL: http://127.0.0.1:3000
+      LOOP_API_TOKEN: ${LOOP_DESKTOP_API_TOKEN:?desktop API token is required}
+      LOOP_SESSION_SECRET: ${LOOP_DESKTOP_SECRET_KEY:?desktop secret is required}
+      WEB_AUTH_REQUIRED: 'false'
+    volumes: !override []
+
+  api:
+    build:
+      target: runtime
+    user: '${LOOP_DESKTOP_HOST_UID:-10001}:${LOOP_DESKTOP_HOST_GID:-10001}'
+    environment:
+      API_TOKEN: ${LOOP_DESKTOP_API_TOKEN:?desktop API token is required}
+      SECRET_KEY: ${LOOP_DESKTOP_SECRET_KEY:?desktop secret is required}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GLM_API_KEY: ${GLM_API_KEY:-}
+      LLM_DEFAULT_PROVIDER: ${LLM_DEFAULT_PROVIDER:-deepseek}
+      LOOP_LOCAL_PROJECTS_ROOT: /loop-project
+      AGENT_RECEIPT_SIGNING_KEY_FILE: /run/loop-desktop/receipt-private.pem
+    volumes: !override
+      - loopdata:/var/lib/loop
+      - type: bind
+        source: ${LOOP_DESKTOP_PROJECT_SOURCE:?select a desktop project first}
+        target: /loop-project
+      - type: bind
+        source: ${LOOP_DESKTOP_STATE_DIR:?desktop state directory is required}
+        target: /run/loop-desktop
+        read_only: true
+
+  worker:
+    build:
+      target: runtime
+    user: '${LOOP_DESKTOP_HOST_UID:-10001}:${LOOP_DESKTOP_HOST_GID:-10001}'
+    group_add: !override
+      - '${LOOP_DESKTOP_DOCKER_GID:-0}'
+    environment:
+      AGENT_SANDBOX_IMAGE: loop-desktop-sandbox:${LOOP_DESKTOP_SANDBOX_TAG:-local}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      AGENT_AUTHORITY_SIGNING_KEY_FILE: /run/loop-desktop/authority-private.pem
+      AGENT_RECEIPT_SIGNING_KEY_FILE: /run/loop-desktop/receipt-private.pem
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GLM_API_KEY: ${GLM_API_KEY:-}
+      LLM_DEFAULT_PROVIDER: ${LLM_DEFAULT_PROVIDER:-deepseek}
+    volumes: !override
+      - loopdata:/var/lib/loop
+      - /var/run/docker.sock:/var/run/docker.sock
+      - type: bind
+        source: ${LOOP_DESKTOP_STATE_DIR:?desktop state directory is required}
+        target: /run/loop-desktop
+        read_only: true
+
+  data-init:
+    command:
+      - sh
+      - -c
+      - chown -R "$${LOOP_UID}:$${LOOP_GID}" /var/lib/loop
+    environment:
+      LOOP_GID: ${LOOP_DESKTOP_HOST_GID:-10001}
+      LOOP_UID: ${LOOP_DESKTOP_HOST_UID:-10001}
+
+  email-gateway:
+    build:
+      target: runtime
+    environment:
+      PROVIDER_GATEWAY_AUTHORITY_PUBLIC_KEY_FILE: /run/loop-authority-public.pem
+    volumes: !override
+      - type: bind
+        source: ${LOOP_DESKTOP_STATE_DIR:?desktop state directory is required}/authority-public.pem
+        target: /run/loop-authority-public.pem
+        read_only: true
+
+  calendar-gateway:
+    build:
+      target: runtime
+    environment:
+      PROVIDER_GATEWAY_AUTHORITY_PUBLIC_KEY_FILE: /run/loop-authority-public.pem
+    volumes: !override
+      - type: bind
+        source: ${LOOP_DESKTOP_STATE_DIR:?desktop state directory is required}/authority-public.pem
+        target: /run/loop-authority-public.pem
+        read_only: true
+
+  vision-gateway:
+    build:
+      target: runtime
+    environment:
+      PROVIDER_GATEWAY_AUTHORITY_PUBLIC_KEY_FILE: /run/loop-authority-public.pem
+    volumes: !override
+      - type: bind
+        source: ${LOOP_DESKTOP_STATE_DIR:?desktop state directory is required}/authority-public.pem
+        target: /run/loop-authority-public.pem
+        read_only: true
+
+  browser-gateway:
+    build:
+      target: provider-gateway
+    environment:
+      PROVIDER_GATEWAY_AUTHORITY_PUBLIC_KEY_FILE: /run/loop-authority-public.pem
+    volumes: !override
+      - type: bind
+        source: ${LOOP_DESKTOP_STATE_DIR:?desktop state directory is required}/authority-public.pem
+        target: /run/loop-authority-public.pem
+        read_only: true
+
+  egress-proxy:
+    build:
+      target: runtime
+    environment:
+      EGRESS_PROXY_AUTHORITY_PUBLIC_KEY_FILE: /run/loop-authority-public.pem
+    volumes: !override
+      - type: bind
+        source: ${LOOP_DESKTOP_STATE_DIR:?desktop state directory is required}/authority-public.pem
+        target: /run/loop-authority-public.pem
+        read_only: true
+
+  migrate:
+    build:
+      target: runtime
+    volumes: !override []
+
+  sandbox-image:
+    image: loop-desktop-sandbox:${LOOP_DESKTOP_SANDBOX_TAG:-local}
+    build:
+      args:
+        SANDBOX_GID: ${LOOP_DESKTOP_HOST_GID:-10001}
+        SANDBOX_UID: ${LOOP_DESKTOP_HOST_UID:-10001}

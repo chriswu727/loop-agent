@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import { AuthStatus } from '@/components/auth-status';
+import { DesktopRuntimeBar } from '@/components/desktop-runtime-bar';
 import { env } from '@/lib/env';
 import './globals.css';
 
@@ -13,6 +14,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en">
       <body className="min-h-screen antialiased">
+        <DesktopRuntimeBar />
         <AuthStatus />
         {children}
       </body>

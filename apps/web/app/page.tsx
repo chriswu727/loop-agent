@@ -1,6 +1,6 @@
 import type { LimitDefaults, SkillInfo, Task } from '@repo/api-contract';
 import Link from 'next/link';
-import { cookies } from 'next/headers';
+import { cookies, headers } from 'next/headers';
 import { PublishForm } from '@/components/publish-form';
 import { TaskCard } from '@/components/task-card';
 import { apiBaseUrl, env, serverApiToken } from '@/lib/env';
@@ -47,6 +47,7 @@ async function getData(): Promise<{
 
 export default async function Home() {
   const { tasks, defaults, memory, skills, up, authRequired } = await getData();
+  const isDesktop = (await headers()).get('user-agent')?.includes('LoopDesktop/') ?? false;
   const verifiedSkills = skills.filter((s) => s.verified);
 
   return (
@@ -70,7 +71,7 @@ export default async function Home() {
         </p>
       </header>
 
-      <PublishForm defaults={defaults} skills={verifiedSkills} />
+      <PublishForm defaults={defaults} skills={verifiedSkills} isDesktop={isDesktop} />
 
       {memory.trim() && (
         <details className="mt-6 rounded-xl border border-black/10 px-4 py-3 dark:border-white/10">
