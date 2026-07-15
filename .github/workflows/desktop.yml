@@ -74,7 +74,12 @@ jobs:
         run: pnpm --filter desktop smoke:packaged
       - name: Packaged startup smoke (Linux)
         if: runner.os == 'Linux'
-        run: xvfb-run --auto-servernum pnpm --filter desktop smoke:packaged
+        run: |
+          sandbox_path="$(find apps/desktop/out -type f -name chrome-sandbox -print -quit)"
+          test -n "$sandbox_path"
+          sudo chown root:root "$sandbox_path"
+          sudo chmod 4755 "$sandbox_path"
+          xvfb-run --auto-servernum pnpm --filter desktop smoke:packaged
       - uses: actions/upload-artifact@v4
         with:
           name: loop-desktop-${{ runner.os }}-${{ runner.arch }}

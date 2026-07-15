@@ -1,4 +1,7 @@
 import path from 'node:path';
+import { MakerDeb } from '@electron-forge/maker-deb';
+import { MakerSquirrel } from '@electron-forge/maker-squirrel';
+import { MakerZIP } from '@electron-forge/maker-zip';
 import { FuseV1Options, FuseVersion } from '@electron/fuses';
 import { FusesPlugin } from '@electron-forge/plugin-fuses';
 import type { ForgeConfig } from '@electron-forge/shared-types';
@@ -14,16 +17,10 @@ const config: ForgeConfig = {
     prune: false,
   },
   makers: [
-    {
-      name: '@electron-forge/maker-squirrel',
-      platforms: ['win32'],
-      config: { name: 'LoopDesktop' },
-    },
-    { name: '@electron-forge/maker-zip', platforms: ['darwin'], config: {} },
-    {
-      name: '@electron-forge/maker-deb',
-      platforms: ['linux'],
-      config: {
+    new MakerSquirrel({ name: 'LoopDesktop' }, ['win32']),
+    new MakerZIP({}, ['darwin']),
+    new MakerDeb(
+      {
         options: {
           bin: 'loop-desktop',
           homepage: 'https://github.com/chriswu727/loop-agent',
@@ -31,7 +28,8 @@ const config: ForgeConfig = {
           name: 'loop-desktop',
         },
       },
-    },
+      ['linux'],
+    ),
   ],
   plugins: [
     new FusesPlugin({
