@@ -7,11 +7,12 @@ and is fully type-checked everywhere it is used.
 
 from __future__ import annotations
 
+import json
 from functools import lru_cache
-from typing import Literal
+from typing import Annotated, Literal
 
-from pydantic import Field, RedisDsn, computed_field, model_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import Field, RedisDsn, computed_field, field_validator, model_validator
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 Environment = Literal["development", "staging", "production"]
 
@@ -41,7 +42,22 @@ class Settings(BaseSettings):
     # must not be network-reachable out of the box. Containers set API_HOST=0.0.0.0.
     api_host: str = "127.0.0.1"
     api_port: int = 8000
-    cors_origins: list[str] = Field(default_factory=lambda: ["http://localhost:3000"])
+    cors_origins: Annotated[list[str], NoDecode] = Field(
+        default_factory=lambda: ["http://localhost:3000"]
+    )
+
+    @field_validator("cors_origins", mode="before")
+    @classmethod
+    def parse_cors_origins(cls, value: object) -> object:
+        if not isinstance(value, str):
+            return value
+        raw = value.strip()
+        if raw.startswith("["):
+            decoded = json.loads(raw)
+            if not isinstance(decoded, list):
+                raise ValueError("CORS_ORIGINS JSON must be a list")
+            return decoded
+        return [origin.strip() for origin in raw.split(",") if origin.strip()]
 
     # ---- Security ----
     secret_key: str = "change-me-in-production-use-openssl-rand-hex-32"

@@ -129,3 +129,14 @@ async def test_reclaimed_job_reconciles_stale_tasks_before_execution(
 
     assert reconciled
     assert [action[0] for action in redis.actions] == ["xack", "xdel"]
+
+
+async def test_worker_socket_timeout_exceeds_stream_block_window() -> None:
+    client = worker._redis_client()
+    try:
+        assert client.connection_pool.connection_kwargs["socket_timeout"] == (
+            worker.STREAM_SOCKET_TIMEOUT_SECONDS
+        )
+        assert worker.STREAM_SOCKET_TIMEOUT_SECONDS > worker.STREAM_BLOCK_MILLISECONDS / 1000
+    finally:
+        await client.aclose()

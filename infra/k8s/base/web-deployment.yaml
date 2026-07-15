@@ -23,8 +23,11 @@ spec:
         app.kubernetes.io/component: frontend
     spec:
       serviceAccountName: app
+      enableServiceLinks: false
       securityContext:
         runAsNonRoot: true
+        runAsUser: 1001
+        runAsGroup: 1001
         seccompProfile:
           type: RuntimeDefault
       topologySpreadConstraints:

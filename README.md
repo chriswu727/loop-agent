@@ -207,6 +207,11 @@ the internal sandbox network and can leave through the destination-enforcing pro
 Use the Kubernetes production profile for per-command Jobs, tenant-scoped PVC mounts,
 immutable image digests, and fail-closed isolation.
 
+`make k8s-deployment-acceptance` builds every runtime and proves the production-mode
+topology in a disposable k3d cluster: migration, rollout, a queued task executed and
+re-verified in Kubernetes Jobs, an authentic Receipt, NetworkPolicy enforcement, and
+recovery from a deliberately broken API rollout.
+
 ## Configuration
 
 See [`.env.example`](./.env.example). Key knobs:

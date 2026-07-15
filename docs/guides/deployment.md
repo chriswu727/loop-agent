@@ -82,6 +82,7 @@ After rollout, verify every runtime boundary and inspect a test task Receipt:
 
 ```bash
 kubectl rollout status deployment/api -n loop-prod
+kubectl rollout status deployment/web -n loop-prod
 kubectl rollout status deployment/worker -n loop-prod
 kubectl rollout status deployment/email-gateway -n loop-prod
 kubectl rollout status deployment/calendar-gateway -n loop-prod
@@ -109,18 +110,33 @@ acceptance harness against an ephemeral Redis 7 AOF volume:
 make enforcement-acceptance
 ```
 
+Before releasing any Kubernetes change, run the disposable-cluster acceptance gate
+(Docker, k3d, kubectl, and OpenSSL are required):
+
+```bash
+make k8s-deployment-acceptance
+```
+
+It builds and imports all four runtime images, injects an actual sandbox manifest
+digest, runs Alembic, waits for every Deployment, and publishes a deterministic task
+through the API. Redis Streams hands it to the worker, which executes and re-verifies
+the task in separate Kubernetes Jobs on the shared PVC; the resulting signed Receipt
+must be authentic and record the imported digest. The gate also proves the provider
+NetworkPolicy and intentionally deploys a missing API image before requiring
+`kubectl rollout undo` to restore service health.
+
 ## 5. Migrations
 
-Run Alembic as a one-shot Job (or an init container) before the new pods take
-traffic. A minimal Job:
+Run Alembic as a one-shot Job before the new pods take traffic. The disposable gate
+uses `infra/k8s/overlays/acceptance/migration-job.yaml`; production pipelines should
+use the same ordering with the release API image and real Secret provider. A minimal
+manual equivalent is:
 
 ```bash
 kubectl run migrate --rm -it --restart=Never \
   --image=ghcr.io/your-org/app-api:1.0.0 \
   --env-from=secret/app-secrets -- alembic upgrade head
 ```
-
-(Promote this into a proper `Job` manifest with `envFrom` for real pipelines.)
 
 ## Rollout & rollback
 

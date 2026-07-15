@@ -6,6 +6,7 @@ patched by per-environment `overlays/` — no copy-pasted YAML.
 ```
 base/                 # shared manifests (the source of truth)
 overlays/
+  acceptance/         # disposable CI cluster with Postgres/Redis and production validation
   dev/                # 1 replica, debug logs, :dev images
   staging/            # 2 replicas, :staging images
   prod/               # 3+ replicas, tuned resources, HPA to 50, pinned images
@@ -38,7 +39,15 @@ kubectl apply -k infra/k8s/overlays/prod
 
 # After rollout, prove proxy/Redis reachability and direct-egress denial.
 make k8s-enforcement-smoke namespace=loop-prod
+
+# Build images and prove migration, a real queued task, isolation, and rollback in k3d.
+make k8s-deployment-acceptance
 ```
+
+The acceptance overlay contains only ephemeral dependency definitions and a digest
+placeholder. Always run it through `scripts/k8s-deployment-acceptance.sh`, which
+replaces the placeholder with the manifest digest imported into the temporary
+cluster. It is not a production dependency bundle.
 
 > Prefer Helm? The same topology maps 1:1 to a chart. Kustomize is the default
 > here because it needs no templating language and no extra tooling.

@@ -19,6 +19,7 @@ spec:
     spec:
       serviceAccountName: worker
       automountServiceAccountToken: true
+      enableServiceLinks: false
       securityContext:
         runAsNonRoot: true
         runAsUser: 10001
