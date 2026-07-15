@@ -326,12 +326,20 @@ is currently trusted context — formalizing it as quarantined data (differentia
 ## Data model
 
 - `tasks` — goal, status, rubric (JSON), `max_steps` + `token_budget`, and live
-  state: summary, verification_score, steps_used, tokens_used, workspace_path,
+  state: summary, verification_score, steps_used, tokens_used,
   stop_reason, error.
 - `steps` — one row per agent step: number, thought, tool, tool_args (JSON),
   observation, status (ok/error/blocked), tokens.
 
 No vendor-specific column types, so the model runs on SQLite and Postgres alike.
+
+Project-backed tasks add an optional local Git transaction to that task record:
+the configured-root-relative project name, base commit/branch, patch hash, and one
+of `pending`, `applied`, `reverted`, or `discarded`. The absolute source and
+workspace paths remain server-side. Receipt v1 binds `loop.changeset/v1`, including
+the exact binary-patch hash and per-file statistics; Apply verifies that binding
+again before touching the clean source checkout. Undo reads the separately stored,
+mode-0600 patch and verifies its hash before reversing it.
 
 ## Testing
 

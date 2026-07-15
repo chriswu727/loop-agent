@@ -33,7 +33,14 @@ from app.repositories.task import TaskRepository
 from app.schemas.common import Page
 from app.schemas.file import FileContent, FileEntry
 from app.schemas.step import LedgerStatus, StepRead
-from app.schemas.task import LimitDefaults, RespondIn, TaskCreate, TaskRead, TaskSnapshot
+from app.schemas.task import (
+    ChangeSetRead,
+    LimitDefaults,
+    RespondIn,
+    TaskCreate,
+    TaskRead,
+    TaskSnapshot,
+)
 from app.services.runner import trigger_task
 from app.services.task import TaskService
 
@@ -173,6 +180,42 @@ async def task_receipt(task_id: uuid.UUID, service: TaskServiceDep) -> dict[str,
 @router.post("/{task_id}/receipt/replay", summary="Re-run a Receipt's recorded checks")
 async def replay_task_receipt(task_id: uuid.UUID, service: TaskServiceDep) -> dict[str, Any]:
     return await service.replay_receipt(task_id)
+
+
+@router.get(
+    "/{task_id}/changes",
+    response_model=ChangeSetRead,
+    summary="Review an isolated local-project change set",
+)
+async def task_changes(task_id: uuid.UUID, service: TaskServiceDep) -> ChangeSetRead:
+    return await service.inspect_change_set(task_id)
+
+
+@router.post(
+    "/{task_id}/changes/apply",
+    response_model=ChangeSetRead,
+    summary="Apply the exact execution-verified patch to its source project",
+)
+async def apply_task_changes(task_id: uuid.UUID, service: TaskServiceDep) -> ChangeSetRead:
+    return await service.apply_change_set(task_id)
+
+
+@router.post(
+    "/{task_id}/changes/discard",
+    response_model=ChangeSetRead,
+    summary="Permanently reject a task's change set",
+)
+async def discard_task_changes(task_id: uuid.UUID, service: TaskServiceDep) -> ChangeSetRead:
+    return await service.discard_change_set(task_id)
+
+
+@router.post(
+    "/{task_id}/changes/undo",
+    response_model=ChangeSetRead,
+    summary="Reverse the exact patch previously applied by Loop",
+)
+async def undo_task_changes(task_id: uuid.UUID, service: TaskServiceDep) -> ChangeSetRead:
+    return await service.undo_change_set(task_id)
 
 
 async def _build_snapshot(service: TaskService, task_id: uuid.UUID) -> TaskSnapshot:

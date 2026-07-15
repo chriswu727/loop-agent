@@ -48,7 +48,7 @@ const baseTask: Task = {
   sandbox: 'required',
   steps_used: 1,
   tokens_used: 10,
-  workspace_path: null,
+  change_set: null,
   stop_reason: 'goal_achieved',
   error: null,
   created_at: '2026-07-14T00:00:00Z',

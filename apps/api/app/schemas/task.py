@@ -29,6 +29,9 @@ class LimitsIn(BaseModel):
 class TaskCreate(BaseModel):
     goal: str = Field(min_length=4, max_length=4_000)
     project_id: str = Field(default="default", min_length=1, max_length=100, pattern=r"^[\w.-]+$")
+    # Optional path relative to LOOP_LOCAL_PROJECTS_ROOT. The source repository
+    # must be clean; execution happens in a detached, source-unlinked clone.
+    project_path: str | None = Field(default=None, min_length=1, max_length=500)
     limits: LimitsIn = Field(default_factory=LimitsIn)
     # When false, the task is created as a draft (PENDING, not started) so files
     # can be uploaded into its workspace before the agent runs. Start with /start.
@@ -87,6 +90,33 @@ class LimitsRead(BaseModel):
     token_budget: int
 
 
+class ProjectChangeSetRead(BaseModel):
+    project_path: str
+    base_commit: str
+    base_branch: str | None
+    state: str
+    applied_patch_sha256: str | None
+
+
+class ChangeSetFileRead(BaseModel):
+    path: str
+    status: str
+    additions: int | None
+    deletions: int | None
+    previous_path: str | None = None
+
+
+class ChangeSetRead(ProjectChangeSetRead):
+    patch_sha256: str
+    files: list[ChangeSetFileRead]
+    diff: str
+    diff_truncated: bool
+    can_apply: bool
+    can_discard: bool
+    can_undo: bool
+    blocked_reason: str | None
+
+
 class AuthorityEnforcementRead(BaseModel):
     provider_gateway: bool
     browser_gateway: bool
@@ -142,7 +172,7 @@ class TaskRead(BaseModel):
     sandbox: str | None
     steps_used: int
     tokens_used: int
-    workspace_path: str | None
+    change_set: ProjectChangeSetRead | None
     stop_reason: str | None
     error: str | None
     created_at: datetime
@@ -206,7 +236,17 @@ class TaskRead(BaseModel):
             sandbox=m.sandbox,  # type: ignore[attr-defined]
             steps_used=m.steps_used,  # type: ignore[attr-defined]
             tokens_used=m.tokens_used,  # type: ignore[attr-defined]
-            workspace_path=m.workspace_path,  # type: ignore[attr-defined]
+            change_set=(
+                ProjectChangeSetRead(
+                    project_path=m.project_relative_path,  # type: ignore[attr-defined]
+                    base_commit=m.project_base_commit,  # type: ignore[attr-defined]
+                    base_branch=m.project_base_branch,  # type: ignore[attr-defined]
+                    state=m.change_state,  # type: ignore[attr-defined]
+                    applied_patch_sha256=m.applied_patch_sha256,  # type: ignore[attr-defined]
+                )
+                if m.project_source_path  # type: ignore[attr-defined]
+                else None
+            ),
             stop_reason=m.stop_reason,  # type: ignore[attr-defined]
             error=m.error,  # type: ignore[attr-defined]
             created_at=m.created_at,  # type: ignore[attr-defined]
@@ -230,3 +270,4 @@ class LimitDefaults(BaseModel):
     max_steps_cap: int = settings.agent_max_steps_cap
     token_budget_default: int = settings.loop_token_budget_default
     token_budget_cap: int = settings.loop_token_budget_cap
+    local_projects_enabled: bool = bool(settings.loop_local_projects_root)

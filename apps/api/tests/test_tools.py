@@ -31,6 +31,18 @@ def test_workspace_write_read_roundtrip(tmp_path: Path) -> None:
     assert ("notes/a.txt", 5) in ws.list_files()
 
 
+def test_workspace_hides_and_blocks_git_internals(tmp_path: Path) -> None:
+    ws = Workspace(tmp_path / "ws")
+    (ws.root / ".git" / "objects").mkdir(parents=True)
+    (ws.root / ".git" / "config").write_text("secret metadata")
+    ws.write("app.py", "print('safe')")
+
+    assert ".git" not in ws.tree()
+    assert all(not path.startswith(".git") for path, _ in ws.list_files())
+    with pytest.raises(ToolError):
+        ws.read(".git/config")
+
+
 def test_workspace_contents_digest_shows_text_skips_binary(tmp_path: Path) -> None:
     ws = Workspace(tmp_path / "ws")
     ws.write("hello.rs", 'fn main() { println!("hi"); }')

@@ -117,6 +117,13 @@ the two axes a chat-log agent can't retrofit:
 ## Capabilities
 
 - **Write & run code**, iterating until the checks pass (with self-correction).
+- **Edit an existing local Git project transactionally** — opt a trusted local
+  deployment into one projects root, select a clean repository by relative path,
+  and Loop works in a source-unlinked isolated clone. The task page presents a
+  structured diff; **Apply** is enabled only when re-execution succeeded, Receipt
+  integrity still holds, and the current patch hash exactly matches the Receipt.
+  **Discard** preserves the audit record without touching the source, while
+  conflict-safe **Undo** reverses the exact patch Loop applied.
 - **Edit your documents** — attach an `.xlsx` / `.docx` / `.csv` at publish time and
   the agent edits it in place (openpyxl / python-docx / pandas preinstalled); the
   verifier re-opens the file to prove the edit holds. Outputs are listed and
@@ -232,6 +239,7 @@ See [`.env.example`](./.env.example). Key knobs:
 | `AGENT_APPROVAL_MODE`                                                                    | `auto` or `manual` (pause non-allowlisted commands).                                                                                                       |
 | `AGENT_SKILLS_ROOT` / `AGENT_SKILL_TRUST_PUBLIC_KEY`                                     | signed-skills folder + the ed25519 key signatures must verify against.                                                                                     |
 | `AGENT_RECEIPT_SIGNING_KEY`                                                              | ed25519 key for signed Receipts (`make receipt-keygen`); required in production, optional hash-only mode in development.                                   |
+| `LOOP_LOCAL_PROJECTS_ROOT`                                                               | optional local-only root for verified Git change sets; clients can select only clean repositories below it by relative path.                               |
 | `AGENT_AUTHORITY_SIGNING_KEY` / `AGENT_AUTHORITY_PUBLIC_KEY`                             | worker-only Ed25519 issuer key and gateway/proxy-only verifier key (`make authority-keygen`).                                                              |
 | `PROVIDER_GATEWAY_AUTHORITY_PUBLIC_KEYS` / `EGRESS_PROXY_AUTHORITY_PUBLIC_KEYS`          | optional `kid` → public-PEM JSON keyrings for zero-downtime issuer rotation.                                                                               |
 | `AGENT_EMAIL_GATEWAY_URL` / `AGENT_CALENDAR_GATEWAY_URL` / `AGENT_VISION_GATEWAY_URL`    | independently credentialed protocol services; all three are required in production.                                                                        |

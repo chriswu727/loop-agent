@@ -59,6 +59,35 @@ export interface Limits {
   token_budget: number;
 }
 
+export type ChangeSetState = 'pending' | 'applied' | 'discarded' | 'reverted';
+
+export interface ProjectChangeSet {
+  project_path: string;
+  base_commit: string;
+  base_branch: string | null;
+  state: ChangeSetState;
+  applied_patch_sha256: string | null;
+}
+
+export interface ChangeSetFile {
+  path: string;
+  status: string;
+  additions: number | null;
+  deletions: number | null;
+  previous_path: string | null;
+}
+
+export interface ChangeSet extends ProjectChangeSet {
+  patch_sha256: string;
+  files: ChangeSetFile[];
+  diff: string;
+  diff_truncated: boolean;
+  can_apply: boolean;
+  can_discard: boolean;
+  can_undo: boolean;
+  blocked_reason: string | null;
+}
+
 export interface Task {
   id: string;
   goal: string;
@@ -89,7 +118,7 @@ export interface Task {
   sandbox: string | null;
   steps_used: number;
   tokens_used: number;
-  workspace_path: string | null;
+  change_set: ProjectChangeSet | null;
   stop_reason: StopReason | null;
   error: string | null;
   created_at: string;
@@ -157,6 +186,7 @@ export interface LimitDefaults {
   max_steps_cap: number;
   token_budget_default: number;
   token_budget_cap: number;
+  local_projects_enabled: boolean;
 }
 
 export interface FileEntry {
