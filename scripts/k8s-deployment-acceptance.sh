@@ -7,6 +7,9 @@ namespace="loop-acceptance"
 ingress_namespace="ingress-nginx"
 overlay="$root/infra/k8s/overlays/acceptance"
 placeholder="sha256:0000000000000000000000000000000000000000000000000000000000000000"
+image_placeholder="registry.invalid/loop-sandbox:acceptance"
+registry="${cluster}-registry"
+registry_container="$registry"
 tmp="$(mktemp -d)"
 cluster_created=false
 cluster_ready=false
@@ -28,6 +31,7 @@ cleanup() {
   fi
   if [[ "$cluster_created" == "true" ]]; then
     k3d cluster delete "$cluster" >/dev/null 2>&1
+    k3d registry delete "$registry" >/dev/null 2>&1
   fi
   rm -rf "$tmp"
   exit "$status"
@@ -244,21 +248,35 @@ k3d cluster create "$cluster" \
   --no-lb \
   --wait \
   --timeout 180s \
+  --registry-create "$registry" \
   --k3s-arg '--disable=traefik@server:*' \
   --k3s-arg '--disable=servicelb@server:*'
 cluster_ready=true
 k3d image import --cluster "$cluster" \
   loop-api:acceptance \
   loop-provider-gateway:acceptance \
-  loop-web:acceptance \
-  loop-sandbox:acceptance
+  loop-web:acceptance
 
+registry_port="$(
+  docker inspect \
+    --format '{{(index (index .NetworkSettings.Ports "5000/tcp") 0).HostPort}}' \
+    "$registry_container"
+)"
+if [[ ! "$registry_port" =~ ^[0-9]+$ ]]; then
+  echo "Could not resolve the acceptance registry port: $registry_port" >&2
+  exit 1
+fi
+sandbox_push_image="127.0.0.1:${registry_port}/loop-sandbox:acceptance"
+sandbox_image="${registry_container}:5000/loop-sandbox:acceptance"
+docker tag loop-sandbox:acceptance "$sandbox_push_image"
+push_output="$(docker push "$sandbox_push_image")"
+printf '%s\n' "$push_output"
 sandbox_digest="$(
-  docker exec "k3d-${cluster}-server-0" ctr --namespace k8s.io images list |
-    awk '$1 ~ /loop-sandbox:acceptance/ {digest = $3} END {print digest}'
+  printf '%s\n' "$push_output" |
+    awk '$1 == "acceptance:" && $2 == "digest:" {digest = $3} END {print digest}'
 )"
 if [[ ! "$sandbox_digest" =~ ^sha256:[0-9a-f]{64}$ ]]; then
-  echo "Could not resolve the imported sandbox manifest digest: $sandbox_digest" >&2
+  echo "Could not resolve the pushed sandbox manifest digest: $sandbox_digest" >&2
   exit 1
 fi
 
@@ -278,7 +296,7 @@ kubectl apply --namespace "$namespace" -f "$root/infra/k8s/base/configmap.yaml"
 kubectl patch configmap app-config \
   --namespace "$namespace" \
   --type merge \
-  --patch "{\"data\":{\"AGENT_SANDBOX_IMAGE\":\"loop-sandbox:acceptance\",\"AGENT_SANDBOX_IMAGE_DIGEST\":\"$sandbox_digest\",\"APP_BASE_URL\":\"http://web\",\"CORS_ORIGINS\":\"http://web\",\"DEMO_MODE\":\"true\",\"LLM_DEFAULT_PROVIDER\":\"mock\",\"PROMETHEUS_ENABLED\":\"false\"}}"
+  --patch "{\"data\":{\"AGENT_SANDBOX_IMAGE\":\"$sandbox_image\",\"AGENT_SANDBOX_IMAGE_DIGEST\":\"$sandbox_digest\",\"APP_BASE_URL\":\"http://web\",\"CORS_ORIGINS\":\"http://web\",\"DEMO_MODE\":\"true\",\"LLM_DEFAULT_PROVIDER\":\"mock\",\"PROMETHEUS_ENABLED\":\"false\"}}"
 
 kubectl apply --namespace "$namespace" -f "$overlay/migration-job.yaml"
 if ! kubectl wait \
@@ -304,7 +322,12 @@ if [[ "$(grep -Fc "$placeholder" "$tmp/acceptance.raw.yaml")" -ne 1 ]]; then
   echo "Acceptance manifest must contain exactly one sandbox digest placeholder" >&2
   exit 1
 fi
-sed "s|$placeholder|$sandbox_digest|" \
+if [[ "$(grep -Fc "$image_placeholder" "$tmp/acceptance.raw.yaml")" -ne 1 ]]; then
+  echo "Acceptance manifest must contain exactly one sandbox image placeholder" >&2
+  exit 1
+fi
+sed -e "s|$placeholder|$sandbox_digest|" \
+  -e "s|$image_placeholder|$sandbox_image|" \
   "$tmp/acceptance.raw.yaml" >"$tmp/acceptance.yaml"
 kubectl apply -f "$tmp/acceptance.yaml"
 

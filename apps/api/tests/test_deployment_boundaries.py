@@ -281,7 +281,7 @@ def test_kubernetes_acceptance_is_production_mode_with_ephemeral_dependencies() 
     assert config["ENVIRONMENT"] == "production"
     assert config["DEMO_MODE"] == "true"
     assert config["LLM_DEFAULT_PROVIDER"] == "mock"
-    assert config["AGENT_SANDBOX_IMAGE"] == "loop-sandbox:acceptance"
+    assert config["AGENT_SANDBOX_IMAGE"] == "registry.invalid/loop-sandbox:acceptance"
     assert config["AGENT_SANDBOX_IMAGE_DIGEST"] == "sha256:" + "0" * 64
     assert storage["accessModes"] == ["ReadWriteOnce"]
     assert ("Deployment", "postgres") in resources
@@ -305,6 +305,10 @@ def test_kubernetes_acceptance_migrates_runs_task_and_rolls_back() -> None:
     assert "0006_authority_audit" in script
     assert "api web worker" in smoke
     assert 'cluster="${LOOP_ACCEPTANCE_CLUSTER:-la-' in script
+    assert 'registry_container="$registry"' in script
+    assert '--registry-create "$registry"' in script
+    assert 'docker push "$sandbox_push_image"' in script
+    assert 'AGENT_SANDBOX_IMAGE\\":\\"$sandbox_image' in script
     assert "{digest = $3} END {print digest}" in script
     assert "{print $3; exit}" not in script
     assert "docker buildx stop" in script
