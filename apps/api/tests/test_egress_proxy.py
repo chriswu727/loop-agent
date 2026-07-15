@@ -39,6 +39,7 @@ def _token(
     *,
     ttl_seconds: int = 120,
     audience: str = EGRESS_PROXY_AUDIENCE,
+    capabilities: list[Capability] | None = None,
 ) -> str:
     return issue_authority_token(
         private,
@@ -47,7 +48,7 @@ def _token(
         owner_id="owner-1",
         project_id="project-1",
         run_id="task-1:1",
-        capabilities=[Capability.NET_SHELL],
+        capabilities=capabilities or [Capability.NET_SHELL],
         egress_hosts=hosts,
         ttl_seconds=ttl_seconds,
     )
@@ -181,7 +182,7 @@ async def test_proxy_blocks_host_outside_token_allowlist_before_resolving() -> N
         await server.wait_closed()
 
 
-async def test_proxy_connect_tunnel_is_destination_bound() -> None:
+async def test_proxy_connect_tunnel_accepts_provider_capability_and_is_destination_bound() -> None:
     private, public = _keys()
 
     async def echo(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
@@ -208,7 +209,11 @@ async def test_proxy_connect_tunnel_is_destination_bound() -> None:
     try:
         reader, writer = await _connect(
             proxy_port,
-            _token(private, ["browser.example"]),
+            _token(
+                private,
+                ["browser.example"],
+                capabilities=[Capability.EMAIL_READ],
+            ),
             f"browser.example:{upstream_port}",
         )
         writer.write(b"ping")

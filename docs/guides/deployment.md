@@ -29,30 +29,34 @@ the same random value. `app-secrets` must also provide a valid unencrypted Ed255
 PEM in `AGENT_RECEIPT_SIGNING_KEY`; generate one with `make receipt-keygen`.
 Generate the runtime authority pair with `make authority-keygen`. Put the private
 PEM only in `authority-issuer-secrets` for the worker. Put the public PEM in
-`provider-gateway-secrets`, `browser-gateway-secrets`, and
-`authority-verifier-secrets` for the protocol gateway, Browser Gateway, and egress
-proxy respectively. Never give the issuer key to an enforcement service.
+`email-gateway-secrets`, `calendar-gateway-secrets`, `vision-gateway-secrets`,
+`browser-gateway-secrets`, and `authority-verifier-secrets` for the four gateways
+and egress proxy. Never give the issuer key to an enforcement service.
 
 Rotate authority keys without invalidating in-flight runs in this order:
 
 1. Add both old and new public PEMs, keyed by the `kid` printed by
-   `make authority-keygen`, to `PROVIDER_GATEWAY_AUTHORITY_PUBLIC_KEYS` in both
+   `make authority-keygen`, to `PROVIDER_GATEWAY_AUTHORITY_PUBLIC_KEYS` in all four
    gateway secrets and to `EGRESS_PROXY_AUTHORITY_PUBLIC_KEYS` as JSON maps; roll
-   out all three verifiers.
+   out all five verifiers.
 2. Switch the worker's `AGENT_AUTHORITY_SIGNING_KEY` to the new private key.
 3. Wait at least `AGENT_AUTHORITY_TOKEN_TTL_SECONDS` (maximum 15 minutes), then
    remove the old public key from every verifier keyring.
 
-Put SMTP/IMAP/CalDAV/provider-vision credentials only in
-`provider-gateway-secrets`; `browser-gateway-secrets` contains only public verifier
+Put SMTP/IMAP credentials only in `email-gateway-secrets`, CalDAV credentials only
+in `calendar-gateway-secrets`, and the provider-vision key only in
+`vision-gateway-secrets`. `browser-gateway-secrets` contains only public verifier
 keys. LLM credentials remain worker credentials. The example Secret file shows the
 required object/key split; use an external secret manager in production rather than
-applying that example.
+applying that example. Set each `AGENT_*_EGRESS_HOSTS` ConfigMap value to the exact
+upstream hostnames used by its gateway. Add a custom provider port to
+`EGRESS_PROXY_ALLOWED_PORTS` only when the deployment genuinely needs it.
 Set `AGENT_SANDBOX_IMAGE_DIGEST=sha256:...` in the production ConfigMap after
 publishing the sandbox image; production rejects mutable tag-only execution.
 
 The egress proxy keeps audit and revocations on its dedicated `egress-proxy-audit`
-PVC. Protocol and browser revocations use separate `provider-gateway-state` and
+PVC. Email, calendar, vision, and browser revocations use separate
+`email-gateway-state`, `calendar-gateway-state`, `vision-gateway-state`, and
 `browser-gateway-state` PVCs, while live browser sessions remain in memory. These
 stateful enforcement deployments therefore use one replica: security state survives
 a pod restart, but horizontal proxy or gateway session HA still requires shared
@@ -70,7 +74,9 @@ After rollout, verify every runtime boundary and inspect a test task Receipt:
 ```bash
 kubectl rollout status deployment/api -n loop-prod
 kubectl rollout status deployment/worker -n loop-prod
-kubectl rollout status deployment/provider-gateway -n loop-prod
+kubectl rollout status deployment/email-gateway -n loop-prod
+kubectl rollout status deployment/calendar-gateway -n loop-prod
+kubectl rollout status deployment/vision-gateway -n loop-prod
 kubectl rollout status deployment/browser-gateway -n loop-prod
 kubectl rollout status deployment/egress-proxy -n loop-prod
 ```

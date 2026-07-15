@@ -64,9 +64,16 @@ class EgressProxy:
             self._active_writers.setdefault(grant.run_id, set()).add(writer)
             if await self.revocations.is_revoked(grant.run_id):
                 raise AuthorityTokenError("Authority run has been revoked")
-            if not grant.permits(Capability.NET_SHELL) and not grant.permits(
-                Capability.NET_BROWSER
-            ):
+            network_capabilities = {
+                Capability.NET_SHELL,
+                Capability.NET_BROWSER,
+                Capability.EMAIL_READ,
+                Capability.EMAIL_SEND,
+                Capability.CALENDAR_READ,
+                Capability.CALENDAR_WRITE,
+                Capability.VISION,
+            }
+            if not grant.capabilities & network_capabilities:
                 raise AuthorityTokenError("Authority token does not grant network access")
             method, target, version = request_line.split(" ", 2)
             host, port, path = _destination(method, target, headers)

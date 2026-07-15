@@ -27,6 +27,7 @@ from app.provider_gateway.config import ProviderGatewaySettings
 from app.provider_gateway.main import create_app
 from app.provider_gateway.providers import (
     _AuthenticatedProxyRelay,
+    _AuthenticatedTunnelRelay,
     _browser_subprocess_env,
     _write_browser_proxy_config,
 )
@@ -79,14 +80,24 @@ async def test_gateway_exposes_and_invokes_only_token_granted_tools(
     app = create_app(settings)
     runtime: ProviderGatewayRuntime = app.state.runtime
 
-    async def fake_email(name: str, args: dict[str, Any]) -> str:
+    async def fake_email(name: str, args: dict[str, Any], _egress_token: str | None) -> str:
         assert name == "read_inbox"
         assert args == {"limit": 2}
         return "- safe inbox data"
 
     monkeypatch.setattr(runtime.email, "call", fake_email)
     transport = httpx.ASGITransport(app=app)
-    headers = {"Authorization": f"Bearer {_token(private, [Capability.EMAIL_READ])}"}
+    capability = [Capability.EMAIL_READ]
+    hosts = ["smtp.example.com"]
+    headers = {
+        "Authorization": f"Bearer {_token(private, capability, egress_hosts=hosts)}",
+        "X-Loop-Egress-Token": _token(
+            private,
+            capability,
+            audience=EGRESS_PROXY_AUDIENCE,
+            egress_hosts=hosts,
+        ),
+    }
     async with httpx.AsyncClient(transport=transport, base_url="http://gateway") as client:
         inventory = await client.get("/v1/tools", headers=headers)
         assert inventory.status_code == 200
@@ -250,6 +261,55 @@ async def test_gateway_rejects_egress_grant_from_another_run() -> None:
     assert "do not match" in response.json()["detail"]
 
 
+async def test_protocol_invocation_requires_egress_authority_for_configured_upstream() -> None:
+    private, public = _keys()
+    settings = ProviderGatewaySettings(
+        authority_public_key=public,
+        browser_enabled=False,
+        smtp_host="smtp.example.com",
+        smtp_user="me@example.com",
+        smtp_password="secret",
+    )
+    app = create_app(settings)
+    provider_token = _token(
+        private,
+        [Capability.EMAIL_READ],
+        egress_hosts=["smtp.example.com"],
+    )
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://gateway") as client:
+        missing = await client.post(
+            "/v1/tools/read_inbox",
+            headers={"Authorization": f"Bearer {provider_token}"},
+            json={"args": {"limit": 1}},
+        )
+        wrong_host = await client.post(
+            "/v1/tools/read_inbox",
+            headers={
+                "Authorization": (
+                    "Bearer "
+                    + _token(
+                        private,
+                        [Capability.EMAIL_READ],
+                        egress_hosts=["other.example.com"],
+                    )
+                ),
+                "X-Loop-Egress-Token": _token(
+                    private,
+                    [Capability.EMAIL_READ],
+                    audience=EGRESS_PROXY_AUDIENCE,
+                    egress_hosts=["other.example.com"],
+                ),
+            },
+            json={"args": {"limit": 1}},
+        )
+
+    assert missing.status_code == 403
+    assert missing.json()["detail"] == "Provider requires fresh egress authority"
+    assert wrong_host.status_code == 403
+    assert "smtp.example.com" in wrong_host.json()["detail"]
+
+
 async def test_browser_invocation_requires_matching_fresh_egress_grant() -> None:
     private, public = _keys()
     app = create_app(ProviderGatewaySettings(authority_public_key=public, browser_enabled=False))
@@ -332,12 +392,22 @@ async def test_gateway_does_not_return_provider_exception_details(
     app = create_app(settings)
     runtime: ProviderGatewayRuntime = app.state.runtime
 
-    async def failed_email(_name: str, _args: dict[str, Any]) -> str:
+    async def failed_email(_name: str, _args: dict[str, Any], _egress_token: str | None) -> str:
         raise RuntimeError("provider-secret-should-not-leak")
 
     monkeypatch.setattr(runtime.email, "call", failed_email)
     transport = httpx.ASGITransport(app=app)
-    headers = {"Authorization": f"Bearer {_token(private, [Capability.EMAIL_READ])}"}
+    capability = [Capability.EMAIL_READ]
+    hosts = ["smtp.example.com"]
+    headers = {
+        "Authorization": f"Bearer {_token(private, capability, egress_hosts=hosts)}",
+        "X-Loop-Egress-Token": _token(
+            private,
+            capability,
+            audience=EGRESS_PROXY_AUDIENCE,
+            egress_hosts=hosts,
+        ),
+    }
     async with httpx.AsyncClient(transport=transport, base_url="http://gateway") as client:
         response = await client.post(
             "/v1/tools/read_inbox", headers=headers, json={"args": {"limit": 1}}
@@ -546,6 +616,49 @@ async def test_browser_proxy_relay_injects_and_rotates_egress_authority() -> Non
         "loop:token-one",
         "loop:token-two",
     ]
+
+
+async def test_provider_tunnel_relay_binds_connect_target_and_egress_authority() -> None:
+    requests: list[str] = []
+
+    async def upstream_handler(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+        requests.append((await reader.readuntil(b"\r\n\r\n")).decode("iso-8859-1"))
+        writer.write(b"HTTP/1.1 200 Connection Established\r\n\r\n")
+        await writer.drain()
+        writer.write((await reader.readexactly(4)).upper())
+        await writer.drain()
+        writer.close()
+        await writer.wait_closed()
+
+    upstream = await asyncio.start_server(upstream_handler, "127.0.0.1", 0)
+    upstream_port = int(upstream.sockets[0].getsockname()[1])
+    relay = _AuthenticatedTunnelRelay(
+        f"http://127.0.0.1:{upstream_port}",
+        "email-egress-token",
+        target_host="smtp.example.com",
+        target_port=587,
+    )
+    await relay.start()
+    reader, writer = await asyncio.open_connection(*relay.endpoint)
+    try:
+        writer.write(b"ping")
+        await writer.drain()
+        assert await asyncio.wait_for(reader.readexactly(4), timeout=5) == b"PING"
+    finally:
+        writer.close()
+        await writer.wait_closed()
+        await relay.close()
+        upstream.close()
+        await upstream.wait_closed()
+
+    request = requests[0]
+    assert request.startswith("CONNECT smtp.example.com:587 HTTP/1.1\r\n")
+    authorization = next(
+        line.partition(":")[2].strip()
+        for line in request.split("\r\n")
+        if line.lower().startswith("proxy-authorization:")
+    )
+    assert base64.b64decode(authorization.partition(" ")[2]).decode() == ("loop:email-egress-token")
 
 
 async def test_browser_proxy_relay_drops_old_connections_when_authority_rotates() -> None:

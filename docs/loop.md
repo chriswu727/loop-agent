@@ -222,10 +222,10 @@ the prompt's `TOOL_SPECS`. The loop never changes.
   production: non-root, read-only root, capabilities dropped, no service-account
   token, resource/time limits, and only the task workspace mounted. Production is
   fail-closed; explicitly selected inline development remains reduced isolation.
-- _Provider tools_ are split across two isolated network identities. The protocol
-  gateway owns email/calendar/vision credentials but contains no browser runtime;
-  the Browser Gateway owns no provider credentials and can reach only the egress
-  proxy. The worker grants each through a capability-scoped, audience-specific token.
+- _Provider tools_ are split across four isolated network identities. Email,
+  calendar, and vision each receive only their own credentials; the Browser Gateway
+  owns none. Every identity has DNS disabled, can reach only the egress proxy, and
+  receives a capability-scoped, audience-specific token from the worker.
 
 **Limits clamped in the service.** `TaskService._resolve_limits` applies defaults
 then clamps to caps. The "within the limit" guarantee lives in one place,
@@ -353,12 +353,11 @@ agent create the file, run it, self-correct, and finish).
 - **Local inline execution is reduced isolation.** Production and the full Compose
   worker profile fail closed on container/Job isolation.
 - **One task per worker process.** Concurrency scales by adding worker replicas.
-- **Provider protocol egress is not uniformly FQDN-enforced at L4.** Shell and browser
-  traffic are proxy-only and have separate network identities. SMTP/IMAP/CalDAV/vision
-  still share one credential-bearing gateway with direct egress; stricter deployments
-  can split those protocols further or use CNI/service-mesh FQDN policy.
+- **Protocol operations already in flight are not transactional.** Revocation closes
+  proxy connections and prevents new calls, but cannot roll back an email or calendar
+  side effect that the upstream service already accepted.
 - **Proxy audit is durable but single-replica.** A bounded SQLite WAL survives proxy
   restarts and events are embedded into tasks after calls; horizontal HA requires a
   shared append-only sink.
-- **Roadmap:** broader transports, signed-skill ecosystem, hardened
-  provider network identities, and measured production/adversarial evidence.
+- **Roadmap:** broader transports, a signed-skill ecosystem, shared enforcement-state
+  backends for HA, and measured production/adversarial evidence.

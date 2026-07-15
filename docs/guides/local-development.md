@@ -15,7 +15,7 @@ make up        # web + api + postgres + redis, with hot reload
 
 ## Native (fastest iteration)
 
-Requires Node 20+, pnpm 10+, Python 3.12+.
+Requires Node 22.13+, pnpm 11+, Python 3.12+.
 
 ```bash
 make setup     # installs JS + Python deps, creates .env

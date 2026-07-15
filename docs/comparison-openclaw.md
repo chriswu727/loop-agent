@@ -11,11 +11,11 @@
 >   separate executor/verifier providers, `loop.receipt/v1` criteria mappings and
 >   provenance, API/CLI replay, and a reusable GitHub Receipt-verification Action.
 >   Production is fail-closed for sandbox and provider tools. It now also has an
->   separate credential-bearing protocol and credentialless browser gateways,
+>   separate email, calendar, vision, and credentialless browser gateways,
 >   capability-scoped audience-bound authority tokens, and a destination-enforcing
 >   egress proxy with private-address rejection, DNS pinning and durable Receipt audit.
->   Browser and shell identities are now proxy-only; per-protocol SMTP/IMAP/CalDAV/
->   vision separation and horizontally shared audit remain deployment hardening work.
+>   Browser, shell, SMTP/IMAP, CalDAV, and vision identities are now proxy-only and
+>   destination-bound; horizontally shared audit remains deployment hardening work.
 >
 > **Update (2026-07-04, after this comparison):** several concrete weaknesses this
 > analysis found were then fixed (and adversarially re-audited — the fixes had their

@@ -13,14 +13,16 @@ overlays/
 
 ## What's in the base
 
-- **Deployments** for `api`, `web`, `worker` — non-root, read-only rootfs (api/worker),
+- **Deployments** for `api`, `web`, `worker`, the isolated email/calendar/vision/browser
+  gateways, and the authenticated egress proxy — non-root, read-only rootfs,
   dropped capabilities, seccomp `RuntimeDefault`, resource requests/limits,
   liveness/readiness/startup probes, topology spread, graceful shutdown.
-- **Services** (ClusterIP) for `api` and `web`.
+- **Services** (ClusterIP) for control-plane and enforcement traffic.
 - **HorizontalPodAutoscalers** — CPU/memory targets; scale `api` 2→20.
 - **PodDisruptionBudgets** — keep ≥1 replica during node drains.
 - **Ingress** — TLS, `/api` → api, `/` → web.
-- **NetworkPolicies** — default-deny ingress + explicit allows (zero trust).
+- **NetworkPolicies** — default-deny ingress plus explicit worker-to-gateway and
+  gateway-to-proxy allows. Provider and browser identities have no other egress.
 - **ConfigMap / Secret** — config vs. secrets split (secret is an example; use a
   real secret manager in production).
 

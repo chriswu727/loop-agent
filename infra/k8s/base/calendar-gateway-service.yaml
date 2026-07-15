@@ -1,10 +1,10 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: provider-gateway
+  name: calendar-gateway
 spec:
   selector:
-    app.kubernetes.io/name: provider-gateway
+    app.kubernetes.io/name: calendar-gateway
   ports:
     - name: http
       port: 8090

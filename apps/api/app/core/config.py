@@ -275,10 +275,17 @@ class Settings(BaseSettings):
     agent_browser_enabled: bool = True
     agent_allow_host_providers: bool = True
     agent_browser_command: str = "npx -y @playwright/mcp@0.0.78 --headless --isolated"
+    # Legacy shared endpoint remains available outside production for upgrades.
     agent_provider_gateway_url: str | None = None
     agent_browser_gateway_url: str | None = None
+    agent_email_gateway_url: str | None = None
+    agent_calendar_gateway_url: str | None = None
+    agent_vision_gateway_url: str | None = None
+    agent_email_egress_hosts: str = ""
+    agent_calendar_egress_hosts: str = ""
+    agent_vision_egress_hosts: str = "generativelanguage.googleapis.com"
 
-    # Destination-enforcing proxy used by shell and isolated browser runtimes.
+    # Destination-enforcing proxy used by shell and isolated provider runtimes.
     # The sandbox joins an internal-only network where this proxy is the sole
     # route out; short-lived authority tokens carry the exact host allowlist.
     agent_egress_proxy_url: str | None = None
@@ -318,8 +325,14 @@ class Settings(BaseSettings):
             raise ValueError("production requires an immutable sandbox image digest")
         if self.agent_allow_host_providers:
             raise ValueError("production host providers must be disabled")
-        if not self.agent_provider_gateway_url:
-            raise ValueError("production requires an isolated Provider Gateway")
+        if self.agent_provider_gateway_url:
+            raise ValueError("production forbids the legacy shared Provider Gateway")
+        if not self.agent_email_gateway_url or not self.agent_email_egress_hosts.strip():
+            raise ValueError("production requires an isolated Email Gateway and egress hosts")
+        if not self.agent_calendar_gateway_url or not self.agent_calendar_egress_hosts.strip():
+            raise ValueError("production requires an isolated Calendar Gateway and egress hosts")
+        if not self.agent_vision_gateway_url or not self.agent_vision_egress_hosts.strip():
+            raise ValueError("production requires an isolated Vision Gateway and egress hosts")
         if not self.agent_browser_gateway_url:
             raise ValueError("production requires an isolated Browser Gateway")
         if not self.agent_egress_proxy_url or not self.agent_egress_proxy_audit_url:

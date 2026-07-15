@@ -51,6 +51,8 @@ spec:
               value: 'true'
             - name: EGRESS_PROXY_REVOCATION_DATABASE_PATH
               value: /var/lib/loop-egress/audit.sqlite3
+            - name: EGRESS_PROXY_ALLOWED_PORTS
+              value: '80,443,587,993'
           resources:
             requests:
               cpu: 100m

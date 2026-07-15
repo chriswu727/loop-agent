@@ -17,7 +17,9 @@ resources:
   - sandbox-rbac.yaml
   - data-pvc.yaml
   - egress-proxy-audit-pvc.yaml
-  - provider-gateway-state-pvc.yaml
+  - email-gateway-state-pvc.yaml
+  - calendar-gateway-state-pvc.yaml
+  - vision-gateway-state-pvc.yaml
   - browser-gateway-state-pvc.yaml
   - configmap.yaml
   - api-deployment.yaml
@@ -30,8 +32,12 @@ resources:
   - web-pdb.yaml
   - worker-deployment.yaml
   - worker-hpa.yaml
-  - provider-gateway-deployment.yaml
-  - provider-gateway-service.yaml
+  - email-gateway-deployment.yaml
+  - email-gateway-service.yaml
+  - calendar-gateway-deployment.yaml
+  - calendar-gateway-service.yaml
+  - vision-gateway-deployment.yaml
+  - vision-gateway-service.yaml
   - browser-gateway-deployment.yaml
   - browser-gateway-service.yaml
   - egress-proxy-deployment.yaml

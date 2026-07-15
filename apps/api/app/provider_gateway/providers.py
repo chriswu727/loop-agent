@@ -9,6 +9,7 @@ import json
 import os
 import shlex
 import smtplib
+import socket
 import ssl
 import tempfile
 import uuid
@@ -16,7 +17,7 @@ from contextlib import AsyncExitStack
 from datetime import UTC, datetime, timedelta
 from email.message import EmailMessage
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 from urllib.parse import urlsplit, urlunsplit
 
 import httpx
@@ -28,14 +29,29 @@ class EmailProvider:
     def __init__(self, settings: ProviderGatewaySettings) -> None:
         self.settings = settings
 
-    async def call(self, name: str, args: dict[str, Any]) -> str:
+    async def call(self, name: str, args: dict[str, Any], egress_token: str | None) -> str:
+        if not egress_token:
+            raise RuntimeError("Email provider requires fresh egress authority")
         if name == "send_email":
-            return await asyncio.to_thread(self._send, args)
-        if name == "read_inbox":
-            return await asyncio.to_thread(self._read, args)
-        raise ValueError(f"Unknown email tool {name!r}")
+            host = self.settings.smtp_host or ""
+            port = self.settings.smtp_port
+            operation = self._send
+        elif name == "read_inbox":
+            host = self.settings.imap_host or self.settings.smtp_host or ""
+            port = self.settings.imap_port
+            operation = self._read
+        else:
+            raise ValueError(f"Unknown email tool {name!r}")
+        relay = _AuthenticatedTunnelRelay(
+            self.settings.proxy_required(), egress_token, target_host=host, target_port=port
+        )
+        await relay.start()
+        try:
+            return await asyncio.to_thread(operation, args, relay.endpoint)
+        finally:
+            await relay.close()
 
-    def _send(self, args: dict[str, Any]) -> str:
+    def _send(self, args: dict[str, Any], relay: tuple[str, int]) -> str:
         to = str(args.get("to", "")).strip()
         if not to:
             return "send_email needs a 'to' address."
@@ -44,9 +60,10 @@ class EmailProvider:
         msg["To"] = to
         msg["Subject"] = str(args.get("subject", "")).strip()
         msg.set_content(str(args.get("body", "")))
-        with smtplib.SMTP(
+        with _SMTPThroughRelay(
             self.settings.smtp_host or "",
             self.settings.smtp_port,
+            relay,
             timeout=self.settings.upstream_timeout_seconds,
         ) as server:
             if self.settings.smtp_starttls:
@@ -55,10 +72,15 @@ class EmailProvider:
             server.send_message(msg)
         return f"Email sent to {to} (subject: {msg['Subject']!r})."
 
-    def _read(self, args: dict[str, Any]) -> str:
+    def _read(self, args: dict[str, Any], relay: tuple[str, int]) -> str:
         limit = max(1, min(int(args.get("limit", 5) or 5), 20))
         host = self.settings.imap_host or self.settings.smtp_host or ""
-        with imaplib.IMAP4_SSL(host) as box:
+        with _IMAP4SSLThroughRelay(
+            host,
+            self.settings.imap_port,
+            relay,
+            timeout=self.settings.upstream_timeout_seconds,
+        ) as box:
             box.login(self.settings.smtp_user or "", self.settings.smtp_password or "")
             box.select("INBOX")
             _typ, data = box.search(None, "ALL")
@@ -82,20 +104,29 @@ class CalendarProvider:
     def __init__(self, settings: ProviderGatewaySettings) -> None:
         self.settings = settings
 
-    async def call(self, name: str, args: dict[str, Any]) -> str:
-        if name == "list_events":
-            return await asyncio.to_thread(self._list, args)
-        if name == "create_event":
-            return await asyncio.to_thread(self._create, args)
-        raise ValueError(f"Unknown calendar tool {name!r}")
+    async def call(self, name: str, args: dict[str, Any], egress_token: str | None) -> str:
+        if not egress_token:
+            raise RuntimeError("Calendar provider requires fresh egress authority")
+        relay = _AuthenticatedProxyRelay(self.settings.proxy_required(), egress_token)
+        await relay.start()
+        try:
+            if name == "list_events":
+                return await asyncio.to_thread(self._list, args, relay.proxy_url)
+            if name == "create_event":
+                return await asyncio.to_thread(self._create, args, relay.proxy_url)
+            raise ValueError(f"Unknown calendar tool {name!r}")
+        finally:
+            await relay.close()
 
-    def _calendar(self) -> Any:
+    def _calendar(self, proxy_url: str) -> Any:
         import caldav
 
         client = caldav.DAVClient(  # type: ignore[operator]
             url=self.settings.caldav_url or "",
+            proxy=proxy_url,
             username=self.settings.caldav_user or "",
             password=self.settings.caldav_password or "",
+            enable_rfc6764=False,
         )
         calendars = client.principal().calendars()
         if not calendars:
@@ -106,9 +137,9 @@ class CalendarProvider:
                     return calendar
         return calendars[0]
 
-    def _list(self, args: dict[str, Any]) -> str:
+    def _list(self, args: dict[str, Any], proxy_url: str) -> str:
         days = max(1, min(int(args.get("days", 7) or 7), 60))
-        calendar = self._calendar()
+        calendar = self._calendar(proxy_url)
         if calendar is None:
             return "No calendar found for these credentials."
         start = datetime.now(UTC)
@@ -124,7 +155,7 @@ class CalendarProvider:
             lines.append(f"- {when}: {summary}")
         return "\n".join(lines) or f"(no events in the next {days} days)"
 
-    def _create(self, args: dict[str, Any]) -> str:
+    def _create(self, args: dict[str, Any], proxy_url: str) -> str:
         from icalendar import Calendar, Event
 
         summary = str(args.get("summary", "")).strip()
@@ -139,7 +170,7 @@ class CalendarProvider:
             )
         except (KeyError, ValueError):
             return "create_event needs ISO 'start' and optional 'end'."
-        calendar = self._calendar()
+        calendar = self._calendar(proxy_url)
         if calendar is None:
             return "No calendar found for these credentials."
         obj = Calendar()  # type: ignore[no-untyped-call]
@@ -159,7 +190,9 @@ class VisionProvider:
     def __init__(self, settings: ProviderGatewaySettings) -> None:
         self.settings = settings
 
-    async def call(self, args: dict[str, Any]) -> str:
+    async def call(self, args: dict[str, Any], egress_token: str | None) -> str:
+        if not egress_token:
+            raise RuntimeError("Vision provider requires fresh egress authority")
         encoded = args.get("image_base64")
         mime = str(args.get("mime", ""))
         if not isinstance(encoded, str) or mime not in {
@@ -180,23 +213,30 @@ class VisionProvider:
             "https://generativelanguage.googleapis.com/v1beta/models/"
             "gemini-2.5-flash:generateContent"
         )
-        async with httpx.AsyncClient(timeout=self.settings.upstream_timeout_seconds) as client:
-            response = await client.post(
-                url,
-                params={"key": self.settings.gemini_api_key or ""},
-                json={
-                    "contents": [
-                        {
-                            "role": "user",
-                            "parts": [
-                                {"text": prompt},
-                                {"inline_data": {"mime_type": mime, "data": encoded}},
-                            ],
-                        }
-                    ],
-                    "generationConfig": {"maxOutputTokens": 800, "temperature": 0.2},
-                },
-            )
+        relay = _AuthenticatedProxyRelay(self.settings.proxy_required(), egress_token)
+        await relay.start()
+        try:
+            async with httpx.AsyncClient(
+                timeout=self.settings.upstream_timeout_seconds, proxy=relay.proxy_url
+            ) as client:
+                response = await client.post(
+                    url,
+                    params={"key": self.settings.gemini_api_key or ""},
+                    json={
+                        "contents": [
+                            {
+                                "role": "user",
+                                "parts": [
+                                    {"text": prompt},
+                                    {"inline_data": {"mime_type": mime, "data": encoded}},
+                                ],
+                            }
+                        ],
+                        "generationConfig": {"maxOutputTokens": 800, "temperature": 0.2},
+                    },
+                )
+        finally:
+            await relay.close()
         response.raise_for_status()
         data = response.json()
         candidates = data.get("candidates", [])
@@ -204,6 +244,44 @@ class VisionProvider:
             return "(the vision model returned no description)"
         parts = candidates[0].get("content", {}).get("parts", [])
         return "".join(part.get("text", "") for part in parts) or "(no description)"
+
+
+class _SMTPThroughRelay(smtplib.SMTP):
+    def __init__(
+        self,
+        target_host: str,
+        target_port: int,
+        relay: tuple[str, int],
+        *,
+        timeout: float,
+    ) -> None:
+        self._relay = relay
+        super().__init__(target_host, target_port, timeout=timeout)
+
+    def _get_socket(self, _host: str, _port: int, timeout: float) -> socket.socket:
+        return socket.create_connection(self._relay, timeout)
+
+
+class _IMAP4SSLThroughRelay(imaplib.IMAP4_SSL):
+    def __init__(
+        self,
+        target_host: str,
+        target_port: int,
+        relay: tuple[str, int],
+        *,
+        timeout: float,
+    ) -> None:
+        self._relay = relay
+        super().__init__(
+            target_host,
+            target_port,
+            ssl_context=ssl.create_default_context(),
+            timeout=timeout,
+        )
+
+    def _create_socket(self, timeout: float) -> socket.socket:
+        raw = socket.create_connection(self._relay, timeout)
+        return cast(socket.socket, self.ssl_context.wrap_socket(raw, server_hostname=self.host))
 
 
 class BrowserProvider:
@@ -341,6 +419,90 @@ class _AuthenticatedProxyRelay:
             self._writers.add(upstream_writer)
             upstream_writer.write(_inject_proxy_authorization(request_head, self._token))
             await upstream_writer.drain()
+            await _relay_streams(reader, writer, upstream_reader, upstream_writer)
+        except (ConnectionError, asyncio.IncompleteReadError, asyncio.LimitOverrunError):
+            pass
+        finally:
+            for active in (writer, upstream_writer):
+                if active is None:
+                    continue
+                self._writers.discard(active)
+                active.close()
+                with contextlib.suppress(Exception):
+                    await active.wait_closed()
+
+
+class _AuthenticatedTunnelRelay:
+    def __init__(
+        self,
+        upstream_url: str,
+        token: str,
+        *,
+        target_host: str,
+        target_port: int,
+    ) -> None:
+        if not target_host or any(character.isspace() for character in target_host):
+            raise ValueError("Provider target host is invalid")
+        if not 1 <= target_port <= 65535:
+            raise ValueError("Provider target port is invalid")
+        self._upstream_host, self._upstream_port = _proxy_endpoint(upstream_url)
+        self._token = token
+        self._target_host = target_host
+        self._target_port = target_port
+        self._server: asyncio.AbstractServer | None = None
+        self._listen_port: int | None = None
+        self._writers: set[asyncio.StreamWriter] = set()
+
+    @property
+    def endpoint(self) -> tuple[str, int]:
+        if self._server is None or self._listen_port is None:
+            raise RuntimeError("Provider tunnel relay is unavailable")
+        return "127.0.0.1", self._listen_port
+
+    async def start(self) -> None:
+        self._server = await asyncio.start_server(self._handle, "127.0.0.1", 0)
+        sockets = getattr(self._server, "sockets", None)
+        if not sockets:
+            await self.close()
+            raise RuntimeError("Provider tunnel relay did not bind a socket")
+        self._listen_port = int(sockets[0].getsockname()[1])
+
+    async def close(self) -> None:
+        if self._server is not None:
+            self._server.close()
+            await self._server.wait_closed()
+            self._server = None
+            self._listen_port = None
+        writers = list(self._writers)
+        for writer in writers:
+            writer.close()
+        for writer in writers:
+            with contextlib.suppress(Exception):
+                await writer.wait_closed()
+        self._writers.clear()
+
+    async def _handle(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+        upstream_writer: asyncio.StreamWriter | None = None
+        self._writers.add(writer)
+        try:
+            upstream_reader, upstream_writer = await asyncio.open_connection(
+                self._upstream_host, self._upstream_port
+            )
+            self._writers.add(upstream_writer)
+            basic = base64.b64encode(f"loop:{self._token}".encode()).decode()
+            target = f"{self._target_host}:{self._target_port}"
+            upstream_writer.write(
+                (
+                    f"CONNECT {target} HTTP/1.1\r\n"
+                    f"Host: {target}\r\n"
+                    f"Proxy-Authorization: Basic {basic}\r\n\r\n"
+                ).encode()
+            )
+            await upstream_writer.drain()
+            response = await upstream_reader.readuntil(b"\r\n\r\n")
+            status = response.split(b"\r\n", 1)[0].split(b" ", 2)
+            if len(status) < 2 or status[1] != b"200":
+                raise ConnectionError("Egress proxy rejected provider tunnel")
             await _relay_streams(reader, writer, upstream_reader, upstream_writer)
         except (ConnectionError, asyncio.IncompleteReadError, asyncio.LimitOverrunError):
             pass
