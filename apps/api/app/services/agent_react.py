@@ -57,6 +57,7 @@ from app.repositories.step import StepRepository
 from app.repositories.task import TaskRepository
 from app.services.ledger import genesis_hash, step_hash
 from app.services.memory import MemoryStore, scoped_memory_root
+from app.services.progress import HistoryEntry, ProgressGuard, compact_history
 from app.services.prompts import plan_prompts, understand_prompts, verify_prompts
 from app.services.receipt import RECEIPT_SCHEMA, build_receipt, refresh_receipt_authority
 from app.services.skills import SkillStore
@@ -75,7 +76,7 @@ from app.tools.vision import VisionTools
 
 log = get_logger("agent")
 
-# How many recent steps the planner sees in full; older steps collapse to a count.
+# How many recent steps the planner sees in full; older steps become a bounded state summary.
 _HISTORY_WINDOW = 12
 
 # Below this many tokens left, a spawn is refused rather than floored — flooring
@@ -91,6 +92,14 @@ _MIN_SPAWN_BUDGET = 1_000
 # larger cap costs it nothing.
 _PLAN_MAX_TOKENS = 2_500  # a plan decision can also carry write_file content
 _VERDICT_MAX_TOKENS = 1_500  # rubric + verify: reasoning then a short JSON verdict
+
+
+def _verification_reserve(token_budget: int) -> int:
+    return min(
+        settings.agent_verification_token_reserve,
+        max(250, token_budget // 5),
+        max(0, token_budget // 2),
+    )
 
 
 def _balanced_json_objects(text: str) -> list[str]:
@@ -172,7 +181,7 @@ class AgentReactService:
         self.llm = llm
         self.verifier_llm = verifier_llm or llm
         self.session = tasks.session
-        self._history: list[str] = []
+        self._history: list[HistoryEntry] = []
         self._last_hash = ""  # head of the step hash chain
         self.memory = MemoryStore(
             scoped_memory_root(Path(settings.agent_memory_root), "local", "default")
@@ -887,15 +896,17 @@ class AgentReactService:
     async def _run_loop(
         self, task: TaskModel, workspace: Workspace, executor: ToolExecutor, *, start: int
     ) -> None:
+        verification_reserve = _verification_reserve(task.token_budget)
         if not task.rubric:  # only on a fresh run, not a resume
+            understand_budget = max(0, task.token_budget - task.tokens_used - verification_reserve)
             try:
-                rubric, tokens = await self._understand(task.goal)
+                rubric, tokens = await self._understand(task.goal, understand_budget)
             except LLMError as exc:
                 # A transient blip on the very first call shouldn't kill the task —
                 # fall back to a generic rubric; the plan phase (with retry) does the
                 # real work and the verifier still grades against the goal.
                 log.warning("agent.understand_failed", task_id=str(task.id), error=str(exc)[:200])
-                rubric, tokens = ["Fully and correctly satisfies the task"], 0
+                rubric, tokens = ["Fully and correctly satisfies the task"], exc.tokens_spent
             task.rubric = rubric
             task.tokens_used += tokens
             await self._commit()
@@ -920,8 +931,9 @@ class AgentReactService:
                 await self._finish(task, StopReason.MAX_STEPS)
                 return
 
+        guard = ProgressGuard(self._history)
         approval_required = task.require_approval or settings.agent_approval_mode == "manual"
-        consecutive_failures = 0
+        consecutive_no_progress = guard.no_progress
         finish_retries = 0
         # Repeated writes to one file without running it = no progress; nudge on
         # the 2nd, hard-block the 3rd so the model is forced to make progress.
@@ -944,13 +956,17 @@ class AgentReactService:
                 return
 
             tokens_left = max(0, task.token_budget - task.tokens_used)
+            planning_budget = max(0, tokens_left - verification_reserve)
+            if planning_budget <= 0:
+                await self._finish(task, StopReason.BUDGET_EXHAUSTED)
+                return
             system, user = plan_prompts(
                 task.goal,
                 task.rubric,
                 workspace.tree(),
                 self._history_view(),
                 task.max_steps - number + 1,
-                tokens_left,
+                planning_budget,
                 executor.envelope.restricted_executor_tools(),
                 executor.envelope.egress_allowed,
                 self._memory_snapshot,
@@ -963,10 +979,23 @@ class AgentReactService:
                 notices=self._notices,
                 allow_spawn=task.depth < settings.agent_max_spawn_depth,
                 today=date.today().isoformat(),
+                progress_state=guard.state(verification_reserve),
             )
-            decision = await self.llm.complete(
-                system, user, max_tokens=_PLAN_MAX_TOKENS, temperature=0.5
-            )
+            try:
+                decision = await self.llm.complete(
+                    system,
+                    user,
+                    max_tokens=_PLAN_MAX_TOKENS,
+                    temperature=0.5,
+                    token_budget=planning_budget,
+                )
+            except LLMError as exc:
+                task.tokens_used += exc.tokens_spent
+                await self._commit()
+                if exc.budget_exhausted:
+                    await self._finish(task, StopReason.BUDGET_EXHAUSTED)
+                    return
+                raise
             step_tokens = decision.tokens
             thought, tool, args = self._parse_decision(_extract_json(decision.content))
 
@@ -999,11 +1028,12 @@ class AgentReactService:
                     ToolStatus.BLOCKED,
                     step_tokens,
                 )
-                consecutive_failures += 1
+                guard.observe(tool, args, self._history[-1].observation, ToolStatus.BLOCKED)
+                consecutive_no_progress = guard.no_progress
                 if number >= task.max_steps:
                     await self._finish(task, StopReason.MAX_STEPS)
                     return
-                if consecutive_failures >= settings.agent_stuck_threshold:
+                if consecutive_no_progress >= settings.agent_stuck_threshold:
                     await self._finish(task, StopReason.STUCK)
                     return
                 continue
@@ -1017,18 +1047,42 @@ class AgentReactService:
                 await self._record_step(
                     task, number, thought, "remember", args, observation, ToolStatus.OK, step_tokens
                 )
+                guard.observe("remember", args, observation, ToolStatus.OK)
+                consecutive_no_progress = guard.no_progress
                 if number >= task.max_steps:
                     await self._finish(task, StopReason.MAX_STEPS)
+                    return
+                if consecutive_no_progress >= settings.agent_stuck_threshold:
+                    await self._finish(task, StopReason.STUCK)
                     return
                 continue
 
             if tool == "spawn":
-                await self._handle_spawn(task, args, thought, number, step_tokens)
+                guard_block = guard.preflight(tool, args)
+                if guard_block:
+                    await self._record_step(
+                        task,
+                        number,
+                        thought,
+                        tool,
+                        args,
+                        guard_block,
+                        ToolStatus.BLOCKED,
+                        step_tokens,
+                    )
+                else:
+                    await self._handle_spawn(task, args, thought, number, step_tokens)
+                last = self._history[-1]
+                guard.observe(tool, args, last.observation, last.status)
+                consecutive_no_progress = guard.no_progress
                 if number >= task.max_steps:
                     await self._finish(task, StopReason.MAX_STEPS)
                     return
                 if task.tokens_used >= task.token_budget:
                     await self._finish(task, StopReason.BUDGET_EXHAUSTED)
+                    return
+                if consecutive_no_progress >= settings.agent_stuck_threshold:
+                    await self._finish(task, StopReason.STUCK)
                     return
                 continue
 
@@ -1074,12 +1128,17 @@ class AgentReactService:
                 same_path_writes = 0
                 last_write_path = None
 
+            guard_block = guard.preflight(tool, args) if tool is not None else None
+            workspace_before = workspace.state_marker()
+
             if tool is None:
                 observation, status = (
                     "Could not parse a valid action. Respond with one JSON object "
                     f"using a valid tool: {sorted(VALID_TOOLS)}.",
                     ToolStatus.ERROR,
                 )
+            elif guard_block:
+                observation, status = guard_block, ToolStatus.BLOCKED
             elif tool in ("write_file", "edit_file") and same_path_writes >= 3:
                 observation, status = (
                     f"Blocked: you have written '{last_write_path}' {same_path_writes} times "
@@ -1107,8 +1166,15 @@ class AgentReactService:
                 task, number, thought, tool or "invalid", args, observation, status, step_tokens
             )
 
-            stalled = status is not ToolStatus.OK or same_path_writes >= 2
-            consecutive_failures = consecutive_failures + 1 if stalled else 0
+            guard.observe(
+                tool or "invalid",
+                args,
+                observation,
+                status,
+                force_no_progress=same_path_writes >= 2,
+                workspace_changed=workspace.state_marker() != workspace_before,
+            )
+            consecutive_no_progress = guard.no_progress
 
             if number >= task.max_steps:
                 await self._finish(task, StopReason.MAX_STEPS)
@@ -1116,7 +1182,7 @@ class AgentReactService:
             if task.tokens_used >= task.token_budget:
                 await self._finish(task, StopReason.BUDGET_EXHAUSTED)
                 return
-            if consecutive_failures >= settings.agent_stuck_threshold:
+            if consecutive_no_progress >= settings.agent_stuck_threshold:
                 await self._finish(task, StopReason.STUCK)
                 return
 
@@ -1410,10 +1476,14 @@ class AgentReactService:
 
     # --- LLM phases -------------------------------------------------------
 
-    async def _understand(self, goal: str) -> tuple[list[str], int]:
+    async def _understand(self, goal: str, token_budget: int) -> tuple[list[str], int]:
         system, user = understand_prompts(goal, self._conversation)
         result = await self.llm.complete(
-            system, user, max_tokens=_VERDICT_MAX_TOKENS, temperature=0.4
+            system,
+            user,
+            max_tokens=_VERDICT_MAX_TOKENS,
+            temperature=0.4,
+            token_budget=token_budget,
         )
         parsed = _extract_json(result.content)
         if isinstance(parsed, list):
@@ -1483,9 +1553,31 @@ class AgentReactService:
             workspace.contents_digest(),
             today=date.today().isoformat(),
         )
-        result = await self.verifier_llm.complete(
-            system, user, max_tokens=_VERDICT_MAX_TOKENS, temperature=0.2
-        )
+        verify_budget = max(0, task.token_budget - task.tokens_used - plan_tokens)
+        try:
+            result = await self.verifier_llm.complete(
+                system,
+                user,
+                max_tokens=_VERDICT_MAX_TOKENS,
+                temperature=0.2,
+                token_budget=verify_budget,
+            )
+        except LLMError as exc:
+            observation = f"Verification could not complete: {str(exc)[:300]}"
+            await self._record_step(
+                task,
+                number,
+                thought,
+                "finish",
+                args,
+                observation,
+                ToolStatus.ERROR,
+                plan_tokens + exc.tokens_spent,
+            )
+            if exc.budget_exhausted:
+                await self._finish(task, StopReason.BUDGET_EXHAUSTED)
+                return True, 0, summary, exc.tokens_spent
+            raise
         parsed = _extract_json(result.content)
         if isinstance(parsed, dict):
             score = _clamp_score(parsed.get("score"))
@@ -1603,8 +1695,19 @@ class AgentReactService:
         task.steps_used = number
         task.tokens_used += tokens
         await self._commit()
-        self._history.append(self._format_history(number, thought, tool, args, observation, status))
+        self._history.append(self._history_entry(number, thought, tool, args, observation, status))
         log.info("agent.step", task_id=str(task.id), number=number, tool=tool, status=status.value)
+
+    @staticmethod
+    def _history_entry(
+        number: int,
+        thought: str,
+        tool: str,
+        args: dict[str, Any],
+        observation: str,
+        status: ToolStatus,
+    ) -> HistoryEntry:
+        return HistoryEntry(number, thought, tool, args, observation, status)
 
     @staticmethod
     def _format_history(
@@ -1615,20 +1718,15 @@ class AgentReactService:
         observation: str,
         status: ToolStatus,
     ) -> str:
-        arg_preview = ", ".join(f"{k}={str(v)[:60]!r}" for k, v in args.items())
-        obs = observation if len(observation) <= 600 else observation[:600] + " …[truncated]"
-        # Observations are untrusted output, framed as [DATA] so the planner is
-        # told not to obey any instructions a tool result might contain.
-        return (
-            f"Step {number} [{tool}] ({status.value}): {thought}\n"
-            f"  args: {arg_preview}\n  -> [DATA] {obs}"
-        )
+        return AgentReactService._history_entry(
+            number, thought, tool, args, observation, status
+        ).render()
 
     async def _rebuild_history(self, task_id: uuid.UUID) -> None:
         """Reconstruct working memory (and the chain head) from persisted steps."""
         steps = await self.steps.list_for_task(task_id)
         self._history = [
-            self._format_history(
+            self._history_entry(
                 s.number, s.thought, s.tool, s.tool_args, s.observation, ToolStatus(s.status)
             )
             for s in steps
@@ -1637,12 +1735,17 @@ class AgentReactService:
 
     def _history_view(self) -> str:
         """The history the planner sees: recent steps in full, older ones
-        collapsed to a count so a long run can't blow the context or the budget."""
+        compacted into durable decisions/evidence so a long run stays bounded
+        without forgetting failed branches."""
         if len(self._history) <= _HISTORY_WINDOW:
-            return "\n".join(self._history) or "(nothing yet)"
-        omitted = len(self._history) - _HISTORY_WINDOW
+            return "\n".join(entry.render() for entry in self._history) or "(nothing yet)"
+        older = self._history[:-_HISTORY_WINDOW]
         recent = self._history[-_HISTORY_WINDOW:]
-        return f"[... {omitted} earlier steps omitted ...]\n" + "\n".join(recent)
+        return (
+            compact_history(older)
+            + "\n\n[RECENT STEPS]\n"
+            + "\n".join(entry.render() for entry in recent)
+        )
 
     @staticmethod
     def _stop_summary(task: TaskModel, reason: StopReason) -> str:
@@ -1661,8 +1764,8 @@ class AgentReactService:
             )
         if reason is StopReason.STUCK:
             return (
-                "Stopped after repeated failed or blocked actions without progress. Check the "
-                "steps for the recurring error before retrying."
+                "Stopped after repeated actions produced no workspace change or new evidence. "
+                "Check the steps for the recurring branch before retrying."
             )
         if reason is StopReason.CANCELLED:
             return "Cancelled before reaching a verified result."

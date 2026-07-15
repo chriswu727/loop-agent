@@ -200,13 +200,17 @@ Receipt records the chain head, so a Receipt vouches for the whole history that
 produced it. This is the "every action auditable and tamper-evident" security
 principle made real, and the foundation the signed-skill / approval-gate work builds on.
 
-**No-progress is handled, then forced.** `write_file` always returns "ok", so a
-weak model can rewrite one file forever and never run it — a real failure mode
-seen in live runs. The loop nudges on the 2nd consecutive write to the same path,
-then **hard-blocks the 3rd** (refuses to write, telling it to run the file or do
-something else) so a stuck loop becomes forward progress — a previously-flaky
-`square(n)` task that looped to `stuck` now converges. Repeated writes also count
-toward the stuck limit, so a model that ignores everything still terminates.
+**No-progress is measured, then forced.** The loop fingerprints equivalent file,
+shell, search, and browser actions against the current workspace revision. A
+successful action counts as progress only when it changes the workspace or adds
+new evidence; repeating the same evidence is blocked, exploration is branch-capped,
+and consecutive no-progress actions stop as `stuck`. The existing write guard still
+nudges on the 2nd consecutive write to one path and hard-blocks the 3rd.
+
+**History is bounded without amnesia.** The newest 12 steps remain verbatim. Older
+steps become a deterministic state summary of artifacts touched, evidence gathered,
+failed or blocked branches, and the action mix, so the prompt stays bounded without
+inviting the model to retry forgotten failures.
 
 **Tools, not raw power.** The agent acts only through `write_file`, `read_file`,
 `run_command`, and `finish`. Each is a small, auditable adapter; adding a tool
@@ -232,8 +236,11 @@ then clamps to caps. The "within the limit" guarantee lives in one place,
 server-side. Limits are `max_steps` and `token_budget`; "stuck" (N failed/blocked
 steps in a row) is the safety net for an agent thrashing without progress.
 
-**Token budget from real usage.** Each provider response reports tokens; the loop
-accumulates per planning + verify call and checks before and after each step.
+**Token budget is enforced per model call.** Provider-reported usage is preferred;
+missing usage receives a conservative local estimate, and failed retry/fallback
+attempts are charged too. Planning receives only the spendable remainder while a
+separate reserve is held for final verification, and every provider attempt has its
+output cap reduced to fit the call budget.
 
 **Inline vs worker execution.** The same `AgentReactService.run` is driven two
 ways (`services/runner.py`): `inline` runs it in a FastAPI background task (zero

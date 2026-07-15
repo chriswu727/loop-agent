@@ -10,6 +10,7 @@ through the file tools. (Shell commands are a separate, looser surface — see
 
 from __future__ import annotations
 
+import hashlib
 import os
 from pathlib import Path
 
@@ -101,6 +102,17 @@ class Workspace:
                 if len(files) >= max_entries:
                     return files
         return files
+
+    def state_marker(self) -> str:
+        digest = hashlib.sha256()
+        for relative, size in self.list_files():
+            path = self.root / relative
+            try:
+                stat = path.stat()
+            except OSError:
+                continue
+            digest.update(f"{relative}\0{size}\0{stat.st_mtime_ns}\n".encode())
+        return digest.hexdigest()
 
     def contents_digest(
         self, *, max_files: int = 10, per_file: int = 2000, total: int = 8000

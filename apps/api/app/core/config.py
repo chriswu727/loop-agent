@@ -232,6 +232,9 @@ class Settings(BaseSettings):
     agent_max_finish_retries: int = 2  # times a rejected finish is pushed back
     agent_stuck_threshold: int = 4  # consecutive failed/blocked steps -> give up
     agent_max_spawn_depth: int = 2  # how deep sub-agents may delegate further
+    agent_repeated_action_limit: int = Field(default=2, ge=1, le=10)
+    agent_exploration_branch_cap: int = Field(default=8, ge=1, le=20)
+    agent_verification_token_reserve: int = Field(default=16_000, ge=500)
 
     # ---- Trigger heartbeat (scheduled firing) ----
     scheduler_enabled: bool = True

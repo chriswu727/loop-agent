@@ -56,8 +56,9 @@ You give Loop a goal; it runs a **think → act → observe** loop (ReAct):
    if it does, Loop writes a tamper-evident **Receipt**.
 
 It stops on the first of: **goal achieved** (verified), **step limit**, **token
-budget**, **stuck** (too many failed/blocked actions), or **cancelled** — every
-limit clamped to a configured ceiling, so a task can never run away.
+budget**, **stuck** (repeated actions or no new evidence), or **cancelled** — every
+limit is clamped server-side, model retries are charged, and verification tokens
+are reserved so a task cannot spend its way out of proving the result.
 
 ## Why Loop — the safe, verifiable alternative
 

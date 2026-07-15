@@ -19,7 +19,7 @@ the decisions so they aren't silently "tuned back out" later.
 - `write_file` and `edit_file` echo a bounded preview (≤20 lines / 1000 chars) of
   the resulting file. The model kept spending a step to `read_file` back what it
   had just written; a prompt rule alone didn't stop it. Echoing the content
-  removes the *reason* to read back. A/B on one task: 6→4 steps, ~30% fewer tokens.
+  removes the _reason_ to read back. A/B on one task: 6→4 steps, ~30% fewer tokens.
 - The planner is told to **finish when the goal is met and the step budget is low**
   rather than chasing minor refinements (e.g. `500` vs `500.0`). Observed a task
   that had the correct answer on disk but fiddled to `max_steps` at score 0; after
@@ -67,7 +67,7 @@ the decisions so they aren't silently "tuned back out" later.
   caveat: the shell surface is best-effort; container mode is the real jail.
 
 **A critical correctness fix worth remembering:** recording a human answer/approval
-used to rewrite the last step's observation *after* its ledger hash was set, so
+used to rewrite the last step's observation _after_ its ledger hash was set, so
 `verify_chain` failed for **every** human-in-the-loop task. `respond()` now
 re-seals that step's hash. The tamper-evident guarantee only means something if a
 legitimate answer keeps the chain valid while tampering still breaks it.
@@ -126,7 +126,7 @@ ecosystem (one bundled skill), and adoption (zero) — those are maturity, not b
 
 Running real tasks against `deepseek-reasoner` and reading the traces (and the
 server tracebacks, not just the status) surfaced **twelve** defects that unit tests
-could not — each a case where the *real model on a real task* hit something the
+could not — each a case where the _real model on a real task_ hit something the
 mocks never exercised. Two of them (spawn, container) were headline capabilities
 that were effectively unusable for the common case yet green in every test that
 wasn't a real end-to-end model run:
@@ -139,7 +139,7 @@ wasn't a real end-to-end model run:
   `reasoning_content` when `content` is empty (`providers.py`). This was found only
   by capturing the actual traceback — the symptom looked like a generic blip.
 - **The verifier judged content-only work blind.** `verify_prompts` was fed the
-  workspace *tree* (names + sizes) but never file *contents*, while told to "judge
+  workspace _tree_ (names + sizes) but never file _contents_, while told to "judge
   only by evidence, never rubber-stamp". Non-executable tasks (a doc, a config, code
   told not to run) therefore always went `stuck`. Fix: a bounded
   `Workspace.contents_digest()` as first-class evidence. Validated: a "write a file,
@@ -192,6 +192,18 @@ wasn't a real end-to-end model run:
   Validated: the same task went from `max_steps/0` to **3/3 runs `goal_achieved/100`
   with 0 inspections each**, converging even when R1 genuinely iterated (16 steps).
   Pruning avoidable step-waste raises what the agent completes within a budget.
+- **Budget checks happened between calls, not around them.** A final model call could
+  cross the remaining budget, provider responses with missing usage counted as zero,
+  and failed retries disappeared from the task total. Each LLM call now receives a
+  spendable sub-budget, reduces its output cap to fit, locally estimates missing usage,
+  and conservatively charges failed attempts. Planning cannot consume the verification
+  reserve.
+- **Successful thrashing looked like progress.** The old `stuck` counter noticed only
+  tool errors, blocked actions, and consecutive writes to one path. Equivalent reads or
+  searches could all return exit 0 forever. Actions are now fingerprinted against the
+  workspace revision, repeated evidence counts as no progress, investigation is branch-
+  capped, and workspace changes reset the phase. Older history is compacted into
+  artifacts, evidence, and failed branches instead of being discarded.
 
 Lesson reinforced: for an LLM agent, **live-test with the strongest real model and
 read the traces/tracebacks** — the highest-value defects (empty-content, verifier
@@ -204,8 +216,8 @@ common case; only a real end-to-end run surfaced them.
 
 - Fewer wasted steps/tokens per task; cleaner finishes; honest degradation when a
   capability is missing.
-- Every terminal outcome — success *or* failure — is auditable via a Receipt, and
-  the Receipt is now tamper-*resistant* (signed / anchored / file-hashed), not just
+- Every terminal outcome — success _or_ failure — is auditable via a Receipt, and
+  the Receipt is now tamper-_resistant_ (signed / anchored / file-hashed), not just
   self-consistent.
 - More resilient to transient provider errors; bounded resource use under load.
 - A tighter shell/secret/egress surface, all covered by offline tests.

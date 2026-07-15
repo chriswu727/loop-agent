@@ -41,6 +41,7 @@ class FallbackLLMClient:
         *,
         max_tokens: int = 4096,
         temperature: float = 0.7,
+        token_budget: int | None = None,
     ) -> LLMResult:
         chain = self._chain()
         if not chain:
@@ -53,6 +54,8 @@ class FallbackLLMClient:
 
         fallbacks: list[FallbackEvent] = []
         last_error: LLMError | None = None
+        spent = 0
+        input_bound = _token_upper_bound(system, user)
 
         for index, provider in enumerate(chain):
             adapter = PROVIDERS[provider].adapter
@@ -69,33 +72,60 @@ class FallbackLLMClient:
             # Retry this provider on a transient error before cascading, so one
             # blip (timeout/5xx/empty) doesn't fail the task on a single-provider setup.
             for attempt in range(settings.llm_max_retries + 1):
+                remaining = None if token_budget is None else token_budget - spent
+                if remaining is not None and remaining <= input_bound:
+                    raise LLMError(
+                        "LLM call token budget exhausted before another attempt",
+                        tokens_spent=spent,
+                        budget_exhausted=True,
+                    )
+                attempt_max = max_tokens
+                if remaining is not None:
+                    attempt_max = min(max_tokens, remaining - input_bound)
                 try:
                     content, tokens = await adapter(
                         self._client,
                         api_key,
                         system,
                         user,
-                        max_tokens=max_tokens,
+                        max_tokens=attempt_max,
                         temperature=temperature,
                     )
                     if not content.strip():
                         raise LLMError(f"{provider} returned empty content", retryable=True)
+                    if tokens:
+                        success_tokens = tokens
+                    else:
+                        estimated = _token_upper_bound(system, user, content)
+                        success_tokens = (
+                            estimated if remaining is None else min(estimated, remaining)
+                        )
                     return LLMResult(
-                        content=content, provider=provider, tokens=tokens, fallbacks=fallbacks
+                        content=content,
+                        provider=provider,
+                        tokens=spent + success_tokens,
+                        fallbacks=fallbacks,
                     )
                 except LLMError as exc:
                     last_error = exc
-                    if not exc.retryable:
-                        raise
                 except Exception as exc:  # unexpected shape -> normalise, maybe cascade
                     last_error = wrap_parse_error(provider, exc)
-                    if not last_error.retryable:
-                        raise last_error from exc
+                spent += _failed_attempt_charge(last_error, input_bound, attempt_max)
+                if not last_error.retryable:
+                    last_error.tokens_spent += spent
+                    raise last_error
+                if token_budget is not None and token_budget - spent <= input_bound:
+                    raise LLMError(
+                        "LLM retry budget exhausted",
+                        tokens_spent=min(spent, token_budget),
+                        budget_exhausted=True,
+                    ) from last_error
                 if attempt < settings.llm_max_retries:
                     log.info("llm.retry", provider=provider, attempt=attempt + 1)
                     await asyncio.sleep(settings.llm_retry_backoff_seconds * (attempt + 1))
 
         assert last_error is not None
+        last_error.tokens_spent += spent
         raise last_error
 
     async def aclose(self) -> None:
@@ -104,6 +134,19 @@ class FallbackLLMClient:
 
 _client: FallbackLLMClient | None = None
 _verifier_client: FallbackLLMClient | None = None
+
+
+def _token_upper_bound(*parts: str) -> int:
+    return 32 + sum(len(part.encode("utf-8")) + 16 for part in parts)
+
+
+def _failed_attempt_charge(error: LLMError, input_bound: int, output_bound: int) -> int:
+    message = str(error).lower()
+    output_may_have_been_generated = any(
+        marker in message
+        for marker in ("connection", "empty content", "network", "parse", "timeout", "timed out")
+    )
+    return input_bound + (output_bound if output_may_have_been_generated else 0)
 
 
 def get_llm_client() -> FallbackLLMClient:
