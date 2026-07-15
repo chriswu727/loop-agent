@@ -232,6 +232,9 @@ build_image loop-api:acceptance "$root/infra/docker/api.Dockerfile" runtime k8s-
 build_image loop-provider-gateway:acceptance "$root/infra/docker/api.Dockerfile" provider-gateway k8s-api
 build_image loop-web:acceptance "$root/infra/docker/web.Dockerfile" runner k8s-web
 build_image loop-sandbox:acceptance "$root/apps/api/sandbox.Dockerfile" '' k8s-sandbox
+if [[ "${GITHUB_ACTIONS:-}" == "true" ]]; then
+  docker buildx stop >/dev/null 2>&1 || true
+fi
 
 cluster_created=true
 k3d cluster create "$cluster" \

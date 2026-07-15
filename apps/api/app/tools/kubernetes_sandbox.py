@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import re
 import uuid
 from pathlib import Path
 from typing import Any, cast
@@ -15,6 +16,15 @@ from app.tools.egress import authenticated_proxy_url, resolve_proxy_endpoint
 from app.tools.shell import format_result
 
 log = get_logger("kubernetes-sandbox")
+
+
+def _kubernetes_memory_quantity(memory: str) -> str:
+    match = re.fullmatch(r"([0-9]+(?:\.[0-9]+)?)([bkmg])", memory, flags=re.IGNORECASE)
+    if match is None:
+        return memory
+    value, unit = match.groups()
+    suffix = {"b": "", "k": "Ki", "m": "Mi", "g": "Gi"}[unit.lower()]
+    return f"{value}{suffix}"
 
 
 def _workspace_subpath(mount: Path, workspace: Path) -> str | None:
@@ -71,6 +81,7 @@ async def run_command_in_kubernetes(
 
     namespace = settings.agent_kubernetes_namespace
     name = f"loop-sandbox-{uuid.uuid4().hex[:12]}"
+    memory_quantity = _kubernetes_memory_quantity(memory)
     labels = {
         "app.kubernetes.io/name": "loop-sandbox",
         "app.kubernetes.io/component": "sandbox",
@@ -104,8 +115,8 @@ async def run_command_in_kubernetes(
                             "command": ["sh", "-lc", command],
                             "workingDir": "/workspace",
                             "resources": {
-                                "requests": {"cpu": cpus, "memory": memory},
-                                "limits": {"cpu": cpus, "memory": memory},
+                                "requests": {"cpu": cpus, "memory": memory_quantity},
+                                "limits": {"cpu": cpus, "memory": memory_quantity},
                             },
                             "securityContext": {
                                 "allowPrivilegeEscalation": False,

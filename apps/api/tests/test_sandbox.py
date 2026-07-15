@@ -108,6 +108,22 @@ def test_kubernetes_sandbox_mounts_only_a_task_subpath(tmp_path: Path) -> None:
     assert _workspace_subpath(mount, tmp_path / "other") is None
 
 
+@pytest.mark.parametrize(
+    ("configured", "expected"),
+    [
+        ("512m", "512Mi"),
+        ("1g", "1Gi"),
+        ("1024k", "1024Ki"),
+        ("4096b", "4096"),
+        ("768Mi", "768Mi"),
+    ],
+)
+def test_kubernetes_sandbox_normalizes_docker_memory_units(configured: str, expected: str) -> None:
+    from app.tools.kubernetes_sandbox import _kubernetes_memory_quantity
+
+    assert _kubernetes_memory_quantity(configured) == expected
+
+
 def test_docker_sandbox_mounts_only_a_task_volume_subpath(tmp_path: Path) -> None:
     from app.tools.sandbox import _workspace_volume_subpath
 
