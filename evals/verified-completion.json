@@ -10,8 +10,10 @@
         "Division by zero raises ZeroDivisionError.",
         "The automated test suite passes."
       ],
-      "verification_commands": ["python3 -m unittest discover -v"],
-      "expected_files": ["arithmetic.py"]
+      "verification_commands": [
+        "python3 -m unittest discover -v && python3 -c \"from arithmetic import add,subtract,multiply,divide; assert add(2,3)==5 and subtract(7,4)==3 and multiply(-2,5)==-10 and divide(5,2)==2.5; exec('try:\\n divide(1,0)\\nexcept ZeroDivisionError:\\n pass\\nelse:\\n raise AssertionError')\""
+      ],
+      "expected_files": ["arithmetic.py", "test_arithmetic.py"]
     },
     {
       "id": "structured-output",
@@ -104,7 +106,7 @@
         "Every requested name and score is present."
       ],
       "verification_commands": [
-        "python3 -c \"from html.parser import HTMLParser; from pathlib import Path; s=Path('report.html').read_text(); assert all(x in s for x in ['<html','<head','<title','<body','<table','<caption','Ada','98','Linus','91','Grace','95']); assert s.count('<tr')==4 and s.count('<th')==2\""
+        "python3 - <<'PY'\nfrom html.parser import HTMLParser\nfrom pathlib import Path\nclass P(HTMLParser):\n def __init__(s):super().__init__();s.tags=[];s.items=[];s.rows=[];s.row=None;s.x=None\n def handle_starttag(s,t,a):\n  s.tags.append(t)\n  if t=='tr':s.row=[]\n  elif t in ('title','caption','th','td'):s.x=[t,'']\n def handle_data(s,d):\n  if s.x:s.x[1]+=d\n def handle_endtag(s,t):\n  if s.x and t==s.x[0]:\n   x=(t,' '.join(s.x[1].split()));s.items.append(x)\n   if t in ('th','td'):assert s.row is not None;s.row.append(x)\n   s.x=None\n  if t=='tr':s.rows.append(s.row);s.row=None\np=P();p.feed(Path('report.html').read_text())\nassert {'html','head','title','body','table','caption'}<=set(p.tags)\nm=[v for t,v in p.items if t in ('title','caption')]\nassert len(m)==2 and all(m)\nassert p.rows==[[('th','Name'),('th','Score')],[('td','Ada'),('td','98')],[('td','Linus'),('td','91')],[('td','Grace'),('td','95')]]\nPY"
       ],
       "expected_files": ["report.html"]
     },
@@ -153,14 +155,16 @@
     {
       "id": "tested-string-utils",
       "category": "code-and-tests",
-      "goal": "Create string_utils.py with is_palindrome and count_words plus a standard-library unittest suite covering normal, empty, punctuation, and mixed-case inputs.",
+      "goal": "Create string_utils.py with is_palindrome and count_words plus a standard-library unittest suite covering normal, empty, punctuation, and mixed-case inputs. count_words must count alphanumeric word tokens and keep contractions such as Don't as one word.",
       "success_criteria": [
         "is_palindrome ignores punctuation, whitespace, and case.",
-        "count_words counts normalized word tokens.",
+        "count_words counts alphanumeric word tokens and keeps contractions as one word.",
         "The unittest suite covers edge cases and passes."
       ],
-      "verification_commands": ["python3 -m unittest discover -v"],
-      "expected_files": ["string_utils.py"]
+      "verification_commands": [
+        "python3 -m unittest discover -v && python3 -c \"from string_utils import is_palindrome,count_words; assert is_palindrome('A man, a plan, a canal: Panama!') and not is_palindrome('Loop agent'); assert count_words(\\\"Don't stop believing\\\")==3 and count_words('Hello, WORLD! 42')==3 and count_words('')==0\""
+      ],
+      "expected_files": ["string_utils.py", "test_string_utils.py"]
     }
   ]
 }

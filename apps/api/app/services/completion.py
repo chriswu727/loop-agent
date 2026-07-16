@@ -67,6 +67,19 @@ def merge_completion_checks(
     return list(merged.values())
 
 
+def declared_contract_coverage_complete(checks: list[dict[str, Any]], criterion_count: int) -> bool:
+    if criterion_count <= 0:
+        return False
+    expected = {f"criterion-{index:03d}" for index in range(1, criterion_count + 1)}
+    covered = {
+        str(criterion)
+        for check in checks
+        if check.get("source") == "contract"
+        for criterion in check.get("criterion_ids", [])
+    }
+    return expected <= covered
+
+
 def attach_baseline(
     results: list[CheckResult], baseline: list[dict[str, Any]]
 ) -> list[CheckResult]:

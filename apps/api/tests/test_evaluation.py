@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+import subprocess
 from pathlib import Path
 
 from scripts.evaluate_verified_completion import _build_task_payload
@@ -75,6 +76,20 @@ def test_aggregate_reports_cost_and_duration() -> None:
     assert summary["average_duration_seconds"] == 2
 
 
+def test_aggregate_rounds_report_metrics_without_float_noise() -> None:
+    summary = aggregate_verified_completion(
+        [
+            {"solved": True, "duration_seconds": 0.1},
+            {"solved": False, "duration_seconds": 0.2},
+            {"solved": False, "duration_seconds": 0.3},
+        ]
+    )
+
+    assert summary["solve_rate"] == 0.3333
+    assert summary["total_duration_seconds"] == 0.6
+    assert summary["average_duration_seconds"] == 0.2
+
+
 def test_expected_artifacts_are_part_of_the_published_task_contract() -> None:
     payload = _build_task_payload(
         {
@@ -98,3 +113,35 @@ def test_eval_commands_use_portable_standard_library_python() -> None:
 
     assert all(not re.search(r"(^|[;&|]\s*)python(?:\s|$)", command) for command in commands)
     assert all("pytest" not in command for command in commands)
+
+
+def test_semantic_html_oracle_accepts_valid_thead_and_rejects_wrong_rows(tmp_path: Path) -> None:
+    cases = json.loads(EVAL_MANIFEST.read_text())["cases"]
+    case = next(case for case in cases if case["id"] == "semantic-html-report")
+    command = case["verification_commands"][0]
+    valid = """<!doctype html>
+<html lang="en"><head><title>Scores</title></head><body>
+<table><caption>Student scores</caption><thead><tr><th>Name</th><th>Score</th></tr></thead>
+<tbody><tr><td>Ada</td><td>98</td></tr><tr><td>Linus</td><td>91</td></tr>
+<tr><td>Grace</td><td>95</td></tr></tbody></table></body></html>"""
+    (tmp_path / "report.html").write_text(valid)
+
+    accepted = subprocess.run(command, cwd=tmp_path, shell=True, check=False)
+    (tmp_path / "report.html").write_text(valid.replace("Grace", "Wrong"))
+    rejected = subprocess.run(command, cwd=tmp_path, shell=True, check=False)
+    (tmp_path / "report.html").write_text(valid.replace("Student scores", ""))
+    empty_caption = subprocess.run(command, cwd=tmp_path, shell=True, check=False)
+
+    assert accepted.returncode == 0
+    assert rejected.returncode != 0
+    assert empty_caption.returncode != 0
+
+
+def test_library_cases_require_discoverable_tests_and_external_behavior_oracles() -> None:
+    cases = {case["id"]: case for case in json.loads(EVAL_MANIFEST.read_text())["cases"]}
+
+    assert "test_arithmetic.py" in cases["python-library"]["expected_files"]
+    assert "test_string_utils.py" in cases["tested-string-utils"]["expected_files"]
+    for case_id in ("python-library", "tested-string-utils"):
+        command = cases[case_id]["verification_commands"][0]
+        assert command.startswith("python3 -m unittest discover -v && python3 -c")

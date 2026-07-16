@@ -25,7 +25,9 @@ not a false acceptance.
   manifest runs on macOS, Linux, and the sandbox image without host-only aliases.
   Expected artifacts are appended to the task's published acceptance criteria,
   enforced through the API's `required_artifacts` contract, and checked again by
-  the scorer; there are no hidden file gates.
+  the scorer; there are no hidden file gates. Cases that ask the agent to write its
+  own tests also include visible external behavior assertions, and an empty test
+  suite is a deterministic failure even when the runner exits zero.
 
 ## Zero-cost smoke
 
@@ -71,7 +73,7 @@ provider cost.
 
 [`results/deepseek-chat-v0.1.0.json`](./results/deepseek-chat-v0.1.0.json) is one
 clean run of all 12 cases with DeepSeek `deepseek-chat`: 12 solved, zero false
-acceptances, 39 steps, 64,447 provider-reported tokens, and 94.954 seconds. Every
+acceptances, 30 steps, 42,403 provider-reported tokens, and 65.795 seconds. Every
 case passed execution verification, contract coverage, artifact presence, Receipt
 integrity, and replay.
 

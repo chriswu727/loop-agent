@@ -765,7 +765,7 @@ async def test_strict_contract_runs_required_check_and_maps_every_criterion(
     assert steps[-1].thought.startswith("[Loop]")
 
 
-async def test_complete_contract_overrides_failing_supplementary_agent_check(
+async def test_run_command_auto_finishes_complete_contract_without_redundant_agent_check(
     session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(settings, "agent_sandbox", "off")
@@ -816,7 +816,11 @@ async def test_complete_contract_overrides_failing_supplementary_agent_check(
     assert task.stop_reason == StopReason.GOAL_ACHIEVED.value
     receipt = json.loads(Workspace(Path(task.workspace_path)).read("receipt.json"))
     assert receipt["checks_passed"] is True
-    assert receipt["checks"][1]["gating"] is False
+    assert len(receipt["checks"]) == 1
+    assert receipt["checks"][0]["source"] == "contract"
+    steps = await StepRepository(session).list_for_task(task.id)
+    assert [step.tool for step in steps] == ["write_file", "run_command", "finish"]
+    assert steps[-1].thought.startswith("[Loop]")
     replay = await TaskService(TaskRepository(session), StepRepository(session)).replay_receipt(
         task.id
     )
@@ -1652,6 +1656,25 @@ def test_evidence_tool_history_keeps_useful_context_but_stays_bounded() -> None:
     assert 1_600 <= research.count("x") < 1_700
     assert 600 <= local.count("x") < 700
     assert "truncated" in research and "truncated" in local
+
+
+async def test_history_view_preserves_latest_local_failure_diagnostic(
+    session: AsyncSession,
+) -> None:
+    diagnostic = "x" * 900 + "\nAssertionError: 4 != 3"
+    svc = _service(session, ScriptedLLM([]))
+    svc._history = [
+        HistoryEntry(
+            1,
+            "run tests",
+            "run_command",
+            {"command": "python3 -m unittest discover -v"},
+            diagnostic,
+            ToolStatus.ERROR,
+        )
+    ]
+
+    assert "AssertionError: 4 != 3" in svc._history_view()
 
 
 def test_progress_guard_caps_exploration_without_workspace_progress() -> None:

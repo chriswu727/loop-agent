@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import os
+import re
 import signal
 
 from app.tools.base import ToolResult, ToolStatus
@@ -29,6 +30,22 @@ _SAFE_ENV_KEYS = (
     "PYTHONUNBUFFERED",
 )
 _READ_CAP_MULT = 4  # bytes kept before a runaway-output command is killed
+
+
+def empty_test_suite_reason(command: str, observation: str) -> str | None:
+    if re.search(r"(?mi)^Ran 0 tests?\b", observation):
+        return "the test runner executed zero tests"
+    runner = re.search(
+        r"(?i)(?:^|[\s;&|])(?:pytest|py\.test|vitest|jest|mocha)(?:[\s;&|]|$)"
+        r"|(?:npm|pnpm|yarn|bun)\s+(?:run\s+)?test(?:[\s;&|]|$)",
+        command,
+    )
+    if runner and re.search(
+        r"(?i)\b(?:no tests ran|collected 0 items|no tests found|no test files found|0 passing)\b",
+        observation,
+    ):
+        return "the test runner reported an empty test suite"
+    return None
 
 
 def _safe_env() -> dict[str, str]:
@@ -115,4 +132,14 @@ async def run_command(
     raw, code = await collect_output(
         proc, timeout_seconds=timeout_seconds, output_limit=output_limit
     )
-    return format_result(raw, code, timeout_seconds=timeout_seconds, output_limit=output_limit)
+    result = format_result(raw, code, timeout_seconds=timeout_seconds, output_limit=output_limit)
+    empty_suite = empty_test_suite_reason(command, result.observation)
+    if empty_suite is not None:
+        return ToolResult(
+            result.observation
+            + "\n[INVALID TEST RUN: zero tests were executed. This is not evidence that the "
+            "source file was truncated. For unittest discovery, put TestCase classes in a "
+            "test_*.py file; for other runners, add a discoverable test file.]",
+            ToolStatus.ERROR,
+        )
+    return result

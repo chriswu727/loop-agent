@@ -2,8 +2,8 @@
 
 # Loop
 
-**Hand off a goal and an acceptance contract. Loop works in isolation, re-runs
-the evidence, and returns a Receipt anyone can replay.**
+**Give Loop one instruction. It keeps working, testing, and repairing its own
+result until it can prove the work is ready to deliver.**
 
 [![CI](https://github.com/chriswu727/loop-agent/actions/workflows/ci.yml/badge.svg)](https://github.com/chriswu727/loop-agent/actions/workflows/ci.yml)
 [![Desktop](https://github.com/chriswu727/loop-agent/actions/workflows/desktop.yml/badge.svg)](https://github.com/chriswu727/loop-agent/actions/workflows/desktop.yml)
@@ -18,35 +18,59 @@ the evidence, and returns a Receipt anyone can replay.**
   <img src="./docs/images/task.png" alt="A completed Loop task with re-executed checks, a verified Receipt, and downloadable artifacts" width="840" />
 </p>
 
+## The core idea
+
+Using an autonomous agent should not mean repeatedly telling it to continue, checking
+whether it really ran the tests, or discovering that “done” meant “I wrote some code.”
+The user should state the goal once. Loop owns the work between that instruction and a
+verified delivery.
+
+Loop turns that idea into a bounded execution protocol:
+
+1. Translate the instruction into a concrete acceptance contract.
+2. Plan one useful action, execute it, and observe the real result.
+3. Feed failures back into the next decision instead of handing them to the user.
+4. Repeat until the required artifacts exist and every acceptance check passes.
+5. Re-run the evidence independently on fresh workspace snapshots.
+6. Deliver the artifacts with a replayable Receipt—or return an explicit, auditable
+   failure when the limits are exhausted.
+
+```mermaid
+flowchart LR
+    U(["One user instruction"]) --> C["Acceptance contract"]
+    C --> P["Plan one action"]
+    P --> A["Act inside bounded authority"]
+    A --> O["Observe real output"]
+    O --> V{"Independent checks pass?"}
+    V -- "No: failure becomes evidence" --> P
+    V -- "Yes" --> D(["Verified delivery + Receipt"])
+```
+
+The loop is autonomous, not unbounded. Capabilities, filesystem scope, egress policy,
+approvals, step limits, token budgets, no-progress detection, and a verification reserve
+are enforced by the runtime rather than left to the model's discretion.
+
 ## What makes Loop different
 
-Most coding agents end when the model says it is done. Loop separates **work** from
-**acceptance**:
+Most agent frameworks help a model call tools. Loop supervises the complete journey from
+an instruction to an accepted result. It separates **work** from **acceptance**:
 
-1. You confirm concrete success criteria, required final artifacts, and optional exact
-   verification commands.
-2. Loop works inside a per-task workspace under a server-enforced capability and
-   token/step envelope.
-3. An independent verifier re-runs each check on its own fresh workspace snapshot.
-4. Every criterion must map to passing execution evidence in strict mode.
-5. Loop emits a content-addressed Receipt with the contract, checks, model/runtime
-   provenance, output hashes, and the head of a hash-chained step ledger.
-6. The Receipt can be replayed later through the API, CLI, or bundled GitHub Action.
+- **The model proposes; the runtime decides.** Tool access and resource limits come from
+  a server-enforced authority envelope.
+- **A claim is not completion.** Strict tasks complete only when every criterion maps to
+  passing execution evidence and every required artifact is present.
+- **Failure drives the next loop.** Test output, verifier feedback, and blocked actions are
+  preserved as evidence while repeated or evidence-free branches are stopped.
+- **Verification is isolated.** Each check runs on its own fresh workspace snapshot, so
+  one check cannot manufacture state for another.
+- **Delivery is auditable.** The final Receipt records the contract, checks, model and
+  runtime provenance, output hashes, and the head of a hash-chained step ledger.
+- **Proof is portable.** The Receipt can be replayed later through the API, CLI, or bundled
+  GitHub Action.
 
 If the evidence fails, the task does not become `completed` merely because the model
 called `finish`. Limit, stuck, cancelled, and error outcomes still receive an
 explicitly unverified Receipt for auditability.
-
-```mermaid
-flowchart LR
-    G(["Goal + contract"]) --> P["Plan one action"]
-    P --> A["Act inside authority envelope"]
-    A --> O["Observe"]
-    O --> P
-    P -. "finish claim" .-> V{"Re-run checks\non a fresh copy"}
-    V -. "fails" .-> P
-    V == "passes + full coverage" ==> R(["Replayable Receipt"])
-```
 
 ## Run the verified demo
 
@@ -82,7 +106,7 @@ It proves product wiring, not general model quality.
 
 A recorded [DeepSeek `deepseek-chat` run](./evals/results/deepseek-chat-v0.1.0.json)
 of the [12-case real-provider suite](./evals/verified-completion.json) solved `12/12`
-with zero false acceptances: 39 steps, 64,447 provider-reported tokens, and 94.954
+with zero false acceptances: 30 steps, 42,403 provider-reported tokens, and 65.795
 seconds. Every case was execution-verified, fully covered, artifact-complete,
 integrity-valid, and replayable. This is one clean local run using visibly reduced
 `inline` isolation—not a cross-model quality claim or a production-sandbox result.

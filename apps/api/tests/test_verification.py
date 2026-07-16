@@ -27,6 +27,16 @@ async def test_command_check_fails_on_wrong_output(tmp_path: Path) -> None:
     assert results[0].passed is False
 
 
+async def test_command_check_rejects_zero_discovered_tests(tmp_path: Path) -> None:
+    ws = Workspace(tmp_path / "ws")
+    results = await run_checks(
+        [{"kind": "command", "command": "python3 -m unittest discover -v"}], ws
+    )
+
+    assert results[0].passed is False
+    assert "zero tests" in results[0].evidence
+
+
 async def test_file_checks(tmp_path: Path) -> None:
     ws = Workspace(tmp_path / "ws")
     ws.write("data.csv", "a,b\n1,2\n")

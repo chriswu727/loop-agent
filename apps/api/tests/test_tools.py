@@ -31,6 +31,17 @@ def test_workspace_write_read_roundtrip(tmp_path: Path) -> None:
     assert ("notes/a.txt", 5) in ws.list_files()
 
 
+def test_workspace_preview_distinguishes_display_truncation_from_file_content(
+    tmp_path: Path,
+) -> None:
+    ws = Workspace(tmp_path / "ws")
+    observation = ws.write("long.txt", "line\n" * 30)
+
+    assert "preview truncated" in observation
+    assert "write completed with the full content" in observation
+    assert ws.read("long.txt") == "line\n" * 30
+
+
 def test_workspace_hides_and_blocks_git_internals(tmp_path: Path) -> None:
     ws = Workspace(tmp_path / "ws")
     (ws.root / ".git" / "objects").mkdir(parents=True)
@@ -362,6 +373,17 @@ async def test_run_command_caps_runaway_output(tmp_path) -> None:
     )
     assert "truncated" in res.observation
     assert len(res.observation) < 20000  # bounded, not ~500KB
+
+
+async def test_run_command_marks_empty_test_suite_as_error_with_actionable_guidance(
+    tmp_path: Path,
+) -> None:
+    res = await run_command("python3 -m unittest discover -v", tmp_path)
+
+    assert res.status is ToolStatus.ERROR
+    assert "INVALID TEST RUN" in res.observation
+    assert "test_*.py" in res.observation
+    assert "not evidence that the source file was truncated" in res.observation
 
 
 async def test_egress_guard_blocks_network_via_script_file(tmp_path) -> None:

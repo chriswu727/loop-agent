@@ -32,7 +32,9 @@ def _preview(content: str, *, max_lines: int = 20, max_chars: int = 1000) -> str
     """A bounded echo of written content — enough to confirm the write."""
     snippet = "\n".join(content.splitlines()[:max_lines])
     truncated = len(snippet) > max_chars or snippet != content.rstrip("\n")
-    return snippet[:max_chars] + ("\n… (truncated)" if truncated else "")
+    return snippet[:max_chars] + (
+        "\n… [preview truncated; the write completed with the full content]" if truncated else ""
+    )
 
 
 class Workspace:
@@ -95,7 +97,9 @@ class Workspace:
             raise ToolError(f"No such file: {relative}")
         text = target.read_text(encoding="utf-8", errors="replace")
         if len(text) > limit:
-            return text[:limit] + f"\n... [truncated, {len(text)} chars total]"
+            return text[:limit] + (
+                f"\n... [preview truncated; the file is unchanged and has {len(text)} chars total]"
+            )
         return text
 
     def list_files(self, *, max_entries: int = 500) -> list[tuple[str, int]]:
