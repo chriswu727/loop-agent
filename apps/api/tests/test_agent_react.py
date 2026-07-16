@@ -108,6 +108,7 @@ async def _make_task(
     *,
     max_steps: int,
     token_budget: int,
+    goal: str = "do the thing",
     require_approval: bool = False,
     skill: str | None = None,
     depth: int = 0,
@@ -117,7 +118,7 @@ async def _make_task(
 ):
     repo = TaskRepository(session)
     task = await repo.create(
-        goal="do the thing",
+        goal=goal,
         status=TaskStatus.PENDING.value,
         rubric=rubric or [],
         criteria_source="user" if rubric else "generated",
@@ -1202,6 +1203,44 @@ async def test_demo_mode_runs_a_verified_task_with_no_api_key(
     assert task.receipt_hash  # a Receipt was produced
     assert task.tokens_used <= task.token_budget
     assert (Path(task.workspace_path) / "fib.py").exists()
+
+
+async def test_demo_mode_honors_the_user_confirmed_fibonacci_contract(
+    session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app.core.llm.client import FallbackLLMClient
+
+    monkeypatch.setattr(settings, "demo_mode", True)
+    monkeypatch.setattr(settings, "agent_sandbox", "inline")
+    task = await _make_task(
+        session,
+        goal=(
+            "Write a Python script that prints the first 15 Fibonacci numbers, "
+            "then run it to confirm the output."
+        ),
+        rubric=[
+            "A runnable Python script is added.",
+            "The script prints exactly the first 15 Fibonacci numbers.",
+        ],
+        verification_mode="strict",
+        max_steps=8,
+        token_budget=30_000,
+    )
+    service = AgentReactService(
+        TaskRepository(session), StepRepository(session), FallbackLLMClient(primary="mock")
+    )
+
+    await service.run(task.id)
+
+    await session.refresh(task)
+    assert task.status == TaskStatus.COMPLETED.value
+    assert task.stop_reason == StopReason.GOAL_ACHIEVED.value
+    assert task.verified_by == "execution"
+    workspace = Path(task.workspace_path)
+    assert "range(15)" in (workspace / "fib.py").read_text()
+    receipt = json.loads((workspace / "receipt.json").read_text())
+    assert receipt["coverage"]["covered_criteria"] == ["criterion-001", "criterion-002"]
+    assert receipt["checks_passed"] is True
 
 
 async def test_conversation_context_from_prior_turns(session: AsyncSession) -> None:

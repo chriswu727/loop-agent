@@ -1,9 +1,8 @@
 # Architecture
 
-This document explains _how_ the skeleton is put together and _why_. If the
-README is the sales pitch, this is the engineering rationale. Read it once
-before you start changing things — the conventions here are what keep the
-codebase scalable as it grows.
+This document explains how Loop is put together and why. The README presents the
+product contract; this is the engineering rationale and the current deployment
+boundary.
 
 - [Design principles](#design-principles)
 - [System topology](#system-topology)
@@ -25,9 +24,10 @@ codebase scalable as it grows.
 
 1. **Boring on purpose.** Every choice favours the well-trodden path. Novelty
    is reserved for _your_ product, not the plumbing.
-2. **Disposable compute, explicit durable edges.** Application processes hold no
-   private durable state. Metadata lives in Postgres, queue leases in Redis, and
-   task artifacts/memory on a shared RWX volume. Any replica can serve any owner.
+2. **Disposable compute, explicit durable edges.** Metadata lives in Postgres,
+   queue leases and shared enforcement state in Redis, and task artifacts/memory on
+   shared storage. Browser sessions are the documented exception: they are pod-local
+   and the browser gateway runs as one replica today.
 3. **Dependencies point inward.** Transport depends on services, services on
    repositories, repositories on the domain. The domain depends on nothing.
    You can read any layer without understanding the one above it.
@@ -52,12 +52,11 @@ flowchart TB
     IG -->|"/api/v1/*"| API["FastAPI (api)\nstateless · N replicas"]
     WEB -->|"server components\nfetch over cluster network"| API
     API --> PGW[("Postgres primary\n(writes)")]
-    API --> PGR[("Postgres replica\n(reads)")]
     API <--> REDIS[("Redis\ncache + broker")]
     API -- "enqueue job" --> REDIS
     WORKER["worker\nbackground jobs · N replicas"] -- "consume" --> REDIS
     WORKER --> PGW
-    WORKER -- "mint short-lived grant" --> PGATE["Provider Gateway\npublic verifier · provider secrets"]
+    WORKER -- "mint short-lived grant" --> PGATE["Protocol Gateways\npublic verifier · scoped secrets"]
     WORKER --> JOB["short-lived sandbox Job\none command · authority grant"]
     JOB -- "authenticated HTTP(S) proxy" --> EGRESS["Egress proxy\nhost policy · DNS pin · audit"]
     PGATE -- "browser proxy" --> EGRESS
@@ -70,12 +69,11 @@ flowchart TB
     METRICS --> GRAFANA["Grafana"]
 ```
 
-Five disposable service tiers (`web`, `api`, `worker`, Provider Gateway, egress
-proxy), short-lived sandbox Jobs, and three durable edges (`postgres`, `redis`,
-shared artifact storage). Provider credentials exist only in the gateway; the
-authority signing key exists only in the worker; the gateway and proxy receive only
-the public verifier. Everything in the compute tier is replaceable and horizontally
-scalable; every durable edge is explicit.
+Disposable web/API/worker and protocol-gateway tiers surround short-lived sandbox
+Jobs and three durable edges: Postgres, Redis, and shared artifact storage. Provider
+credentials are separated by protocol gateway; the authority signing key exists only
+in the worker; gateways and the proxy receive verifier public keys. The browser
+gateway's active sessions remain pod-local and are not horizontally migrated.
 
 ---
 
@@ -98,11 +96,9 @@ touch the database directly; a repository must never import FastAPI. If you find
 yourself wanting to break this, that's a signal the responsibility belongs in a
 different layer.
 
-Why bother? Because this is what lets the codebase grow to hundreds of files
-without becoming a hairball. New engineers can reason locally. Tests can target a
-single layer. You can swap Postgres for something else by rewriting one
-directory. The example `items` feature demonstrates the full stack across all
-layers so you always have a reference implementation in front of you.
+The separation keeps HTTP, persistence, and orchestration concerns independently
+testable. New resources should follow an existing task, trigger, or memory vertical
+slice rather than bypassing the service/repository boundary.
 
 ---
 
@@ -154,8 +150,10 @@ shape.
   A generic `BaseRepository[Entity]` provides `get`, `list`, `create`, `update`,
   `delete`; concrete repos add query methods. This keeps SQL in one place and
   makes services trivially unit-testable with a fake repo.
-- **Read/write split ready.** The engine factory accepts a separate read DSN;
-  point reads at a replica when you need to. Nothing in the service layer changes.
+- **Read-replica configuration is reserved, not wired.** `DATABASE_READ_URL` is
+  validated but repositories currently use the primary session. Routing selected
+  reads to a replica requires an explicit session/repository change and consistency
+  policy.
 
 ```mermaid
 flowchart LR
@@ -178,8 +176,8 @@ flowchart LR
   dead-letter stream. The task row is claimed with a compare-and-update before the
   loop starts, so duplicate deliveries do not execute a task twice.
 - **Why a separate worker tier?** Long or bursty work must not block request
-  threads or share the API's scaling signal. The worker scales on queue depth;
-  the API scales on request latency/CPU.
+  threads or share the API's scaling signal. The checked-in worker HPA uses CPU as a
+  portable baseline; queue-depth scaling requires KEDA or a custom metrics adapter.
 
 ---
 
@@ -188,7 +186,8 @@ flowchart LR
 All configuration comes from the environment via a single typed
 `Settings` object (Pydantic Settings). Nothing reads `os.environ` directly.
 
-- **Local:** `.env` (gitignored), seeded from `.env.example`.
+- **Local:** explicit environment variables or a service-local `.env`; the root
+  `.env.example` is primarily the Compose configuration template.
 - **Cluster:** non-secret config via `ConfigMap`, secrets via `Secret` (and in
   real life, an external secret store / sealed-secrets — see the security guide).
 - **Validation at boot:** if a required variable is missing or malformed, the
@@ -258,23 +257,23 @@ flowchart LR
       M["CPU / latency / queue depth\nmetrics climb"]
     end
     M --> HPA["HorizontalPodAutoscaler"]
-    HPA -->|"add pods"| API["api replicas 3 → 30"]
+    HPA -->|"add pods"| API["api replicas 2 → 20\nprod overlay 3 → 50"]
     HPA -->|"add pods"| WEB["web replicas"]
     HPA -->|"add pods"| WK["worker replicas"]
     API --> LB["Service load-balances\nacross all pods"]
-    PG[("Postgres")] --> RR["Add read replicas\n+ PgBouncer pooling"]
+    PG[("Postgres")] --> POOL["PgBouncer / managed pooling"]
     RD[("Redis")] --> CL["Cluster / managed tier"]
 ```
 
 The scaling story, tier by tier:
 
-- **Stateless tiers (web/api/worker):** scale horizontally. The HPA adds pods
-  when CPU or a custom metric (request latency, queue depth) crosses a target.
-  Because no pod holds state, any pod can serve any request.
-- **Database:** the usual ladder — connection pooling (PgBouncer), then read
-  replicas for read-heavy load, then partitioning/sharding or a managed
-  distributed Postgres if you ever truly outgrow a single primary. The
-  repository layer means these changes don't ripple into business code.
+- **Web/API/worker:** scale horizontally. Checked-in HPAs use CPU (and API memory);
+  queue-depth or latency scaling is an operator-supplied custom-metrics step. Browser
+  gateway sessions are not part of this stateless claim.
+- **Database:** use connection pooling first. Read replicas require implementing
+  the currently reserved read-session routing before setting `DATABASE_READ_URL`;
+  partitioning or a managed distributed database is an operator decision, not a
+  shipped feature.
 - **Cache:** Redis absorbs read load and hot keys; promote to a managed/clustered
   tier under pressure.
 - **Stateless = cheap elasticity.** This is why the statelessness rule is
@@ -291,8 +290,9 @@ Full playbook: [`docs/guides/scaling.md`](./docs/guides/scaling.md).
   deploys don't drop requests.
 - **Probes:** readiness gating prevents traffic to pods that can't reach their
   dependencies; liveness restarts wedged pods.
-- **Timeouts & retries:** outbound calls carry timeouts; the HTTP client in the
-  frontend retries idempotent requests with backoff.
+- **Timeouts & retries:** model/provider calls have bounded retries and client API
+  requests have timeouts. Browser calls do not currently add a generic automatic
+  retry layer.
 - **Pod Disruption Budgets** keep a minimum number of replicas during node
   drains and upgrades.
 - **Idempotency:** publishes persist an owner-scoped idempotency key with a database
@@ -328,5 +328,5 @@ The golden rules:
 5. If you're copying more than a few lines between features, lift it into a
    shared helper or a base class.
 
-Start from the `items` example, rename, and delete what you don't need. The
-shape of the codebase will hold as you scale from one feature to a hundred.
+Start from the closest existing vertical slice and preserve its transport → service
+→ repository → domain direction.

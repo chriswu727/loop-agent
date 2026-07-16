@@ -1,0 +1,20 @@
+{
+  "schema": "loop.verified-completion-cases/v1",
+  "cases": [
+    {
+      "id": "demo-fibonacci-15",
+      "category": "golden-path",
+      "goal": "Write a Python script that prints the first 15 Fibonacci numbers, then run it to confirm the output.",
+      "success_criteria": [
+        "A runnable Python script is added.",
+        "The script prints exactly the first 15 Fibonacci numbers."
+      ],
+      "verification_commands": ["python3 fib.py"],
+      "expected_files": ["fib.py"],
+      "limits": {
+        "max_steps": 8,
+        "token_budget": 30000
+      }
+    }
+  ]
+}

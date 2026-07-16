@@ -3,6 +3,7 @@
   "cases": [
     {
       "id": "python-library",
+      "category": "code-and-tests",
       "goal": "Create arithmetic.py with add, subtract, multiply, and divide functions. Add a thorough pytest suite. Division by zero must raise ZeroDivisionError.",
       "success_criteria": [
         "All four arithmetic operations return correct results for integers and floats.",
@@ -14,6 +15,7 @@
     },
     {
       "id": "structured-output",
+      "category": "exact-output",
       "goal": "Create report.json containing exactly the object {\"total\": 42, \"items\": [7, 14, 21]} as valid JSON.",
       "success_criteria": [
         "report.json is valid JSON.",
@@ -26,6 +28,7 @@
     },
     {
       "id": "document-constraints",
+      "category": "document",
       "goal": "Write SECURITY.md with concise sections named Threat model, Trust boundaries, and Residual risks. Each section must contain at least one concrete item.",
       "success_criteria": [
         "SECURITY.md contains all three required section headings.",
@@ -35,6 +38,129 @@
         "python -c \"from pathlib import Path; s=Path('SECURITY.md').read_text(); assert all(('# ' + x in s or '## ' + x in s) for x in ['Threat model','Trust boundaries','Residual risks'])\""
       ],
       "expected_files": ["SECURITY.md"]
+    },
+    {
+      "id": "csv-summary",
+      "category": "data-transform",
+      "goal": "Create sales.csv with the rows north,12; south,8; north,5 and a summarize.py program that writes totals.json with totals grouped by region.",
+      "success_criteria": [
+        "sales.csv contains the requested source rows.",
+        "Running summarize.py creates valid JSON with north=17 and south=8."
+      ],
+      "verification_commands": [
+        "python summarize.py && python -c \"import json; assert json.load(open('totals.json')) == {'north': 17, 'south': 8}\""
+      ],
+      "expected_files": ["sales.csv", "summarize.py", "totals.json"]
+    },
+    {
+      "id": "slug-cli",
+      "category": "cli",
+      "goal": "Create slugify.py. As a CLI it must convert its text arguments to a lowercase ASCII slug, collapse separators, and print the result.",
+      "success_criteria": [
+        "The CLI lowercases and joins words with single hyphens.",
+        "Punctuation and repeated whitespace do not create repeated separators.",
+        "The module can be imported without executing the CLI."
+      ],
+      "verification_commands": [
+        "python -c \"import slugify; assert slugify.slugify('  Hello,   LOOP Agent! ') == 'hello-loop-agent'\" && test \"$(python slugify.py 'Hello, LOOP Agent!')\" = hello-loop-agent"
+      ],
+      "expected_files": ["slugify.py"]
+    },
+    {
+      "id": "deep-config-merge",
+      "category": "library",
+      "goal": "Create config_merge.py with a deep_merge(base, override) function. Nested dictionaries merge recursively, lists and scalars are replaced, and neither input is mutated.",
+      "success_criteria": [
+        "Nested dictionaries merge recursively.",
+        "Lists and scalar values are replaced by the override.",
+        "The input dictionaries remain unchanged."
+      ],
+      "verification_commands": [
+        "python -c \"from config_merge import deep_merge; a={'db':{'host':'x','ports':[1]},'debug':False}; b={'db':{'ports':[2]},'debug':True}; r=deep_merge(a,b); assert r=={'db':{'host':'x','ports':[2]},'debug':True}; assert a['db']['ports']==[1] and b['db']['ports']==[2]\""
+      ],
+      "expected_files": ["config_merge.py"]
+    },
+    {
+      "id": "workflow-state-machine",
+      "category": "state-machine",
+      "goal": "Create workflow.py implementing pending -> running -> completed or failed transitions. Invalid transitions must raise ValueError and terminal states cannot transition again.",
+      "success_criteria": [
+        "All declared valid transitions succeed.",
+        "Invalid transitions raise ValueError.",
+        "Completed and failed are terminal."
+      ],
+      "verification_commands": [
+        "python -c \"import workflow; w=workflow.Workflow(); w.transition('running'); w.transition('completed'); assert w.state=='completed'; exec(\\\"try:\\n w.transition('running')\\nexcept ValueError:\\n pass\\nelse:\\n raise AssertionError\\\")\""
+      ],
+      "expected_files": ["workflow.py"]
+    },
+    {
+      "id": "semantic-html-report",
+      "category": "frontend-artifact",
+      "goal": "Create report.html containing a titled accessible table with columns Name and Score and rows Ada=98, Linus=91, Grace=95. Include a caption and valid document structure.",
+      "success_criteria": [
+        "The document has html, head, title, and body elements.",
+        "The table has a caption, two column headers, and exactly the three requested data rows.",
+        "Every requested name and score is present."
+      ],
+      "verification_commands": [
+        "python -c \"from html.parser import HTMLParser; from pathlib import Path; s=Path('report.html').read_text(); assert all(x in s for x in ['<html','<head','<title','<body','<table','<caption','Ada','98','Linus','91','Grace','95']); assert s.count('<tr')==4 and s.count('<th')==2\""
+      ],
+      "expected_files": ["report.html"]
+    },
+    {
+      "id": "jsonl-aggregation",
+      "category": "data-pipeline",
+      "goal": "Create events.jsonl with events login/alice, purchase/alice, login/bob and summarize_events.py that writes summary.json counting events by type and unique users.",
+      "success_criteria": [
+        "events.jsonl contains exactly the three requested events as JSON Lines.",
+        "The generated summary counts login=2 and purchase=1.",
+        "The generated summary reports two unique users."
+      ],
+      "verification_commands": [
+        "python summarize_events.py && python -c \"import json; assert json.load(open('summary.json')) == {'events': {'login': 2, 'purchase': 1}, 'unique_users': 2}\""
+      ],
+      "expected_files": ["events.jsonl", "summarize_events.py", "summary.json"]
+    },
+    {
+      "id": "bounded-retry",
+      "category": "reliability",
+      "goal": "Create retry.py with retry(operation, attempts). It returns on success, retries failures up to the exact attempt limit, rejects attempts below one, and re-raises the last exception.",
+      "success_criteria": [
+        "A successful operation returns immediately.",
+        "A failing operation is called exactly attempts times and the final exception is re-raised.",
+        "attempts below one raises ValueError."
+      ],
+      "verification_commands": [
+        "python -c \"from retry import retry; calls=[]; f=lambda: calls.append(1) or (_ for _ in ()).throw(RuntimeError('x')); exec(\\\"try:\\n retry(f,3)\\nexcept RuntimeError as e:\\n assert str(e)=='x' and len(calls)==3\\nelse:\\n raise AssertionError\\\"); exec(\\\"try:\\n retry(lambda: 1,0)\\nexcept ValueError:\\n pass\\nelse:\\n raise AssertionError\\\")\""
+      ],
+      "expected_files": ["retry.py"]
+    },
+    {
+      "id": "inverted-index",
+      "category": "algorithm",
+      "goal": "Create indexer.py with build_index(documents), mapping normalized words to sorted document ids without duplicates. Ignore punctuation and case.",
+      "success_criteria": [
+        "Words are normalized case-insensitively and punctuation is ignored.",
+        "Each posting list is sorted and contains no duplicate document ids.",
+        "The requested example produces the exact expected index."
+      ],
+      "verification_commands": [
+        "python -c \"from indexer import build_index; assert build_index({'b':'Hello, loop loop.','a':'HELLO world'}) == {'hello':['a','b'],'loop':['b'],'world':['a']}\""
+      ],
+      "expected_files": ["indexer.py"]
+    },
+    {
+      "id": "tested-string-utils",
+      "category": "code-and-tests",
+      "goal": "Create string_utils.py with is_palindrome and count_words plus a pytest suite covering normal, empty, punctuation, and mixed-case inputs.",
+      "success_criteria": [
+        "is_palindrome ignores punctuation, whitespace, and case.",
+        "count_words counts normalized word tokens.",
+        "The pytest suite covers edge cases and passes."
+      ],
+      "verification_commands": ["python -m pytest -q"],
+      "expected_files": ["string_utils.py"]
     }
   ]
 }

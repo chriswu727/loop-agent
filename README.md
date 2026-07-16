@@ -2,383 +2,201 @@
 
 # Loop
 
-**Hand off a goal and an acceptance contract. Loop works in isolation, proves every
-criterion with re-executed evidence, and returns a Receipt you can replay.**
-
-Most personal agents run chat-first on your own machine — handy, but researchers keep
-pulling real secrets out of them through prompt injection. Loop is built the other way
-around: sandboxed, least-authority, and every task ends in a receipt you can replay.
-Runs on a laptop with one LLM API key and no other infrastructure.
+**Hand off a goal and an acceptance contract. Loop works in isolation, re-runs
+the evidence, and returns a Receipt anyone can replay.**
 
 [![CI](https://github.com/chriswu727/loop-agent/actions/workflows/ci.yml/badge.svg)](https://github.com/chriswu727/loop-agent/actions/workflows/ci.yml)
 [![Desktop](https://github.com/chriswu727/loop-agent/actions/workflows/desktop.yml/badge.svg)](https://github.com/chriswu727/loop-agent/actions/workflows/desktop.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 [![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/)
-[![Tests](https://img.shields.io/badge/tests-offline-brightgreen.svg)](./apps/api/tests)
 
-`Next.js 16` · `FastAPI` · `Python 3.12` · `Postgres or SQLite` · `MIT`
+`FastAPI` · `Next.js` · `Electron` · `Postgres/SQLite` · `Redis Streams` · `Kubernetes`
 
 </div>
 
 <p align="center">
-  <img src="./docs/images/task.png" alt="A finished task in Loop: verified by re-execution, default-deny network, a hash-verified Receipt, and downloadable output files" width="840" />
+  <img src="./docs/images/task.png" alt="A completed Loop task with re-executed checks, a verified Receipt, and downloadable artifacts" width="840" />
 </p>
 
-<p align="center"><sub>A real finished task. You asked for the first 12 Fibonacci numbers — Loop wrote <code>fib.py</code>, ran it, an independent verifier re-ran the checks on a fresh copy of the workspace, and it shipped a <b>Receipt</b>: <code>verified 96/100</code> · <code>Network: none (default-deny)</code> · <code>hash verified</code>, with the outputs downloadable.</sub></p>
+## What makes Loop different
 
----
+Most coding agents end when the model says it is done. Loop separates **work** from
+**acceptance**:
 
-## How it works
+1. You confirm concrete success criteria and may provide exact verification commands.
+2. Loop works inside a per-task workspace under a server-enforced capability and
+   token/step envelope.
+3. An independent verifier re-runs the checks on a fresh copy of the workspace.
+4. Every criterion must map to passing execution evidence in strict mode.
+5. Loop emits a content-addressed Receipt with the contract, checks, model/runtime
+   provenance, output hashes, and the head of a hash-chained step ledger.
+6. The Receipt can be replayed later through the API, CLI, or bundled GitHub Action.
+
+If the evidence fails, the task does not become `completed` merely because the model
+called `finish`. Limit, stuck, cancelled, and error outcomes still receive an
+explicitly unverified Receipt for auditability.
 
 ```mermaid
 flowchart LR
-    G([Goal]) --> U[Understand<br/>build a rubric]
-    U --> P[Plan<br/>next action]
-    P --> A[Act<br/>sandboxed tool]
-    A --> O[Observe]
+    G(["Goal + contract"]) --> P["Plan one action"]
+    P --> A["Act inside authority envelope"]
+    A --> O["Observe"]
     O --> P
-    P -. agent says finish .-> V{Verify<br/>re-run the checks}
-    V -. a check fails .-> P
-    V == passes ==> R([Receipt<br/>hash-chained, replayable])
+    P -. "finish claim" .-> V{"Re-run checks\non a fresh copy"}
+    V -. "fails" .-> P
+    V == "passes + full coverage" ==> R(["Replayable Receipt"])
 ```
 
-You give Loop a goal; it runs a **think → act → observe** loop (ReAct):
+## Run the verified demo
 
-1. **Contract** — you confirm the success criteria and may supply exact verification
-   commands. For a local project, this contract is required before work starts.
-2. **Baseline** — Loop discovers the project's native lint, typecheck, test, and build
-   commands and records which failures already existed before the agent touched it.
-3. **Plan** — decide the single next action.
-4. **Act** — call a tool: `write_file`, `edit_file`, `read_file`, `run_command`
-   (inside a per-task sandboxed workspace), `see_image`, `ask_user`, `spawn`,
-   `remember`, or `finish`.
-5. **Observe** — feed the result back in, and repeat.
-6. **Finish** — an independent **verifier re-runs contract and system checks** on a
-   fresh copy. Every criterion must point to passed evidence and no new regression
-   may appear. Otherwise the agent keeps going; only then does Loop write a
-   tamper-evident **Receipt**.
-
-It stops on the first of: **goal achieved** (verified), **step limit**, **token
-budget**, **stuck** (repeated actions or no new evidence), or **cancelled** — every
-limit is clamped server-side, model retries are charged, and verification tokens
-are reserved so a task cannot spend its way out of proving the result.
-
-## Why Loop — the safe, verifiable alternative
-
-Chat-first personal agents (OpenClaw and its kind) are wildly popular — and, per
-independent researchers at **Cisco, Microsoft, Kaspersky and Giskard**, a security
-minefield: hundreds of reported vulnerabilities, plaintext credential leaks, and
-prompt-injection attacks that have **exfiltrated a real private key from a linked
-inbox**. The standing advice is literally "don't run it with your main accounts or
-on a machine with sensitive data."
-
-Loop is the agent you _can_ leave running unattended. It does the same class of
-real work, but is built so those specific attacks can't succeed — and so "done" is
-a fact you can replay, not a claim in a chat log.
-
-|                       | Chat-first agents (OpenClaw-style)                | **Loop**                                                                                |
-| --------------------- | ------------------------------------------------- | --------------------------------------------------------------------------------------- |
-| **"Done" means**      | a chat reply — no notion of completion            | a user-confirmed contract, regression gate, and **replayable Receipt**                  |
-| **Shell / tools**     | main session runs on the **host**                 | production uses a fresh locked-down **Kubernetes Job** per command; egress defaults off |
-| **Skills**            | thousands, **unsigned**, injected into the prompt | **ed25519-signed**, capability-scoped, refused if tampered                              |
-| **Inbound email/DMs** | injection has exfiltrated real private keys       | quarantined as `[DATA]`; sending/acting needs your approval                             |
-| **Secrets**           | plaintext credential leaks reported               | scrubbed from the shell env, masked in tool output, never returned by the API           |
-| **Reach**             | 20+ chat channels, huge skill marketplace         | web chat, Telegram, Slack, browser, email, calendar today                               |
-
-Loop concedes raw breadth for now and is closing that gap — but it wins outright on
-the two axes a chat-log agent can't retrofit:
-
-- **Verifiable completion.** A strict task cannot finish on model confidence alone.
-  Its user-confirmed criteria, contract checks, discovered project checks, pre-change
-  baseline, criterion-to-evidence mapping, and actual executor/verifier model IDs are
-  persisted. Every terminal task ships a content-addressed, tamper-evident **Receipt**
-  (`receipt.json` + `RECEIPT.md`): the goal, the contract, every machine check the
-  verifier **re-ran on a fresh copy of the workspace**, a
-  sha256 of every output file, and the head of a hash-chained step ledger. "Done"
-  is a replayable fact — safe to drop into a CI gate (`make verify-receipt`, or
-  `scripts/verify_receipt.py` with zero app deps, exits 0/1 and re-hashes the output
-  files). Set `AGENT_RECEIPT_SIGNING_KEY` (`make receipt-keygen`) to **ed25519-sign**
-  Receipts — then a forger without the key can't recompute a valid one (tamper-_proof_,
-  not just evident); verify it offline with `--pubkey`. A run that fell short (a
-  limit, a stuck loop, a crash) still ships a Receipt, marked `unverified`, so a
-  failure is auditable too.
-- **Least authority by construction.** Each task runs under a declared **capability
-  envelope** enforced at one choke point: which tools it may use, default-deny
-  network egress, and an optional human approval gate for risky commands. Shell
-  commands are **jailed in an ephemeral container or Kubernetes Job** (only the
-  workspace mounted, network disabled unless granted, can't read the host); the
-  command environment is scrubbed so secrets never
-  reach a command. **Skills are ed25519-signed** and refused if tampered. Untrusted
-  data (tool output, files, memory) is framed so the agent never obeys instructions
-  hidden inside it.
-
-| Differentiator                | What it means                                                                                                                    |
-| ----------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| **Verified Completion**       | user criteria + baseline + system/contract checks; complete coverage and no new regression are mandatory                         |
-| **Re-execution Receipt**      | the verifier re-runs the evidence; a failed check overrides the model's "I'm done" and replay can prove it later                 |
-| **Tamper-evident ledger**     | each step is hash-chained from a genesis; edit any step and `GET /tasks/{id}/ledger` reports it                                  |
-| **Signed skills**             | a skill bundle's ed25519 signature must verify or it won't load — supply-chain safety                                            |
-| **Typed capability contract** | `loop.capabilities/v1` separates filesystem, execution, network, browser, research, QA, protocol, memory, vision, and delegation |
-| **Destination-bound egress**  | shell, browser, and provider runtimes have no direct route; explicit hosts pass through a token-verifying, DNS-pinning proxy     |
-| **Approval gate**             | `require_approval` pauses non-allowlisted commands until you say yes; restart-safe                                               |
-| **Injection quarantine**      | tool output, files and memory are `[DATA]`, never commands                                                                       |
-
-## Capabilities
-
-- **Run as a real desktop app** — the Electron shell packages on macOS, Windows,
-  and Linux with a sandboxed, context-isolated renderer and a deliberately narrow
-  preload API. First run stores a provider key in a private desktop state directory,
-  uses the native folder picker to authorize exactly one clean Git repository, and
-  supervises the full local Docker runtime. The renderer sees the project name and
-  relative path `.` — never its native absolute path, Docker socket, runtime keys,
-  or filesystem APIs. An interrupted session is detected on restart; healthy
-  containers are adopted, otherwise the UI offers an explicit checked restart.
-- **Write & run code**, iterating until the checks pass (with self-correction).
-- **Edit an existing local Git project transactionally** — opt a trusted local
-  deployment into one projects root, select a clean repository by relative path,
-  and Loop works in a source-unlinked isolated clone. The task page presents a
-  structured diff; **Apply** is enabled only when re-execution succeeded, Receipt
-  integrity still holds, and the current patch hash exactly matches the Receipt.
-  **Discard** preserves the audit record without touching the source, while
-  conflict-safe **Undo** reverses the exact patch Loop applied.
-- **Edit your documents** — attach an `.xlsx` / `.docx` / `.csv` at publish time and
-  the agent edits it in place (openpyxl / python-docx / pandas preinstalled); the
-  verifier re-opens the file to prove the edit holds. Outputs are listed and
-  **downloadable** from the task view.
-- **See images** — with a vision provider (Gemini) configured, the agent can
-  `see_image` an uploaded screenshot or photo and act on what it describes.
-- **Delegate to sub-agents** — `spawn` hands a self-contained sub-goal to a fresh
-  sub-agent that runs its own verified, sandboxed loop and returns a Receipt; a big
-  task becomes a _tree_ of independently-verified sub-tasks (depth- and
-  budget-bounded).
-- **Cross-task memory** — a `remember` tool + transparent Markdown storage scoped
-  by authenticated owner and project, so one tenant never receives another's memory.
-- **Browse the web** — grant `net.browser` and the agent drives a real
-  headless browser through a credentialless Browser Gateway (`@playwright/mcp`):
-  navigate, read, click, type, extract. Browser authority does not grant shell
-  egress, every destination must be declared before the task starts, and the
-  browser's network identity can connect only to the authenticated egress proxy.
-- **Research and test with specialized MCPs** — local/development runs may grant
-  `research.read` for a four-tool, source-bearing Sibyl surface and `qa.browser`
-  for a ten-tool, evidence-first Argus surface. Every tool is namespaced and
-  capability-gated instead of dumping both servers' full catalogs into the model.
-  These subprocesses run outside the task container, are visibly disclosed in the
-  run, and are refused when host providers are disabled (always in production).
-- **Email & calendar** — `use_email` reads the inbox (IMAP, read-only, quarantined)
-  and sends (SMTP); `use_calendar` lists and creates events (CalDAV). Anything that
-  sends or writes pauses for your approval first.
-- **Converse** — group turns into a session (`chat_id`) and follow-ups keep the
-  context ("now add tests to it" resolves _it_). A web `/chat` page and a
-  channel-agnostic `POST /chat` are the seam any platform plugs into.
-- **Chat from Telegram or Slack** — command Loop from chat; it runs the task,
-  replies, and asks back when it needs input. Both gate who can use it (an allowlist,
-  fail-closed since the bot runs code); Slack is a signature-verified `POST /slack/events`
-  webhook, Telegram a poller — both over the same channel-agnostic seam.
-- **Triggers** — save a task template and fire it from any external event
-  (`POST /hooks/triggers/{id}` with `X-Trigger-Secret`) or on a schedule
-  (interval heartbeat).
-- **Human-in-the-loop** — `ask_user` pauses for your input and resumes exactly where
-  it left off, surviving a process restart. A finished task can be **retried** with
-  the same goal and settings (the original stays as an audit record).
-- **Live view** — the task page streams updates over SSE (with a polling fallback):
-  step timeline, budget meters, output files, and ledger status.
-
-## Try it in 30 seconds (no API key)
-
-Want to see the verified loop before signing up for anything? A built-in demo model
-drives one real task end-to-end — writes `fib.py`, runs it, and the verifier
-**re-executes its checks** to produce a Receipt — with **no API key**:
+Requirements: Node 22.13+, pnpm 11+ (or Corepack), and Python 3.12+. No provider
+key, Docker, Postgres, or Redis is required.
 
 ```bash
-make setup && make demo          # API on :8000, scripted model, DEMO_MODE=1
-# then, in another terminal:
-pnpm --filter web dev
+git clone https://github.com/chriswu727/loop-agent.git
+cd loop-agent
+make demo
 ```
 
-Open http://localhost:3000, publish anything, and watch it plan → write → run →
-**verify** → Receipt. Then add a real key (below) to point it at your own goals.
+The command validates the toolchain, installs missing project dependencies, starts
+the API and web app with one temporary local token, and opens
+<http://localhost:3000>. Choose the Fibonacci example and run it. The deterministic
+demo model writes `fib.py`, executes it, satisfies the two user-confirmed criteria,
+and produces a Receipt whose checks can be replayed from the task page.
 
-<p align="center">
-  <img src="./docs/images/home.png" alt="Loop's publish form: a goal box with example tasks, per-task safety toggles (no shell, allow network, require approval, use browser), a skill picker, and step / token-budget sliders" width="840" />
-</p>
+The demo intentionally uses inline execution and the UI labels it **reduced
+isolation**. Build the sandbox image or use the Docker/Kubernetes profiles before
+running untrusted model-generated commands.
 
-## Desktop app
+The same browser journey is a required CI check:
 
-The desktop path requires Docker Desktop (or Docker Engine with Compose). It runs
-the same API, worker, database, isolated gateways, egress proxy, and per-command
-sandbox as the server deployment rather than replacing them with host execution.
-
-```bash
-corepack enable && pnpm install
-pnpm --filter desktop dev
+```text
+fresh environment → open UI → confirm contract → run → execution verified
+→ full criterion coverage → replay Receipt → pass
 ```
 
-Enter one supported provider key and choose one clean Git repository. The provider
-key is encrypted through the OS credential service; Loop refuses insecure Linux
-plaintext fallback storage and keeps the key in memory for the current session when
-secure storage is unavailable. Loop then starts the stack, opens the normal task UI,
-and binds every desktop project task to that single repository. Changing projects
-stops the previous runtime before mounting the new one. Runtime credentials and
-ed25519 authority/Receipt keys are generated once, stored with owner-only permissions,
-and reused across clean restarts.
+The committed [demo smoke report](./evals/results/demo-smoke.json) records `1/1`
+solved, zero false acceptances, two steps, 24 scripted tokens, and a passing replay.
+It proves product wiring, not general model quality. The separate
+[12-case real-provider suite](./evals/verified-completion.json) is published without
+invented results; running it requires explicit acknowledgement of provider spend.
 
-Create the native package/installer for the current OS with
-`pnpm --filter desktop make`; artifacts land under `apps/desktop/out/make`. CI builds
-and startup-smokes macOS, Windows, and Linux artifacts. Public release signing,
-macOS notarization, and auto-update credentials are intentionally not claimed until
-the corresponding platform certificates and release channel are configured.
+## The trust boundary
 
-## Quickstart (zero infrastructure)
+Loop treats the model as a planner, not an authority source.
 
-No Docker, no Postgres, no Redis. You need **Python 3.12+**, **Node 22.13+**, and
-**pnpm 11** (`corepack enable`), plus one LLM API key.
+- **One tool choke point.** `ToolExecutor.execute` enforces the resolved
+  `loop.capabilities/v1` envelope; a skill may narrow it but cannot widen it.
+- **Bounded autonomy.** Server-clamped step and token budgets include retries and
+  reserve enough budget for verification. Repeated actions, unchanged finish loops,
+  and evidence-free exploration stop rather than burn the entire budget.
+- **Default-deny egress.** Shell and browser network capabilities are separate and
+  require destinations declared before the run. Production traffic is mediated by
+  an authority-token-verifying, DNS-pinning proxy.
+- **Isolated execution.** The production profile runs commands in short-lived,
+  non-root Kubernetes Jobs. Docker is the recommended laptop boundary. Inline mode
+  is a visible development fallback, not a sandbox claim.
+- **Signed extensions and Receipts.** Skill bundles are verified against an Ed25519
+  trust root. Receipts are tamper-evident by default and become origin-authentic when
+  signed with a configured private key.
+- **Untrusted content stays data.** Prompts label tool output, files, messages, and
+  memory as untrusted. The hard guarantee comes from capability, filesystem, egress,
+  approval, and secret boundaries—not from claiming prompt injection is impossible.
+
+See [SECURITY.md](./SECURITY.md) for the threat model, guarantees, deployment modes,
+and residual risks.
+
+## What is implemented
+
+- ReAct planning with independent executor/verifier provider selection and fallback.
+- Strict acceptance contracts, baseline regression checks, criterion-to-evidence
+  mappings, Receipt replay, and offline verification.
+- Per-task workspaces, container or Kubernetes command isolation, secret redaction,
+  destination-bound egress, and restart-safe approval gates.
+- Durable Redis Streams workers with visibility leases, stale-message reclaim,
+  bounded retries, dead-letter handling, and compare-and-update task claims.
+- Transactional local Git project edits through isolated clones and verified
+  Apply/Discard/Undo change sets.
+- File upload/download and `.xlsx`, `.docx`, `.csv`, image/vision workflows.
+- Signed capability-scoped skills, project/owner-scoped memory, and bounded
+  Receipt-producing sub-agents.
+- Browser, email, calendar, vision, Sibyl research, and Argus QA surfaces behind
+  typed capabilities. Host Sibyl/Argus subprocesses are development-only and are
+  refused in production.
+- Web chat, GitHub OAuth/PKCE, Telegram/Slack inlets, schedules, and webhook triggers.
+- Electron packaging on macOS, Windows, and Linux. CI startup-smokes all three;
+  public code signing, notarization, and auto-update are not yet configured.
+
+## Local development
 
 ```bash
-# 1) Backend (FastAPI on SQLite, agent runs in-process)
-cd apps/api
-python -m venv .venv && . .venv/bin/activate
-pip install -e ".[dev,office]"        # office extras = xlsx/docx/csv editing
-export DEEPSEEK_API_KEY=sk-...         # or ANTHROPIC_API_KEY / GEMINI_API_KEY / GLM_API_KEY
+make setup
 export DATABASE_URL="sqlite+aiosqlite:///./loop.db"
 export EXECUTION_MODE=inline CACHE_BACKEND=memory
-uvicorn app.main:app --port 8000
+export DEEPSEEK_API_KEY=sk-...  # or Anthropic / Gemini / GLM / Ollama
+make dev                       # API + web with one temporary local token
+```
 
-# 2) Frontend (another terminal, from the repo ROOT)
-corepack enable && pnpm install
-pnpm --filter web dev
+Build the recommended local command sandbox:
 
-# 3) (optional, recommended) build the sandbox image so shell commands run
-#    jailed in a container instead of on your host — needs Docker running:
+```bash
 docker build -f apps/api/sandbox.Dockerfile -t loop-sandbox:latest .
 ```
 
-Open http://localhost:3000 and try _"Write a Python script that prints the first 12
-Fibonacci numbers, then run it to confirm."_ — watch it write, run, verify, and
-produce a Receipt. For the full Docker stack, `cp .env.example .env`, add a key,
-run `make authority-keygen`, point `AGENT_AUTHORITY_SIGNING_KEY_FILE` at the private
-file and place the public PEM in `AGENT_AUTHORITY_PUBLIC_KEY`, then use `make up`.
-Compose builds the sandbox image first; the worker then launches a fresh
-locked-down sibling container for every shell command. Networked commands join only
-the internal sandbox network and can leave through the destination-enforcing proxy.
-Use the Kubernetes production profile for per-command Jobs, tenant-scoped PVC mounts,
-immutable image digests, and fail-closed isolation.
-
-`make k8s-deployment-acceptance` builds every runtime and proves the production-mode
-topology in a disposable k3d cluster: migration, rollout, a queued task executed and
-re-verified in Kubernetes Jobs, an authentic Receipt, NetworkPolicy enforcement, and
-recovery from a deliberately broken API rollout.
-
-## Configuration
-
-See [`.env.example`](./.env.example). Key knobs:
-
-| Variable                                                                                 | Purpose                                                                                                                                                    |
-| ---------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `ANTHROPIC_API_KEY` / `DEEPSEEK_API_KEY` / `GEMINI_API_KEY` / `GLM_API_KEY`              | LLM providers (at least one). A retryable failure is retried, then cascades to the next provider.                                                          |
-| `LLM_DEFAULT_PROVIDER`                                                                   | which provider to try first.                                                                                                                               |
-| `OLLAMA_BASE_URL`                                                                        | run on a fully-local model via Ollama (no API key).                                                                                                        |
-| `API_TOKEN`                                                                              | optional bearer-token gate on the whole API.                                                                                                               |
-| `WEB_AUTH_REQUIRED` / `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET`                        | GitHub OAuth + PKCE login. The web tier mints an HTTP-only, short-lived user JWT; task, trigger, memory, idempotency, and Receipt access are owner-scoped. |
-| `LLM_VERIFIER_PROVIDER`                                                                  | optional verifier provider, kept separate from the executor model.                                                                                         |
-| `TELEGRAM_BOT_TOKEN` / `TELEGRAM_ALLOWED_CHAT_IDS`                                       | enable the Telegram inlet + restrict who can use it.                                                                                                       |
-| `SLACK_BOT_TOKEN` / `SLACK_SIGNING_SECRET` / `SLACK_ALLOWED_CHANNELS`                    | enable the Slack `/slack/events` inlet + its channel allowlist.                                                                                            |
-| `SMTP_*` / `IMAP_HOST` / `CALDAV_*`                                                      | email send/read + calendar (use a Gmail app password).                                                                                                     |
-| `EXECUTION_MODE`                                                                         | `inline` (run in the API process) or `worker` (enqueue to Redis).                                                                                          |
-| `DATABASE_URL`                                                                           | `postgresql+asyncpg://…` or `sqlite+aiosqlite:///./loop.db`.                                                                                               |
-| `AGENT_APPROVAL_MODE`                                                                    | `auto` or `manual` (pause non-allowlisted commands).                                                                                                       |
-| `AGENT_SKILLS_ROOT` / `AGENT_SKILL_TRUST_PUBLIC_KEY`                                     | signed-skills folder + the ed25519 key signatures must verify against.                                                                                     |
-| `AGENT_RECEIPT_SIGNING_KEY`                                                              | ed25519 key for signed Receipts (`make receipt-keygen`); required in production, optional hash-only mode in development.                                   |
-| `LOOP_LOCAL_PROJECTS_ROOT`                                                               | optional local-only root for verified Git change sets; clients can select only clean repositories below it by relative path.                               |
-| `AGENT_AUTHORITY_SIGNING_KEY` / `AGENT_AUTHORITY_PUBLIC_KEY`                             | worker-only Ed25519 issuer key and gateway/proxy-only verifier key (`make authority-keygen`).                                                              |
-| `PROVIDER_GATEWAY_AUTHORITY_PUBLIC_KEYS` / `EGRESS_PROXY_AUTHORITY_PUBLIC_KEYS`          | optional `kid` → public-PEM JSON keyrings for zero-downtime issuer rotation.                                                                               |
-| `AGENT_EMAIL_GATEWAY_URL` / `AGENT_CALENDAR_GATEWAY_URL` / `AGENT_VISION_GATEWAY_URL`    | independently credentialed protocol services; all three are required in production.                                                                        |
-| `AGENT_EMAIL_EGRESS_HOSTS` / `AGENT_CALENDAR_EGRESS_HOSTS` / `AGENT_VISION_EGRESS_HOSTS` | signed upstream host ceilings for each protocol identity; required in production.                                                                          |
-| `AGENT_BROWSER_GATEWAY_URL`                                                              | credentialless, proxy-only browser service; required separately in production.                                                                             |
-| `AGENT_SIBYL_ENABLED` / `AGENT_SIBYL_COMMAND`                                            | opt-in local Sibyl stdio MCP for `research.read`; host-only and refused in production.                                                                     |
-| `AGENT_ARGUS_ENABLED` / `AGENT_ARGUS_COMMAND`                                            | opt-in local Argus stdio MCP for `qa.browser`; host-only and refused in production.                                                                        |
-| `AGENT_EGRESS_PROXY_URL` / `AGENT_EGRESS_PROXY_AUDIT_URL`                                | authenticated data-plane proxy and worker-only audit endpoint; required in production.                                                                     |
-| `AGENT_MEMORY_ROOT`                                                                      | cross-task memory store.                                                                                                                                   |
-| `AGENT_SANDBOX` / `AGENT_SANDBOX_BACKEND`                                                | `required` fails closed; production selects short-lived Kubernetes Jobs. `preferred` is the explicitly labeled local fallback.                             |
-| `AGENT_SANDBOX_IMAGE_DIGEST`                                                             | immutable sandbox image digest; required in production and recorded in every isolated Receipt.                                                             |
-
-Per-task safety is set at publish time through the versioned `capabilities` list;
-legacy `allowed_tools` / `allow_egress` fields remain migration inputs. A signed
-skill can only narrow the requested authority. The UI and Receipt show the resolved
-intersection that actually ran. `net.shell` and `net.browser` also require explicit
-`egress_hosts`; an empty list never means unrestricted access.
-Defaults/caps live in `app/core/config.py`.
-
-## Architecture
-
-A layered (ports-and-adapters) FastAPI backend; the agent lives in the service
-layer and talks to the model through a provider registry, to the OS through the
-tools, and to the DB through repositories — so the loop runs deterministically under
-test with a fake model.
-
-```
-apps/api/app/
-├── core/llm/          # provider registry (Anthropic/DeepSeek/Gemini/GLM/Ollama) + cascade
-├── provider_gateway/  # shared runtime, deployed as isolated email/calendar/vision/browser identities
-├── egress_proxy/      # destination enforcement, DNS pinning, per-run audit
-├── tools/             # workspace sandbox, gateway/proxy clients, capability envelope, executor
-├── services/
-│   ├── agent_react.py # THE ENGINE: understand → plan → act → observe → verify
-│   ├── verification.py# re-execution of finish checks on a workspace copy
-│   ├── receipt.py     # content-addressed Receipt; ledger.py = hash-chained steps
-│   ├── runner.py      # atomic task claim, heartbeat, crash reconciliation
-│   ├── skills.py      # signed, capability-scoped skills
-│   ├── chat.py        # shared "message → task → reply" seam (Telegram + Slack + /chat)
-│   ├── memory.py      # cross-task memory; trigger.py + scheduler.py = triggers/heartbeat
-│   └── task.py        # publish / limits / files / approval-resume
-└── api/v1/routes/     # tasks (incl. SSE /events), skills, memory, triggers, chat
-```
-
-Worker mode uses Redis Streams consumer groups, visibility leases, stale-message
-reclaim, bounded retries, and a dead-letter stream. Receipt tooling is available as
-`loop receipt inspect|verify|replay|evaluate`; the reusable GitHub Action under
-`.github/actions/verify-loop-receipt` provides the offline CI gate.
-
-Design rationale: [`docs/loop.md`](./docs/loop.md). Strategy vs OpenClaw and the
-differentiator roadmap: [`docs/STRATEGY.md`](./docs/STRATEGY.md).
-
-## Tests
+Run the production-shaped Compose topology after configuring `.env` and authority
+keys:
 
 ```bash
-cd apps/api && . .venv/bin/activate && pytest    # offline; no provider credentials required
+cp .env.example .env
+make authority-keygen
+# point the documented authority variables at the generated private/public keys
+make up
 ```
 
-Drives every stop condition with a scripted fake model; proves the sandbox refuses
-path escapes, the command policy blocks dangerous commands, checks gate acceptance,
-the ledger detects tampering (and survives a legitimate human answer), skills reject
-bad signatures, egress is default-denied, the shell env is scrubbed of secrets, and
-the provider cascade falls over correctly.
+The Kubernetes acceptance job builds every runtime in a disposable k3d cluster,
+migrates the database, runs and re-verifies a queued task in Kubernetes Jobs,
+checks NetworkPolicy enforcement, verifies an authentic Receipt, deliberately breaks
+the API rollout, and proves rollback.
 
-Run `make enforcement-acceptance` with Docker available to exercise a real Redis 7
-instance with AOF: a proxy in a separate process holds a live tunnel, another process
-revokes it, readiness fails while Redis is stopped, and audit/revocation state is
-verified again after restart.
+## Verification
 
-## Roadmap
+```bash
+make check                       # lint + types + offline tests
+pnpm --filter web test:e2e       # full zero-key browser journey
+make enforcement-acceptance      # Redis restart, worker recovery, revocation
+make k8s-deployment-acceptance   # disposable production-mode cluster
+```
 
-**Delivered:** tool-using agent core, re-execution Receipts, tamper-evident ledger,
-capability envelope, default-deny egress, approval gate, injection quarantine, signed
-skills, document editing, image understanding, cross-task memory, triggers +
-scheduler, SSE live view, provider registry, a **local Ollama provider**, an **MCP
-client with a headless browser**, **container isolation**, **multi-agent delegation**
-(`spawn` → a tree of verified sub-agents), **email + calendar**, **conversational
-sessions** with a web chat page, **Telegram + Slack chat inlets**, and a
-**channel-agnostic `/chat` API**, separately credentialed **email, calendar, and
-vision gateways** plus a credentialless **Browser Gateway**, renewable and
-revocable short-lived capability tokens, and **network-layer destination enforcement** with
-durable, horizontally shared bounded audit/revocation state and DNS-pinned proxy
-routing for shell, browser, and every provider protocol.
+Current CI also audits locked Python/JavaScript dependencies, builds all runtime
+images, validates Compose/Kustomize boundaries, and packages/startup-smokes the
+desktop shell on macOS, Windows, and Ubuntu. Backend tests enforce a branch-aware
+70% coverage floor; the current full suite reports 72%.
 
-**Next:** broaden the signed skill catalog and channel ecosystem, add multi-replica
-browser-session routing, and accumulate real production/adversarial evidence. Loop's
-core trust architecture is implemented;
-its remaining gap versus mature assistants is ecosystem and operational proof, not
-another missing safety layer.
+## Repository map
 
-## License
+```text
+apps/api/          FastAPI control plane, loop, tools, gateways, worker
+apps/web/          Next.js product UI and browser acceptance test
+apps/desktop/      Electron shell and runtime supervisor
+packages/          shared TypeScript contracts and lint/tsconfig
+infra/             Docker, desktop Compose, Kubernetes base/overlays
+evals/             verified-completion manifests and honest run reports
+docs/              ADRs, operational guides, product/system rationale
+```
 
-[MIT](./LICENSE).
+- [Architecture](./ARCHITECTURE.md)
+- [Verified Completion evaluation](./evals/README.md)
+- [Local development](./docs/guides/local-development.md)
+- [Deployment](./docs/guides/deployment.md)
+- [Scaling](./docs/guides/scaling.md)
+- [Contributing](./CONTRIBUTING.md)
+- [Changelog](./CHANGELOG.md)
+
+## Status
+
+`v0.1.0` is a serious portfolio/research release, not a claim of production mileage
+or broad adoption. The narrow verified coding path is automated end-to-end; provider
+quality still depends on the selected model and should be evaluated with the published
+suite before trusting a workload.
+
+MIT licensed.

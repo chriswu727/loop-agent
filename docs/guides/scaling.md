@@ -19,8 +19,9 @@ The standard ladder, in order, only as needed:
 
 1. **Connection pooling** — put PgBouncer in front of Postgres; async apps open
    many short-lived connections.
-2. **Read replicas** — set `DATABASE_READ_URL` and route reads to it. The
-   repository layer means services don't change.
+2. **Read replicas** — first implement explicit read-session routing and a
+   consistency policy. `DATABASE_READ_URL` is currently reserved configuration;
+   setting it alone does not route repository reads.
 3. **Partitioning / sharding** or a managed distributed Postgres for write
    scaling at the far end.
 

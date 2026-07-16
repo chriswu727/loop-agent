@@ -39,6 +39,7 @@ def _wait_for_task(client: httpx.Client, task_id: str, timeout: float) -> dict[s
 
 
 def _evaluate_case(client: httpx.Client, case: dict[str, Any], timeout: float) -> dict[str, Any]:
+    started = time.monotonic()
     payload = {
         "goal": case["goal"],
         "success_criteria": case["success_criteria"],
@@ -64,7 +65,17 @@ def _evaluate_case(client: httpx.Client, case: dict[str, Any], timeout: float) -
         replay,
         expected_files=case.get("expected_files", []),
     )
-    return {"id": case["id"], "task_id": task["id"], "status": task["status"], **scored}
+    receipt = receipt_report.get("receipt") or {}
+    provenance = receipt.get("provenance") or {}
+    return {
+        "id": case["id"],
+        "category": case.get("category", "uncategorized"),
+        "task_id": task["id"],
+        "status": task["status"],
+        "duration_seconds": round(time.monotonic() - started, 3),
+        "model": provenance.get("model"),
+        **scored,
+    }
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -72,6 +83,13 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--base-url", default="http://127.0.0.1:8000")
     parser.add_argument("--api-token", default=os.environ.get("LOOP_API_TOKEN"))
     parser.add_argument("--cases", type=Path, default=DEFAULT_CASES)
+    parser.add_argument(
+        "--case",
+        action="append",
+        dest="case_ids",
+        help="run only this case id; repeat to select multiple cases",
+    )
+    parser.add_argument("--label", default="local", help="human-readable run label")
     parser.add_argument("--output", type=Path)
     parser.add_argument("--timeout", type=float, default=600)
     parser.add_argument(
@@ -88,12 +106,23 @@ def main(argv: list[str] | None = None) -> int:
         raise SystemExit("Refusing to invoke models without --allow-model-spend")
     headers = {"Authorization": f"Bearer {args.api_token}"} if args.api_token else {}
     cases = _load_cases(args.cases)
+    if args.case_ids:
+        selected = set(args.case_ids)
+        cases = [case for case in cases if case.get("id") in selected]
+        missing = selected - {str(case.get("id")) for case in cases}
+        if missing:
+            raise SystemExit(f"Unknown case id(s): {', '.join(sorted(missing))}")
     with httpx.Client(base_url=args.base_url, headers=headers, timeout=30) as client:
         results = [_evaluate_case(client, case, args.timeout) for case in cases]
+    try:
+        manifest = str(args.cases.resolve().relative_to(ROOT))
+    except ValueError:
+        manifest = str(args.cases.resolve())
     report = {
         "schema": "loop.verified-completion-eval/v1",
         "run_at": datetime.now(UTC).isoformat(),
-        "manifest": str(args.cases),
+        "label": args.label,
+        "manifest": manifest,
         "summary": aggregate_verified_completion(results),
         "results": results,
     }
