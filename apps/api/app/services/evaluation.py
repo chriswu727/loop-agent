@@ -77,4 +77,9 @@ def aggregate_verified_completion(results: list[dict[str, Any]]) -> dict[str, An
         "average_tokens": (
             sum(int(item.get("tokens_used", 0)) for item in results) / total if total else 0.0
         ),
+        "average_duration_seconds": (
+            sum(float(item.get("duration_seconds", 0)) for item in results) / total
+            if total
+            else 0.0
+        ),
     }

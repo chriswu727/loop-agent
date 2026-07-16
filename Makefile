@@ -14,10 +14,8 @@ help: ## Show this help
 
 # ---------- Setup ----------
 .PHONY: setup
-setup: ## Install all dependencies (JS + Python) and copy env
-	@test -f .env || cp .env.example .env
-	corepack enable && pnpm install
-	cd apps/api && python -m venv .venv && . .venv/bin/activate && pip install -e ".[dev,office]"
+setup: ## Install locked JavaScript and Python dependencies
+	bash scripts/setup.sh
 	-$(MAKE) sandbox-image
 	@echo "Setup complete. Run 'make up' to start the stack."
 
@@ -53,7 +51,7 @@ logs: ## Tail logs from all services
 # ---------- Dev (no containers) ----------
 .PHONY: dev
 dev: ## Run web + api in watch mode locally (requires `make setup`)
-	turbo run dev
+	bash scripts/dev.sh
 
 .PHONY: verify-receipt
 verify-receipt: ## Independently verify a Receipt: make verify-receipt f=path/to/receipt.json
@@ -76,12 +74,8 @@ skill-sign: ## Sign a skill: make skill-sign dir=skills/foo key=signing_key.pem
 	cd apps/api && . .venv/bin/activate && python scripts/skill_tool.py sign $(dir) $(key)
 
 .PHONY: demo
-demo: ## Zero-key demo API on :8000 (no API key needed; scripted model)
-	cd apps/api && . .venv/bin/activate && \
-	DEMO_MODE=1 LLM_DEFAULT_PROVIDER=mock EXECUTION_MODE=inline CACHE_BACKEND=memory \
-	AGENT_SANDBOX=inline DATABASE_URL="sqlite+aiosqlite:///./loop_demo.db" \
-	AGENT_WORKSPACES_ROOT="$(CURDIR)/.demo-workspaces" \
-	uvicorn app.main:app --port 8000
+demo: ## Start the zero-key verified demo (web + API)
+	bash scripts/demo.sh
 
 # ---------- Database ----------
 .PHONY: migrate

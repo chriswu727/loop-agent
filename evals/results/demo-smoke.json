@@ -1,0 +1,40 @@
+{
+  "label": "deterministic-demo-v0.1.0",
+  "manifest": "evals/demo-smoke.json",
+  "results": [
+    {
+      "accepted": true,
+      "category": "golden-path",
+      "checks_passed": true,
+      "contract_covered": true,
+      "duration_seconds": 0.549,
+      "execution_verified": true,
+      "expected_files_present": true,
+      "false_acceptance": false,
+      "id": "demo-fibonacci-15",
+      "integrity_valid": true,
+      "model": {
+        "model": "deterministic-demo",
+        "provider": "mock"
+      },
+      "replay_passed": true,
+      "solved": true,
+      "status": "completed",
+      "steps_used": 2,
+      "task_id": "0220f311-5966-42e1-be80-bedfe495a6f4",
+      "tokens_used": 24
+    }
+  ],
+  "run_at": "2026-07-16T00:05:31.692675+00:00",
+  "schema": "loop.verified-completion-eval/v1",
+  "summary": {
+    "average_duration_seconds": 0.549,
+    "average_steps": 2.0,
+    "average_tokens": 24.0,
+    "cases": 1,
+    "false_acceptance_rate": 0.0,
+    "false_acceptances": 0,
+    "solve_rate": 1.0,
+    "solved": 1
+  }
+}

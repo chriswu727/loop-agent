@@ -23,7 +23,7 @@ an isolated temporary profile and verifies that its renderer sandbox starts.
 
 ```bash
 cp .env.example .env
-make up        # web + api + postgres + redis, with hot reload
+make up        # web + api + worker + gateways + postgres + redis
 ```
 
 - Web: http://localhost:3000
@@ -35,11 +35,11 @@ make up        # web + api + postgres + redis, with hot reload
 Requires Node 22.13+, pnpm 11+, Python 3.12+.
 
 ```bash
-make setup     # installs JS + Python deps, creates .env
+make setup     # validates runtimes and installs JS + Python dependencies
 # start Postgres + Redis however you like, e.g.:
 docker compose up -d postgres redis
 make migrate   # apply migrations
-make dev       # web + api in watch mode
+make dev       # API + web in watch mode with one temporary local token
 ```
 
 To let Loop edit existing repositories through a reviewable change set, set one

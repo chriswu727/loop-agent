@@ -8,6 +8,7 @@ contained entirely here; everything above sees one uniform shape.
 from __future__ import annotations
 
 import json
+import re
 
 import httpx
 
@@ -260,8 +261,21 @@ async def call_gemini_vision(
     return "".join(p.get("text", "") for p in parts) or "(no description)"
 
 
-_DEMO_FIB = "a, b = 0, 1\nfor _ in range(12):\n    print(a, end=' ')\n    a, b = b, a + b\n"
-_DEMO_SEQ = "0 1 1 2 3 5 8 13 21 34 55 89"
+def _demo_fibonacci_count(prompt: str) -> int:
+    match = re.search(r"first\s+(\d+)\s+fibonacci", prompt, flags=re.IGNORECASE)
+    if not match:
+        return 12
+    return min(max(int(match.group(1)), 2), 50)
+
+
+def _demo_fibonacci_program(count: int) -> tuple[str, str]:
+    values: list[int] = []
+    a, b = 0, 1
+    for _ in range(count):
+        values.append(a)
+        a, b = b, a + b
+    program = f"a, b = 0, 1\nfor _ in range({count}):\n    print(a, end=' ')\n    a, b = b, a + b\n"
+    return program, " ".join(str(value) for value in values)
 
 
 async def call_mock(
@@ -277,11 +291,13 @@ async def call_mock(
     write fib.py, run it, finish with checks the verifier re-runs — so a fresh
     clone shows the full verified loop (and a Receipt) with no API key. It reads
     the run history in the prompt to decide the next step, so it self-sequences."""
+    count = _demo_fibonacci_count(user)
+    program, sequence = _demo_fibonacci_program(count)
     if '"criteria" array of 3 to 6' in user:  # understand
         content = json.dumps(
             {
                 "criteria": [
-                    "Prints the first 12 Fibonacci numbers",
+                    f"Prints the first {count} Fibonacci numbers",
                     "The script runs without error",
                 ]
             }
@@ -294,14 +310,21 @@ async def call_mock(
                 "thought": "It runs and prints the sequence — done.",
                 "tool": "finish",
                 "args": {
-                    "summary": "Wrote fib.py; verified it prints the first 12 Fibonacci numbers.",
+                    "summary": (
+                        f"Wrote fib.py; verified it prints the first {count} Fibonacci numbers."
+                    ),
                     "checks": [
                         {
                             "kind": "command",
                             "command": "python3 fib.py",
-                            "expect_stdout": _DEMO_SEQ,
+                            "expect_stdout": sequence,
+                            "criterion_ids": ["criterion-001", "criterion-002"],
                         },
-                        {"kind": "file_exists", "path": "fib.py"},
+                        {
+                            "kind": "file_exists",
+                            "path": "fib.py",
+                            "criterion_ids": ["criterion-001"],
+                        },
                     ],
                 },
             }
@@ -319,7 +342,7 @@ async def call_mock(
             {
                 "thought": "Write the Fibonacci script.",
                 "tool": "write_file",
-                "args": {"path": "fib.py", "content": _DEMO_FIB},
+                "args": {"path": "fib.py", "content": program},
             }
         )
     return content, 12

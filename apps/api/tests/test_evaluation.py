@@ -49,3 +49,16 @@ def test_rejected_stuck_run_is_unsolved_but_not_a_false_acceptance() -> None:
     result = score_verified_completion(task, report, replay, expected_files=["result.py"])
     assert result["solved"] is False
     assert result["false_acceptance"] is False
+
+
+def test_aggregate_reports_cost_and_duration() -> None:
+    summary = aggregate_verified_completion(
+        [
+            {"solved": True, "steps_used": 2, "tokens_used": 100, "duration_seconds": 1.5},
+            {"solved": False, "steps_used": 4, "tokens_used": 300, "duration_seconds": 2.5},
+        ]
+    )
+
+    assert summary["average_steps"] == 3
+    assert summary["average_tokens"] == 200
+    assert summary["average_duration_seconds"] == 2

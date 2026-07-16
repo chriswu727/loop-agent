@@ -37,7 +37,7 @@ jobs:
       - name: Types (mypy)
         run: uv run --frozen --all-extras mypy app
       - name: Tests
-        run: uv run --frozen --all-extras pytest -q
+        run: uv run --frozen --all-extras pytest --cov=app --cov-branch --cov-report=term --cov-fail-under=70 -q
         # The suite is fully offline: in-memory SQLite + mocked tools. No services.
       - name: Dependency audit
         run: uv run --frozen --all-extras pip-audit
@@ -60,6 +60,36 @@ jobs:
       - run: pnpm test
       - run: pnpm build
       - run: pnpm audit --prod
+
+  demo-acceptance:
+    name: demo · fresh browser → verified Receipt replay
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: pip
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pip install uv==0.11.15
+      - run: pnpm install --frozen-lockfile
+      - run: uv sync --frozen --extra dev
+        working-directory: apps/api
+      - run: pnpm --filter web exec playwright install --with-deps chromium
+      - run: pnpm --filter web test:e2e
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: demo-playwright-report
+          path: |
+            apps/web/playwright-report/
+            apps/web/test-results/
+          if-no-files-found: ignore
 
   runtime-boundaries:
     name: runtime · locks + compose + kubernetes

@@ -9,7 +9,10 @@ build/
 *.tsbuildinfo
 .turbo/
 coverage/
-/evals/results/
+apps/web/playwright-report/
+apps/web/test-results/
+/evals/results/*
+!/evals/results/demo-smoke.json
 
 # ---------- Python ----------
 __pycache__/
@@ -45,6 +48,7 @@ tmp/
 workspaces/
 apps/api/workspaces/
 .demo-workspaces/
+.demo/
 
 # ---------- Agent cross-task memory store ----------
 agent_memory/
