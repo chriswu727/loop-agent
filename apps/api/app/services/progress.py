@@ -25,13 +25,16 @@ class HistoryEntry:
     observation: str
     status: ToolStatus
 
-    def render(self) -> str:
+    def render(self, *, observation_limit: int | None = None) -> str:
         arg_preview = ", ".join(f"{key}={str(value)[:60]!r}" for key, value in self.args.items())
-        observation_limit = 1_600 if self.tool.startswith(("sibyl_", "argus_", "browser_")) else 600
+        if observation_limit is None:
+            observation_limit = (
+                1_600 if self.tool.startswith(("sibyl_", "argus_", "browser_")) else 600
+            )
         obs = (
             self.observation
             if len(self.observation) <= observation_limit
-            else self.observation[:observation_limit] + " …[truncated]"
+            else self.observation[:observation_limit] + " …[observation preview truncated]"
         )
         return (
             f"Step {self.number} [{self.tool}] ({self.status.value}): {self.thought}\n"

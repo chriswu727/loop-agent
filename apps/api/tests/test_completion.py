@@ -5,6 +5,7 @@ import json
 from app.services.completion import (
     attach_baseline,
     completion_gates_pass,
+    declared_contract_coverage_complete,
     discover_project_checks,
     mark_supplementary_agent_checks,
     merge_completion_checks,
@@ -61,6 +62,35 @@ def test_distinct_assertions_on_the_same_file_are_not_deduplicated() -> None:
         criterion_count=2,
     )
     assert [check["text"] for check in checks] == ["Summary", "Risks"]
+
+
+def test_declared_contract_coverage_supersedes_redundant_agent_checks() -> None:
+    complete = merge_completion_checks(
+        [
+            {
+                "kind": "command",
+                "command": "python3 check.py",
+                "source": "contract",
+            }
+        ],
+        [],
+        criterion_count=2,
+    )
+    partial = merge_completion_checks(
+        [
+            {
+                "kind": "file_exists",
+                "path": "result.json",
+                "source": "contract",
+                "criterion_ids": ["criterion-001"],
+            }
+        ],
+        [],
+        criterion_count=2,
+    )
+
+    assert declared_contract_coverage_complete(complete, 2) is True
+    assert declared_contract_coverage_complete(partial, 2) is False
 
 
 def test_only_new_system_regressions_block_completion() -> None:

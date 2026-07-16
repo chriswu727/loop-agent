@@ -25,6 +25,7 @@ from typing import Any
 
 from app.tools import CapabilityEnvelope, ToolExecutor, ToolStatus, Workspace
 from app.tools.guards import make_egress_guard
+from app.tools.shell import empty_test_suite_reason
 
 
 def _leading_exit_code(out: str) -> int | None:
@@ -176,8 +177,17 @@ async def _run_one(
         code = _leading_exit_code(out)  # exact code, so "exit code 1" != "exit code 10"
         exit_ok = code == want_exit
         stdout_ok = (expect_stdout is None) or (str(expect_stdout) in out)
-        passed = bool(exit_ok and stdout_ok and tool_result.status is not ToolStatus.BLOCKED)
-        return make_result(command, passed, out[:300])
+        empty_suite = empty_test_suite_reason(command, out)
+        passed = bool(
+            exit_ok
+            and stdout_ok
+            and empty_suite is None
+            and tool_result.status is not ToolStatus.BLOCKED
+        )
+        evidence = out[:300]
+        if empty_suite is not None:
+            evidence = f"{out[:220]}\nrejected: {empty_suite}"[:300]
+        return make_result(command, passed, evidence)
 
     if kind == "file_exists":
         path = str(check.get("path", "")).strip()

@@ -58,6 +58,7 @@ from app.repositories.task import TaskRepository
 from app.services.completion import (
     attach_baseline,
     completion_gates_pass,
+    declared_contract_coverage_complete,
     discover_project_checks,
     mark_supplementary_agent_checks,
     merge_completion_checks,
@@ -1380,10 +1381,12 @@ class AgentReactService:
             consecutive_no_progress = guard.no_progress
 
             workspace_changed = workspace.state_marker() != workspace_before
+            auto_finish_candidate = (
+                tool in {"write_file", "edit_file"} and workspace_changed
+            ) or tool == "run_command"
             if (
-                tool in {"write_file", "edit_file"}
+                auto_finish_candidate
                 and status is ToolStatus.OK
-                and workspace_changed
                 and number < task.max_steps
                 and await self._contract_evidence_ready(task, workspace)
             ):
@@ -1760,10 +1763,19 @@ class AgentReactService:
             if isinstance(raw_checks, list)
             else []
         )
-        checks = merge_completion_checks(
+        required_checks = merge_completion_checks(
             task.required_checks or [],
-            proposed_checks,
+            [],
             criterion_count=len(task.rubric or []),
+        )
+        checks = (
+            required_checks
+            if declared_contract_coverage_complete(required_checks, len(task.rubric or []))
+            else merge_completion_checks(
+                required_checks,
+                proposed_checks,
+                criterion_count=len(task.rubric or []),
+            )
         )
         check_results = attach_baseline(
             await self._run_completion_checks(task, workspace, checks),
@@ -1996,14 +2008,25 @@ class AgentReactService:
         compacted into durable decisions/evidence so a long run stays bounded
         without forgetting failed branches."""
         if len(self._history) <= _HISTORY_WINDOW:
-            return "\n".join(entry.render() for entry in self._history) or "(nothing yet)"
+            rendered = [entry.render() for entry in self._history[:-1]]
+            if self._history:
+                rendered.append(self._render_latest_history(self._history[-1]))
+            return "\n".join(rendered) or "(nothing yet)"
         older = self._history[:-_HISTORY_WINDOW]
         recent = self._history[-_HISTORY_WINDOW:]
         return (
             compact_history(older)
             + "\n\n[RECENT STEPS]\n"
-            + "\n".join(entry.render() for entry in recent)
+            + "\n".join(
+                self._render_latest_history(entry) if index == len(recent) - 1 else entry.render()
+                for index, entry in enumerate(recent)
+            )
         )
+
+    @staticmethod
+    def _render_latest_history(entry: HistoryEntry) -> str:
+        limit = 2_400 if entry.tool in {"run_command", "read_file"} else None
+        return entry.render(observation_limit=limit)
 
     @staticmethod
     def _required_checks_view(checks: list[dict[str, Any]]) -> str:
