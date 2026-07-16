@@ -54,7 +54,7 @@ def register_exception_handlers(app: FastAPI) -> None:
     ) -> JSONResponse:
         problem = Problem(
             title="Validation Failed",
-            status=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="One or more fields are invalid.",
             code="validation_error",
             request_id=_request_id(request),
