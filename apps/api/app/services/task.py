@@ -114,6 +114,15 @@ class TaskService:
             }
             for index, command in enumerate(payload.verification_commands, start=1)
         ]
+        required_checks.extend(
+            {
+                "id": f"contract-artifact-{index:03d}",
+                "kind": "file_exists",
+                "path": path,
+                "source": "contract",
+            }
+            for index, path in enumerate(payload.required_artifacts, start=1)
+        )
         task = await self.tasks.create(
             goal=payload.goal.strip(),
             owner_id=self.subject,

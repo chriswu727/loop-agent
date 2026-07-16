@@ -49,6 +49,19 @@ async def test_checks_run_on_a_copy_not_the_original(tmp_path: Path) -> None:
     assert ("sentinel.txt", 0) not in ws.list_files()
 
 
+async def test_each_check_gets_an_independent_workspace_copy(tmp_path: Path) -> None:
+    ws = Workspace(tmp_path / "ws")
+    results = await run_checks(
+        [
+            {"kind": "command", "command": "touch generated.txt"},
+            {"kind": "file_exists", "path": "generated.txt"},
+        ],
+        ws,
+    )
+
+    assert [result.passed for result in results] == [True, False]
+
+
 def test_sweep_orphaned_verify_dirs(tmp_path: Path) -> None:
     from app.services.verification import sweep_orphaned_verify_dirs
 

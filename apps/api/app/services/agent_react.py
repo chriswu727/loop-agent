@@ -59,6 +59,7 @@ from app.services.completion import (
     attach_baseline,
     completion_gates_pass,
     discover_project_checks,
+    mark_supplementary_agent_checks,
     merge_completion_checks,
     regressions,
 )
@@ -1768,6 +1769,9 @@ class AgentReactService:
             await self._run_completion_checks(task, workspace, checks),
             task.baseline_checks or [],
         )
+        contract_substantiation_authoritative = mark_supplementary_agent_checks(
+            check_results, len(task.rubric or [])
+        )
         gates_passed = completion_gates_pass(check_results)
         coverage_complete = execution_coverage_complete(check_results, len(task.rubric or []))
 
@@ -1822,12 +1826,6 @@ class AgentReactService:
         else:
             score, missing, llm_met, substantiate = 0, ["verifier returned no verdict"], False, True
 
-        contract_results = [result for result in check_results if result.source == "contract"]
-        contract_substantiation_authoritative = bool(
-            contract_results
-            and completion_gates_pass(contract_results)
-            and execution_coverage_complete(contract_results, len(task.rubric or []))
-        )
         execution_ready = bool(
             check_results
             and coverage_complete

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import time
@@ -38,15 +39,27 @@ def _wait_for_task(client: httpx.Client, task_id: str, timeout: float) -> dict[s
     raise TimeoutError(f"task {task_id} did not finish within {timeout:g}s")
 
 
-def _evaluate_case(client: httpx.Client, case: dict[str, Any], timeout: float) -> dict[str, Any]:
-    started = time.monotonic()
-    payload = {
+def _build_task_payload(case: dict[str, Any]) -> dict[str, Any]:
+    expected_files = [str(path) for path in case.get("expected_files", [])]
+    success_criteria = list(case["success_criteria"])
+    if expected_files:
+        artifacts = ", ".join(f"`{path}`" for path in expected_files)
+        success_criteria.append(
+            f"The final workspace contains all required artifacts: {artifacts}."
+        )
+    return {
         "goal": case["goal"],
-        "success_criteria": case["success_criteria"],
+        "success_criteria": success_criteria,
         "verification_commands": case["verification_commands"],
+        "required_artifacts": expected_files,
         "verification_mode": "strict",
         "limits": case.get("limits", {"max_steps": 20, "token_budget": 30_000}),
     }
+
+
+def _evaluate_case(client: httpx.Client, case: dict[str, Any], timeout: float) -> dict[str, Any]:
+    started = time.monotonic()
+    payload = _build_task_payload(case)
     response = client.post("/api/v1/tasks", json=payload)
     response.raise_for_status()
     task = _wait_for_task(client, response.json()["id"], timeout)
@@ -74,6 +87,9 @@ def _evaluate_case(client: httpx.Client, case: dict[str, Any], timeout: float) -
         "status": task["status"],
         "duration_seconds": round(time.monotonic() - started, 3),
         "model": provenance.get("model"),
+        "isolation": receipt.get("isolation"),
+        "ledger_head": receipt.get("ledger_head"),
+        "receipt_hash": receipt.get("receipt_hash"),
         **scored,
     }
 
@@ -123,6 +139,7 @@ def main(argv: list[str] | None = None) -> int:
         "run_at": datetime.now(UTC).isoformat(),
         "label": args.label,
         "manifest": manifest,
+        "manifest_sha256": hashlib.sha256(args.cases.read_bytes()).hexdigest(),
         "summary": aggregate_verified_completion(results),
         "results": results,
     }

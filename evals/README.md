@@ -21,6 +21,11 @@ not a false acceptance.
   benchmark.
 - `verified-completion.json` contains 12 small, deterministic coding, data,
   document, CLI, state-machine, and reliability tasks for real-provider runs.
+  Its verification commands use `python3` and the standard library so the same
+  manifest runs on macOS, Linux, and the sandbox image without host-only aliases.
+  Expected artifacts are appended to the task's published acceptance criteria,
+  enforced through the API's `required_artifacts` contract, and checked again by
+  the scorer; there are no hidden file gates.
 
 ## Zero-cost smoke
 
@@ -54,9 +59,25 @@ cd apps/api
 ```
 
 Use `--case structured-output --case bounded-retry` for a cheaper subset before a
-full run. Reports include solve and false-acceptance rates, average steps, tokens,
-wall time, per-case model identity, and replay status.
+full run. Reports include solve and false-acceptance rates, total and average steps,
+tokens and wall time, the manifest hash, per-case model identity, Receipt hashes,
+isolation, and replay status.
 
 Real-provider reports are intentionally not fabricated or inferred from offline
 tests. Publish one only after running the command and paying the corresponding
 provider cost.
+
+## Recorded result
+
+[`results/deepseek-chat-v0.1.0.json`](./results/deepseek-chat-v0.1.0.json) is one
+clean run of all 12 cases with DeepSeek `deepseek-chat`: 12 solved, zero false
+acceptances, 39 steps, 64,447 provider-reported tokens, and 94.954 seconds. Every
+case passed execution verification, contract coverage, artifact presence, Receipt
+integrity, and replay.
+
+The run used a fresh SQLite database, workspace root, and memory root on macOS. Its
+Receipt provenance records `inline` isolation, so it measures the Loop and model
+behavior under the explicitly reduced-isolation development path. It does not
+measure Docker/Kubernetes isolation, cross-model variance, repeated-run confidence,
+or production workload quality. The report records the exact manifest SHA-256 so
+the evaluated contract can be matched to the repository.

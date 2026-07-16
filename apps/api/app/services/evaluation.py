@@ -65,21 +65,19 @@ def aggregate_verified_completion(results: list[dict[str, Any]]) -> dict[str, An
     total = len(results)
     solved = sum(bool(item.get("solved")) for item in results)
     false_acceptances = sum(bool(item.get("false_acceptance")) for item in results)
+    total_steps = sum(int(item.get("steps_used", 0)) for item in results)
+    total_tokens = sum(int(item.get("tokens_used", 0)) for item in results)
+    total_duration_seconds = sum(float(item.get("duration_seconds", 0)) for item in results)
     return {
         "cases": total,
         "solved": solved,
         "solve_rate": solved / total if total else 0.0,
         "false_acceptances": false_acceptances,
         "false_acceptance_rate": false_acceptances / total if total else 0.0,
-        "average_steps": (
-            sum(int(item.get("steps_used", 0)) for item in results) / total if total else 0.0
-        ),
-        "average_tokens": (
-            sum(int(item.get("tokens_used", 0)) for item in results) / total if total else 0.0
-        ),
-        "average_duration_seconds": (
-            sum(float(item.get("duration_seconds", 0)) for item in results) / total
-            if total
-            else 0.0
-        ),
+        "total_steps": total_steps,
+        "total_tokens": total_tokens,
+        "total_duration_seconds": total_duration_seconds,
+        "average_steps": total_steps / total if total else 0.0,
+        "average_tokens": total_tokens / total if total else 0.0,
+        "average_duration_seconds": total_duration_seconds / total if total else 0.0,
     }

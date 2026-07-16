@@ -40,6 +40,7 @@ async def test_user_acceptance_contract_round_trips(client: AsyncClient) -> None
             "goal": "make a rigorously checked result",
             "success_criteria": ["The output is present", "The complete test suite passes"],
             "verification_commands": ["pytest -q"],
+            "required_artifacts": ["dist/result.json"],
         },
     )
     assert response.status_code == 201
@@ -48,6 +49,21 @@ async def test_user_acceptance_contract_round_trips(client: AsyncClient) -> None
     assert task["criteria_source"] == "user"
     assert task["verification_mode"] == "strict"
     assert task["required_checks"][0]["source"] == "contract"
+    assert task["required_checks"][1] == {
+        "id": "contract-artifact-001",
+        "kind": "file_exists",
+        "path": "dist/result.json",
+        "source": "contract",
+    }
+
+
+async def test_required_artifact_paths_are_workspace_relative(client: AsyncClient) -> None:
+    response = await client.post(
+        "/api/v1/tasks",
+        json={"goal": "produce an artifact", "required_artifacts": ["../result.json"]},
+    )
+
+    assert response.status_code == 422
 
 
 async def test_goal_too_short_is_validation_error(client: AsyncClient) -> None:

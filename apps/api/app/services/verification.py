@@ -44,6 +44,7 @@ class CheckResult:
     definition: dict[str, Any] | None = None
     source: str = "agent"
     baseline_passed: bool | None = None
+    gating: bool = True
 
 
 VERIFY_DIR_PREFIX = "verify-"
@@ -85,8 +86,8 @@ async def run_checks(
     docker_workspace_mount: str | None = None,
     infer_criterion_ids: bool = True,
 ) -> list[CheckResult]:
-    """Re-run each check on a fresh copy of the workspace. Never raises — a bad
-    check definition becomes a failed result the verifier can act on."""
+    """Re-run every check on its own fresh copy of the workspace. Never raises —
+    a bad check definition becomes a failed result the verifier can act on."""
     if not checks:
         return []
 
@@ -94,34 +95,34 @@ async def run_checks(
     # than system temp, so re-verification runs in the same sandbox as the agent.
     tmp_root = source.root.parent / f"{VERIFY_DIR_PREFIX}{uuid.uuid4().hex[:12]}"
     try:
-        copy_dir = tmp_root / "ws"
-        await asyncio.to_thread(shutil.copytree, source.root, copy_dir)
-        workspace = Workspace(copy_dir)
         # Verify under the same authority as the task: default-deny egress unless
         # the task had it (so a check can't reach the network the task couldn't,
         # and a legit network check isn't blocked in a container).
         check_envelope = envelope or CapabilityEnvelope.from_tools(
             None, egress_allowed=egress_allowed
         )
-        executor = ToolExecutor(
-            workspace,
-            approval_mode=approval_mode,
-            command_timeout=command_timeout,
-            output_limit=output_limit,
-            envelope=check_envelope,
-            before_tool=make_egress_guard(check_envelope, workspace),
-            sandbox_image=sandbox_image,
-            sandbox_backend=sandbox_backend,
-            sandbox_memory=sandbox_memory,
-            sandbox_cpus=sandbox_cpus,
-            egress_proxy_url=egress_proxy_url,
-            egress_network=egress_network,
-            egress_token_factory=egress_token_factory,
-            docker_workspace_volume=docker_workspace_volume,
-            docker_workspace_mount=docker_workspace_mount,
-        )
         results: list[CheckResult] = []
         for index, check in enumerate(checks, start=1):
+            copy_dir = tmp_root / f"check-{index:03d}"
+            await asyncio.to_thread(shutil.copytree, source.root, copy_dir)
+            workspace = Workspace(copy_dir)
+            executor = ToolExecutor(
+                workspace,
+                approval_mode=approval_mode,
+                command_timeout=command_timeout,
+                output_limit=output_limit,
+                envelope=check_envelope,
+                before_tool=make_egress_guard(check_envelope, workspace),
+                sandbox_image=sandbox_image,
+                sandbox_backend=sandbox_backend,
+                sandbox_memory=sandbox_memory,
+                sandbox_cpus=sandbox_cpus,
+                egress_proxy_url=egress_proxy_url,
+                egress_network=egress_network,
+                egress_token_factory=egress_token_factory,
+                docker_workspace_volume=docker_workspace_volume,
+                docker_workspace_mount=docker_workspace_mount,
+            )
             mapped_check = dict(check)
             if infer_criterion_ids and not mapped_check.get("criterion_ids"):
                 if criterion_count == 1:
@@ -157,6 +158,7 @@ async def _run_one(
             criterion_ids=criterion_ids,
             definition=definition,
             source=str(check.get("source") or "agent")[:40],
+            gating=check.get("gating") is not False,
         )
 
     if kind == "command":
@@ -208,7 +210,8 @@ def checks_summary(results: list[CheckResult]) -> str:
         baseline = ""
         if r.baseline_passed is not None:
             baseline = f"; baseline={'PASS' if r.baseline_passed else 'FAIL'}"
-        lines.append(f"[{mark}] {r.source} {r.kind} {r.target}: {r.evidence}{baseline}")
+        gating = "" if r.gating else "; supplementary"
+        lines.append(f"[{mark}] {r.source} {r.kind} {r.target}: {r.evidence}{baseline}{gating}")
     return "\n".join(lines)
 
 

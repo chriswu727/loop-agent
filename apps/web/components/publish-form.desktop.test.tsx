@@ -65,11 +65,15 @@ describe('PublishForm desktop binding', () => {
     fireEvent.change(screen.getByLabelText('Acceptance contract'), {
       target: { value: 'The requested change is present\nThe complete test suite passes' },
     });
+    fireEvent.change(screen.getByLabelText('Required final artifacts'), {
+      target: { value: 'dist/report.json\ndist/audit.log' },
+    });
     fireEvent.click(screen.getByRole('button', { name: /Run the agent/ }));
 
     await waitFor(() => expect(publish).toHaveBeenCalledOnce());
     expect(publish.mock.calls[0]?.[0]).toMatchObject({
       project_path: '.',
+      required_artifacts: ['dist/report.json', 'dist/audit.log'],
       success_criteria: ['The requested change is present', 'The complete test suite passes'],
       verification_mode: 'strict',
     });

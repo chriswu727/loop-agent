@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from app.services.verification import CheckResult
+from app.services.verification import CheckResult, execution_coverage_complete
 
 
 def discover_project_checks(root: Path) -> list[dict[str, Any]]:
@@ -78,11 +78,31 @@ def attach_baseline(
 
 def completion_gates_pass(results: list[CheckResult]) -> bool:
     for result in results:
+        if not result.gating:
+            continue
         if result.passed:
             continue
         if result.source == "system" and result.baseline_passed is False:
             continue
         return False
+    return True
+
+
+def mark_supplementary_agent_checks(results: list[CheckResult], criterion_count: int) -> bool:
+    contract = [result for result in results if result.source == "contract"]
+    authoritative = bool(
+        contract
+        and completion_gates_pass(contract)
+        and execution_coverage_complete(contract, criterion_count)
+    )
+    if not authoritative:
+        return False
+    for result in results:
+        if result.source != "agent":
+            continue
+        result.gating = False
+        if result.definition is not None:
+            result.definition["gating"] = False
     return True
 
 
