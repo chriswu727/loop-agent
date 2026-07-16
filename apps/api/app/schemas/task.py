@@ -31,6 +31,7 @@ class TaskCreate(BaseModel):
     goal: str = Field(min_length=4, max_length=4_000)
     success_criteria: list[str] | None = None
     verification_commands: list[str] = Field(default_factory=list)
+    required_artifacts: list[str] = Field(default_factory=list)
     verification_mode: str | None = Field(default=None, pattern=r"^(strict|judgment)$")
     project_id: str = Field(default="default", min_length=1, max_length=100, pattern=r"^[\w.-]+$")
     # Optional path relative to LOOP_LOCAL_PROJECTS_ROOT. The source repository
@@ -85,6 +86,22 @@ class TaskCreate(BaseModel):
         if any(len(item) > 1_000 for item in commands):
             raise ValueError("each verification command must be at most 1000 characters")
         return commands
+
+    @field_validator("required_artifacts")
+    @classmethod
+    def validate_required_artifacts(cls, value: list[str]) -> list[str]:
+        artifacts = list(dict.fromkeys(item.strip() for item in value if item.strip()))
+        if len(artifacts) > 32:
+            raise ValueError("required_artifacts may contain at most 32 paths")
+        for artifact in artifacts:
+            parts = artifact.split("/")
+            if (
+                len(artifact) > 500
+                or "\\" in artifact
+                or any(part in {"", ".", ".."} for part in parts)
+            ):
+                raise ValueError("required_artifacts must be workspace-relative POSIX paths")
+        return artifacts
 
     @model_validator(mode="after")
     def validate_network_authority(self) -> TaskCreate:

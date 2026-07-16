@@ -6,6 +6,7 @@ from app.services.completion import (
     attach_baseline,
     completion_gates_pass,
     discover_project_checks,
+    mark_supplementary_agent_checks,
     merge_completion_checks,
     regressions,
 )
@@ -88,3 +89,27 @@ def test_failed_mapped_check_does_not_count_as_execution_coverage() -> None:
     )
     assert completion_gates_pass([failed]) is True
     assert execution_coverage_complete([failed], 1) is False
+
+
+def test_complete_contract_makes_agent_checks_supplementary() -> None:
+    contract = CheckResult(
+        "file_exists",
+        "result.json",
+        True,
+        "found",
+        criterion_ids=("criterion-001",),
+        definition={"kind": "file_exists", "path": "result.json"},
+        source="contract",
+    )
+    agent = CheckResult(
+        "file_contains",
+        "result.json",
+        False,
+        "text not found",
+        definition={"kind": "file_contains", "path": "result.json", "text": "wrong"},
+    )
+
+    assert mark_supplementary_agent_checks([contract, agent], 1) is True
+    assert agent.gating is False
+    assert agent.definition["gating"] is False
+    assert completion_gates_pass([contract, agent]) is True

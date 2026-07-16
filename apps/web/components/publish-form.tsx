@@ -49,6 +49,7 @@ export function PublishForm({
   const [goal, setGoal] = useState('');
   const [successCriteria, setSuccessCriteria] = useState('');
   const [verificationCommands, setVerificationCommands] = useState('');
+  const [requiredArtifacts, setRequiredArtifacts] = useState('');
   const [maxSteps, setMaxSteps] = useState(d.max_steps_default);
   const [tokenBudget, setTokenBudget] = useState(d.token_budget_default);
   const [files, setFiles] = useState<File[]>([]);
@@ -122,6 +123,10 @@ export function PublishForm({
         goal: goal.trim(),
         success_criteria: criteria.length > 0 ? criteria : null,
         verification_commands: verificationCommands
+          .split('\n')
+          .map((item) => item.trim())
+          .filter(Boolean),
+        required_artifacts: requiredArtifacts
           .split('\n')
           .map((item) => item.trim())
           .filter(Boolean),
@@ -225,9 +230,22 @@ export function PublishForm({
           placeholder="One command per line, e.g. pnpm test"
           className="mt-1 w-full resize-y rounded-lg border border-black/10 bg-transparent px-3 py-2 font-mono text-xs outline-none focus:border-blue-500/60 dark:border-white/15"
         />
+        <label htmlFor="required-artifacts" className="mt-3 block text-xs font-medium opacity-70">
+          Required final artifacts <span className="font-normal opacity-60">(optional)</span>
+        </label>
+        <textarea
+          id="required-artifacts"
+          aria-label="Required final artifacts"
+          value={requiredArtifacts}
+          onChange={(event) => setRequiredArtifacts(event.target.value)}
+          rows={2}
+          placeholder="One workspace-relative path per line, e.g. dist/report.json"
+          className="mt-1 w-full resize-y rounded-lg border border-black/10 bg-transparent px-3 py-2 font-mono text-xs outline-none focus:border-blue-500/60 dark:border-white/15"
+        />
         <p className="mt-2 text-[11px] opacity-55">
-          In strict mode, every criterion needs passing execution evidence. Loop also discovers
-          repository quality gates and compares them with the pre-change baseline.
+          In strict mode, every criterion needs passing execution evidence and required artifacts
+          must already exist in the final workspace. Loop also discovers repository quality gates
+          and compares them with the pre-change baseline.
         </p>
       </div>
 

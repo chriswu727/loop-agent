@@ -82,6 +82,7 @@ export interface PublishBody {
   goal: string;
   success_criteria?: string[] | null;
   verification_commands?: string[];
+  required_artifacts?: string[];
   verification_mode?: 'strict' | 'judgment';
   project_id?: string;
   project_path?: string | null;

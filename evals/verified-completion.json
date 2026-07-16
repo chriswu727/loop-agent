@@ -4,13 +4,13 @@
     {
       "id": "python-library",
       "category": "code-and-tests",
-      "goal": "Create arithmetic.py with add, subtract, multiply, and divide functions. Add a thorough pytest suite. Division by zero must raise ZeroDivisionError.",
+      "goal": "Create arithmetic.py with add, subtract, multiply, and divide functions. Add a thorough standard-library unittest suite. Division by zero must raise ZeroDivisionError.",
       "success_criteria": [
         "All four arithmetic operations return correct results for integers and floats.",
         "Division by zero raises ZeroDivisionError.",
         "The automated test suite passes."
       ],
-      "verification_commands": ["python -m pytest -q"],
+      "verification_commands": ["python3 -m unittest discover -v"],
       "expected_files": ["arithmetic.py"]
     },
     {
@@ -22,7 +22,7 @@
         "The decoded value exactly matches the requested object."
       ],
       "verification_commands": [
-        "python -c \"import json; assert json.load(open('report.json')) == {'total': 42, 'items': [7, 14, 21]}\""
+        "python3 -c \"import json; assert json.load(open('report.json')) == {'total': 42, 'items': [7, 14, 21]}\""
       ],
       "expected_files": ["report.json"]
     },
@@ -35,7 +35,7 @@
         "Every required section contains concrete non-empty content."
       ],
       "verification_commands": [
-        "python -c \"from pathlib import Path; s=Path('SECURITY.md').read_text(); assert all(('# ' + x in s or '## ' + x in s) for x in ['Threat model','Trust boundaries','Residual risks'])\""
+        "python3 -c \"from pathlib import Path; s=Path('SECURITY.md').read_text(); assert all(('# ' + x in s or '## ' + x in s) for x in ['Threat model','Trust boundaries','Residual risks'])\""
       ],
       "expected_files": ["SECURITY.md"]
     },
@@ -48,7 +48,7 @@
         "Running summarize.py creates valid JSON with north=17 and south=8."
       ],
       "verification_commands": [
-        "python summarize.py && python -c \"import json; assert json.load(open('totals.json')) == {'north': 17, 'south': 8}\""
+        "python3 summarize.py && python3 -c \"import json; assert json.load(open('totals.json')) == {'north': 17, 'south': 8}\""
       ],
       "expected_files": ["sales.csv", "summarize.py", "totals.json"]
     },
@@ -62,7 +62,7 @@
         "The module can be imported without executing the CLI."
       ],
       "verification_commands": [
-        "python -c \"import slugify; assert slugify.slugify('  Hello,   LOOP Agent! ') == 'hello-loop-agent'\" && test \"$(python slugify.py 'Hello, LOOP Agent!')\" = hello-loop-agent"
+        "python3 -c \"import slugify; assert slugify.slugify('  Hello,   LOOP Agent! ') == 'hello-loop-agent'\" && test \"$(python3 slugify.py 'Hello, LOOP Agent!')\" = hello-loop-agent"
       ],
       "expected_files": ["slugify.py"]
     },
@@ -76,7 +76,7 @@
         "The input dictionaries remain unchanged."
       ],
       "verification_commands": [
-        "python -c \"from config_merge import deep_merge; a={'db':{'host':'x','ports':[1]},'debug':False}; b={'db':{'ports':[2]},'debug':True}; r=deep_merge(a,b); assert r=={'db':{'host':'x','ports':[2]},'debug':True}; assert a['db']['ports']==[1] and b['db']['ports']==[2]\""
+        "python3 -c \"from config_merge import deep_merge; a={'db':{'host':'x','ports':[1]},'debug':False}; b={'db':{'ports':[2]},'debug':True}; r=deep_merge(a,b); assert r=={'db':{'host':'x','ports':[2]},'debug':True}; assert a['db']['ports']==[1] and b['db']['ports']==[2]\""
       ],
       "expected_files": ["config_merge.py"]
     },
@@ -90,7 +90,7 @@
         "Completed and failed are terminal."
       ],
       "verification_commands": [
-        "python -c \"import workflow; w=workflow.Workflow(); w.transition('running'); w.transition('completed'); assert w.state=='completed'; exec(\\\"try:\\n w.transition('running')\\nexcept ValueError:\\n pass\\nelse:\\n raise AssertionError\\\")\""
+        "python3 -c \"import workflow; w=workflow.Workflow(); w.transition('running'); w.transition('completed'); assert w.state=='completed'; exec(\\\"try:\\n w.transition('running')\\nexcept ValueError:\\n pass\\nelse:\\n raise AssertionError\\\")\""
       ],
       "expected_files": ["workflow.py"]
     },
@@ -104,7 +104,7 @@
         "Every requested name and score is present."
       ],
       "verification_commands": [
-        "python -c \"from html.parser import HTMLParser; from pathlib import Path; s=Path('report.html').read_text(); assert all(x in s for x in ['<html','<head','<title','<body','<table','<caption','Ada','98','Linus','91','Grace','95']); assert s.count('<tr')==4 and s.count('<th')==2\""
+        "python3 -c \"from html.parser import HTMLParser; from pathlib import Path; s=Path('report.html').read_text(); assert all(x in s for x in ['<html','<head','<title','<body','<table','<caption','Ada','98','Linus','91','Grace','95']); assert s.count('<tr')==4 and s.count('<th')==2\""
       ],
       "expected_files": ["report.html"]
     },
@@ -118,7 +118,7 @@
         "The generated summary reports two unique users."
       ],
       "verification_commands": [
-        "python summarize_events.py && python -c \"import json; assert json.load(open('summary.json')) == {'events': {'login': 2, 'purchase': 1}, 'unique_users': 2}\""
+        "python3 summarize_events.py && python3 -c \"import json; assert json.load(open('summary.json')) == {'events': {'login': 2, 'purchase': 1}, 'unique_users': 2}\""
       ],
       "expected_files": ["events.jsonl", "summarize_events.py", "summary.json"]
     },
@@ -132,7 +132,7 @@
         "attempts below one raises ValueError."
       ],
       "verification_commands": [
-        "python -c \"from retry import retry; calls=[]; f=lambda: calls.append(1) or (_ for _ in ()).throw(RuntimeError('x')); exec(\\\"try:\\n retry(f,3)\\nexcept RuntimeError as e:\\n assert str(e)=='x' and len(calls)==3\\nelse:\\n raise AssertionError\\\"); exec(\\\"try:\\n retry(lambda: 1,0)\\nexcept ValueError:\\n pass\\nelse:\\n raise AssertionError\\\")\""
+        "python3 -c \"from retry import retry; calls=[]; f=lambda: calls.append(1) or (_ for _ in ()).throw(RuntimeError('x')); exec(\\\"try:\\n retry(f,3)\\nexcept RuntimeError as e:\\n assert str(e)=='x' and len(calls)==3\\nelse:\\n raise AssertionError\\\"); exec(\\\"try:\\n retry(lambda: 1,0)\\nexcept ValueError:\\n pass\\nelse:\\n raise AssertionError\\\")\""
       ],
       "expected_files": ["retry.py"]
     },
@@ -146,20 +146,20 @@
         "The requested example produces the exact expected index."
       ],
       "verification_commands": [
-        "python -c \"from indexer import build_index; assert build_index({'b':'Hello, loop loop.','a':'HELLO world'}) == {'hello':['a','b'],'loop':['b'],'world':['a']}\""
+        "python3 -c \"from indexer import build_index; assert build_index({'b':'Hello, loop loop.','a':'HELLO world'}) == {'hello':['a','b'],'loop':['b'],'world':['a']}\""
       ],
       "expected_files": ["indexer.py"]
     },
     {
       "id": "tested-string-utils",
       "category": "code-and-tests",
-      "goal": "Create string_utils.py with is_palindrome and count_words plus a pytest suite covering normal, empty, punctuation, and mixed-case inputs.",
+      "goal": "Create string_utils.py with is_palindrome and count_words plus a standard-library unittest suite covering normal, empty, punctuation, and mixed-case inputs.",
       "success_criteria": [
         "is_palindrome ignores punctuation, whitespace, and case.",
         "count_words counts normalized word tokens.",
-        "The pytest suite covers edge cases and passes."
+        "The unittest suite covers edge cases and passes."
       ],
-      "verification_commands": ["python -m pytest -q"],
+      "verification_commands": ["python3 -m unittest discover -v"],
       "expected_files": ["string_utils.py"]
     }
   ]

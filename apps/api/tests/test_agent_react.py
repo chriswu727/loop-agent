@@ -19,6 +19,7 @@ from app.repositories.step import StepRepository
 from app.repositories.task import TaskRepository
 from app.services.agent_react import AgentReactService, _extract_json
 from app.services.progress import HistoryEntry, ProgressGuard, compact_history
+from app.services.task import TaskService
 from app.tools import ToolStatus, Workspace
 
 
@@ -762,6 +763,64 @@ async def test_strict_contract_runs_required_check_and_maps_every_criterion(
     steps = await StepRepository(session).list_for_task(task.id)
     assert [step.tool for step in steps] == ["write_file", "finish"]
     assert steps[-1].thought.startswith("[Loop]")
+
+
+async def test_complete_contract_overrides_failing_supplementary_agent_check(
+    session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(settings, "agent_sandbox", "off")
+    plans = [
+        {
+            "thought": "write a generator",
+            "tool": "write_file",
+            "args": {
+                "path": "generate.py",
+                "content": "from pathlib import Path\nPath('result.txt').write_text('correct')\n",
+            },
+        },
+        {
+            "thought": "generate the contracted output",
+            "tool": "run_command",
+            "args": {"command": "python3 generate.py"},
+        },
+        {
+            "thought": "finish with redundant evidence",
+            "tool": "finish",
+            "args": {
+                "summary": "ready",
+                "checks": [{"kind": "file_contains", "path": "result.txt", "text": "wrong"}],
+            },
+        },
+    ]
+    task = await _make_task(
+        session,
+        max_steps=8,
+        token_budget=1_000_000,
+        rubric=["result.txt exists"],
+        verification_mode="strict",
+        required_checks=[
+            {
+                "id": "contract-001",
+                "kind": "file_exists",
+                "path": "result.txt",
+                "source": "contract",
+            }
+        ],
+    )
+    await _service(
+        session,
+        ScriptedLLM(plans, verify={"score": 100, "met": True, "missing": []}),
+    ).run(task.id)
+
+    await session.refresh(task)
+    assert task.stop_reason == StopReason.GOAL_ACHIEVED.value
+    receipt = json.loads(Workspace(Path(task.workspace_path)).read("receipt.json"))
+    assert receipt["checks_passed"] is True
+    assert receipt["checks"][1]["gating"] is False
+    replay = await TaskService(TaskRepository(session), StepRepository(session)).replay_receipt(
+        task.id
+    )
+    assert replay["passed"] is True
 
 
 async def test_strict_contract_refuses_judgment_only_finish(session: AsyncSession) -> None:

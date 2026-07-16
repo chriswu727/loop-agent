@@ -1,6 +1,14 @@
 from __future__ import annotations
 
+import json
+import re
+from pathlib import Path
+
+from scripts.evaluate_verified_completion import _build_task_payload
+
 from app.services.evaluation import aggregate_verified_completion, score_verified_completion
+
+EVAL_MANIFEST = Path(__file__).parents[3] / "evals" / "verified-completion.json"
 
 
 def _fixture() -> tuple[dict[str, object], dict[str, object], dict[str, object]]:
@@ -59,6 +67,34 @@ def test_aggregate_reports_cost_and_duration() -> None:
         ]
     )
 
+    assert summary["total_steps"] == 6
+    assert summary["total_tokens"] == 400
+    assert summary["total_duration_seconds"] == 4
     assert summary["average_steps"] == 3
     assert summary["average_tokens"] == 200
     assert summary["average_duration_seconds"] == 2
+
+
+def test_expected_artifacts_are_part_of_the_published_task_contract() -> None:
+    payload = _build_task_payload(
+        {
+            "goal": "Produce a result.",
+            "success_criteria": ["The result is correct."],
+            "verification_commands": ["test -f result.json"],
+            "expected_files": ["result.json", "audit.log"],
+        }
+    )
+
+    assert payload["success_criteria"] == [
+        "The result is correct.",
+        "The final workspace contains all required artifacts: `result.json`, `audit.log`.",
+    ]
+    assert payload["required_artifacts"] == ["result.json", "audit.log"]
+
+
+def test_eval_commands_use_portable_standard_library_python() -> None:
+    cases = json.loads(EVAL_MANIFEST.read_text())["cases"]
+    commands = [command for case in cases for command in case["verification_commands"]]
+
+    assert all(not re.search(r"(^|[;&|]\s*)python(?:\s|$)", command) for command in commands)
+    assert all("pytest" not in command for command in commands)

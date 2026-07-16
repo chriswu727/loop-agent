@@ -23,10 +23,11 @@ the evidence, and returns a Receipt anyone can replay.**
 Most coding agents end when the model says it is done. Loop separates **work** from
 **acceptance**:
 
-1. You confirm concrete success criteria and may provide exact verification commands.
+1. You confirm concrete success criteria, required final artifacts, and optional exact
+   verification commands.
 2. Loop works inside a per-task workspace under a server-enforced capability and
    token/step envelope.
-3. An independent verifier re-runs the checks on a fresh copy of the workspace.
+3. An independent verifier re-runs each check on its own fresh workspace snapshot.
 4. Every criterion must map to passing execution evidence in strict mode.
 5. Loop emits a content-addressed Receipt with the contract, checks, model/runtime
    provenance, output hashes, and the head of a hash-chained step ledger.
@@ -77,9 +78,14 @@ fresh environment → open UI → confirm contract → run → execution verifie
 
 The committed [demo smoke report](./evals/results/demo-smoke.json) records `1/1`
 solved, zero false acceptances, two steps, 24 scripted tokens, and a passing replay.
-It proves product wiring, not general model quality. The separate
-[12-case real-provider suite](./evals/verified-completion.json) is published without
-invented results; running it requires explicit acknowledgement of provider spend.
+It proves product wiring, not general model quality.
+
+A recorded [DeepSeek `deepseek-chat` run](./evals/results/deepseek-chat-v0.1.0.json)
+of the [12-case real-provider suite](./evals/verified-completion.json) solved `12/12`
+with zero false acceptances: 39 steps, 64,447 provider-reported tokens, and 94.954
+seconds. Every case was execution-verified, fully covered, artifact-complete,
+integrity-valid, and replayable. This is one clean local run using visibly reduced
+`inline` isolation—not a cross-model quality claim or a production-sandbox result.
 
 ## The trust boundary
 
@@ -109,8 +115,9 @@ and residual risks.
 ## What is implemented
 
 - ReAct planning with independent executor/verifier provider selection and fallback.
-- Strict acceptance contracts, baseline regression checks, criterion-to-evidence
-  mappings, Receipt replay, and offline verification.
+- Strict acceptance contracts with required final artifacts, independent check
+  snapshots, baseline regression checks, criterion-to-evidence mappings, Receipt
+  replay, and offline verification.
 - Per-task workspaces, container or Kubernetes command isolation, secret redaction,
   destination-bound egress, and restart-safe approval gates.
 - Durable Redis Streams workers with visibility leases, stale-message reclaim,

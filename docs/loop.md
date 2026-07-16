@@ -16,8 +16,9 @@ repeat:
   enforce capability, budget, approval, egress, and workspace policy
   execute and persist one hash-chained step
   when finish is proposed:
-    copy the workspace
-    re-run contract + system + agent checks under the same authority
+    copy the final workspace independently for each check
+    re-run contract + system + agent checks under the same authority without
+      allowing one check's side effects to feed another
     require passing gates and complete criterion coverage in strict mode
     ask the independent verifier for a grounded verdict
     complete only when both layers accept
@@ -31,12 +32,17 @@ the answer and re-triggers a resume-aware run from persisted steps.
 
 ## Contract and verification
 
-User criteria become stable ids (`criterion-001`, ...). User verification commands are
-immutable `contract` checks. Repository lint/type/test/build scripts become `system`
-checks and run once before editing to establish a baseline.
+User criteria become stable ids (`criterion-001`, ...). User verification commands and
+required final artifacts become immutable `contract` checks. Repository
+lint/type/test/build scripts become `system` checks and run once before editing to
+establish a baseline.
 
-At finish, Loop merges contract, system, and agent-proposed checks, copies the
-workspace, and re-runs them through the normal tool policy and sandbox. A strict task
+At finish, Loop merges contract, system, and agent-proposed checks, then re-runs each
+through the normal tool policy and sandbox on an independent copy of the final
+workspace. This prevents a command check from creating state that makes a later check
+pass. When the user contract already passes and covers every criterion, agent-proposed
+checks remain recorded as supplementary evidence but cannot override that contract.
+Without a complete authoritative contract, agent checks remain gating. A strict task
 requires:
 
 - every non-baseline failure to pass;

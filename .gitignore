@@ -13,6 +13,7 @@ apps/web/playwright-report/
 apps/web/test-results/
 /evals/results/*
 !/evals/results/demo-smoke.json
+!/evals/results/deepseek-chat-v0.1.0.json
 
 # ---------- Python ----------
 __pycache__/
