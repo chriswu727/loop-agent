@@ -21,8 +21,6 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import json
-import re
 import shutil
 import uuid
 from collections.abc import Awaitable, Callable
@@ -64,7 +62,6 @@ from app.services.completion import (
     discover_project_checks,
     mark_supplementary_agent_checks,
     merge_completion_checks,
-    regressions,
 )
 from app.services.contract import (
     compile_project_contract,
@@ -73,8 +70,21 @@ from app.services.contract import (
     verify_contract_hash,
 )
 from app.services.ledger import genesis_hash, step_hash
+from app.services.loop import (
+    ActionDispatchPolicy,
+    ContextBudget,
+    DecisionParser,
+    DelegationPolicy,
+    DispatchKind,
+    HistoryWindow,
+    LoopEvent,
+    LoopState,
+    LoopTransitionPolicy,
+    VerificationPolicy,
+    extract_json,
+)
 from app.services.memory import MemoryStore, scoped_memory_root
-from app.services.progress import HistoryEntry, ProgressGuard, compact_history
+from app.services.progress import HistoryEntry, ProgressGuard
 from app.services.prompts import plan_prompts, understand_prompts, verify_prompts
 from app.services.receipt import RECEIPT_SCHEMA, build_receipt, refresh_receipt_authority
 from app.services.skills import SkillStore
@@ -99,9 +109,6 @@ from app.tools.vision import VisionTools
 
 log = get_logger("agent")
 
-# How many recent steps the planner sees in full; older steps become a bounded state summary.
-_HISTORY_WINDOW = 6
-
 _SIBYL_TOOLS = frozenset({"gather_bundle", "gather_sources", "quick_search", "read_url"})
 _ARGUS_TOOLS = frozenset(
     {
@@ -118,10 +125,6 @@ _ARGUS_TOOLS = frozenset(
     }
 )
 
-# Below this many tokens left, a spawn is refused rather than floored — flooring
-# would let the sub-tree overshoot the parent's (and the global) token ceiling.
-_MIN_SPAWN_BUDGET = 1_000
-
 # A reasoning model (deepseek-reasoner) spends the max_tokens budget on its chain of
 # thought BEFORE the answer, so a tight cap returns finish_reason=length with an EMPTY
 # content field — the decision/verdict is never emitted. That surfaced as intermittent
@@ -133,78 +136,7 @@ _PLAN_MAX_TOKENS = 2_500  # a plan decision can also carry write_file content
 _VERDICT_MAX_TOKENS = 1_500  # rubric + verify: reasoning then a short JSON verdict
 
 
-def _verification_reserve(token_budget: int) -> int:
-    return min(
-        settings.agent_verification_token_reserve,
-        max(250, token_budget // 5),
-        max(0, token_budget // 2),
-    )
-
-
-def _balanced_json_objects(text: str) -> list[str]:
-    """Every balanced-brace ``{...}`` substring, in order, ignoring braces inside
-    string literals. A greedy ``\\{.*\\}`` regex fails on the two things reasoning
-    models do constantly — dict-like braces in prose (``a map {k: v}``) before the
-    real JSON, and emitting more than one object — so scan properly instead."""
-    spans: list[str] = []
-    depth, start = 0, -1
-    in_str = esc = False
-    for i, ch in enumerate(text):
-        if in_str:
-            if esc:
-                esc = False
-            elif ch == "\\":
-                esc = True
-            elif ch == '"':
-                in_str = False
-            continue
-        if ch == '"':
-            in_str = True
-        elif ch == "{":
-            if depth == 0:
-                start = i
-            depth += 1
-        elif ch == "}" and depth > 0:
-            depth -= 1
-            if depth == 0 and start >= 0:
-                spans.append(text[start : i + 1])
-                start = -1
-    return spans
-
-
-def _extract_json(text: str) -> Any:
-    """Best-effort: pull the model's JSON decision out of a reply that may be wrapped
-    in prose or chain-of-thought. Prefers the LAST parseable object — a reasoning
-    model reasons first and states its decision at the end."""
-    cleaned = re.sub(r"```(?:json)?", "", text).strip()
-    try:
-        return json.loads(cleaned)
-    except json.JSONDecodeError:
-        pass
-    for span in reversed(_balanced_json_objects(cleaned)):
-        try:
-            obj = json.loads(span)
-        except json.JSONDecodeError:
-            continue
-        if isinstance(obj, dict):
-            return obj
-    return None
-
-
-def _as_int(value: object, default: int) -> int:
-    if isinstance(value, (int, float, str)):
-        try:
-            return int(value)
-        except (TypeError, ValueError):
-            return default
-    return default
-
-
-def _clamp_score(value: object) -> int:
-    try:
-        return max(0, min(100, int(float(value))))  # type: ignore[arg-type]
-    except (TypeError, ValueError):
-        return 0
+_extract_json = extract_json
 
 
 class AgentReactService:
@@ -245,6 +177,30 @@ class AgentReactService:
         self._active_authority_clients: list[tuple[str, Any]] = []
         self._active_run_id: str | None = None
         self._authority_revoked = False
+        self._decision_parser = DecisionParser()
+        self._history_window = HistoryWindow()
+        self._dispatch_policy = ActionDispatchPolicy()
+        self._verification_policy = VerificationPolicy()
+        self._transition_policy = LoopTransitionPolicy()
+        self._delegation_policy = DelegationPolicy(
+            minimum_budget=1_000,
+            default_steps=settings.agent_max_steps_default,
+            max_steps=settings.agent_max_steps_cap,
+        )
+
+    def _transition(
+        self,
+        task: TaskModel,
+        event: LoopEvent,
+        reason: str,
+        *,
+        stop_reason: StopReason | None = None,
+    ) -> None:
+        self._transition_policy.apply(task, event, reason, stop_reason=stop_reason)
+
+    def _fail_task(self, task: TaskModel, error: str, reason: str) -> None:
+        self._transition(task, LoopEvent.FAIL, reason)
+        task.error = error[:1000]
 
     async def run(self, task_id: uuid.UUID) -> None:
         if self._cancellation_probe is None:
@@ -397,11 +353,11 @@ class AgentReactService:
             operation = task.operation_journal
             tool = str(operation.get("tool", "unknown"))
             operation_id = str(operation.get("id", "unknown"))
-            task.status = TaskStatus.FAILED.value
-            task.stop_reason = StopReason.ERROR.value
-            task.error = (
+            self._fail_task(
+                task,
                 f"Interrupted with {tool!r} operation {operation_id} in flight. Its outcome "
-                "is unknown, so Loop refused to replay it and risk a duplicate mutation."
+                "is unknown, so Loop refused to replay it and risk a duplicate mutation.",
+                "operation_outcome_unknown",
             )
             task.workspace_path = str(workspace.root)
             await self._rebuild_history(task.id)
@@ -427,11 +383,11 @@ class AgentReactService:
             store = SkillStore(Path(settings.agent_skills_root), settings.trust_public_key_pem())
             skill = store.load(task.skill)
             if skill is None:
-                task.status = TaskStatus.FAILED.value
-                task.stop_reason = StopReason.ERROR.value
-                task.error = (
+                self._fail_task(
+                    task,
                     f"Skill '{task.skill}' could not be loaded (unsigned, tampered, or "
-                    "not found). Refusing to run."
+                    "not found). Refusing to run.",
+                    "skill_verification_failed",
                 )
                 task.workspace_path = str(workspace.root)  # so the refusal is auditable
                 self._ensure_unverified_receipt(task)
@@ -477,9 +433,7 @@ class AgentReactService:
                 else intersect_host_policies(requested_egress_hosts, skill_egress_hosts)
             )
         except AuthorityTokenError as exc:
-            task.status = TaskStatus.FAILED.value
-            task.stop_reason = StopReason.ERROR.value
-            task.error = f"Invalid destination authority: {exc}"
+            self._fail_task(task, f"Invalid destination authority: {exc}", "invalid_authority")
             task.workspace_path = str(workspace.root)
             self._ensure_unverified_receipt(task)
             await self._commit()
@@ -515,9 +469,11 @@ class AgentReactService:
         ):
             unavailable_host_mcp.append("Argus MCP")
         if unavailable_host_mcp:
-            task.status = TaskStatus.FAILED.value
-            task.stop_reason = StopReason.ERROR.value
-            task.error = f"Requested capability is unavailable: {', '.join(unavailable_host_mcp)}."
+            self._fail_task(
+                task,
+                f"Requested capability is unavailable: {', '.join(unavailable_host_mcp)}.",
+                "host_mcp_unavailable",
+            )
             task.workspace_path = str(workspace.root)
             self._ensure_unverified_receipt(task)
             await self._commit()
@@ -527,9 +483,11 @@ class AgentReactService:
             and resolved_capabilities & destination_capabilities
             and not envelope.egress_hosts
         ):
-            task.status = TaskStatus.FAILED.value
-            task.stop_reason = StopReason.ERROR.value
-            task.error = "Shell/browser network authority requires explicit egress_hosts."
+            self._fail_task(
+                task,
+                "Shell/browser network authority requires explicit egress_hosts.",
+                "egress_hosts_required",
+            )
             task.workspace_path = str(workspace.root)
             self._ensure_unverified_receipt(task)
             await self._commit()
@@ -557,11 +515,11 @@ class AgentReactService:
         if unavailable_gateways:
             gateway_names = " and ".join(unavailable_gateways)
             verb = "is" if len(unavailable_gateways) == 1 else "are"
-            task.status = TaskStatus.FAILED.value
-            task.stop_reason = StopReason.ERROR.value
-            task.error = (
+            self._fail_task(
+                task,
                 "Requested capabilities are disabled because no isolated "
-                f"{gateway_names} {verb} configured."
+                f"{gateway_names} {verb} configured.",
+                "isolated_gateway_unavailable",
             )
             task.workspace_path = str(workspace.root)
             self._ensure_unverified_receipt(task)
@@ -590,9 +548,11 @@ class AgentReactService:
                 ),
             }
         except AuthorityTokenError as exc:
-            task.status = TaskStatus.FAILED.value
-            task.stop_reason = StopReason.ERROR.value
-            task.error = f"Invalid provider destination authority: {exc}"
+            self._fail_task(
+                task,
+                f"Invalid provider destination authority: {exc}",
+                "invalid_provider_authority",
+            )
             task.workspace_path = str(workspace.root)
             self._ensure_unverified_receipt(task)
             await self._commit()
@@ -622,10 +582,11 @@ class AgentReactService:
             if resolved_capabilities & capabilities and gateway_url and not hosts
         ]
         if missing_provider_hosts:
-            task.status = TaskStatus.FAILED.value
-            task.stop_reason = StopReason.ERROR.value
-            task.error = "Provider gateways require configured egress hosts: " + ", ".join(
-                missing_provider_hosts
+            self._fail_task(
+                task,
+                "Provider gateways require configured egress hosts: "
+                + ", ".join(missing_provider_hosts),
+                "provider_egress_hosts_required",
             )
             task.workspace_path = str(workspace.root)
             self._ensure_unverified_receipt(task)
@@ -635,9 +596,7 @@ class AgentReactService:
         try:
             sandbox_image, sandbox_label, sandbox_backend = self._resolve_sandbox()
         except RuntimeError as exc:
-            task.status = TaskStatus.FAILED.value
-            task.stop_reason = StopReason.ERROR.value
-            task.error = str(exc)
+            self._fail_task(task, str(exc), "sandbox_unavailable")
             task.sandbox = "unavailable"
             task.workspace_path = str(workspace.root)
             self._ensure_unverified_receipt(task)
@@ -651,11 +610,11 @@ class AgentReactService:
             or not settings.agent_egress_proxy_url
             or not settings.agent_egress_proxy_audit_url
         ):
-            task.status = TaskStatus.FAILED.value
-            task.stop_reason = StopReason.ERROR.value
-            task.error = (
+            self._fail_task(
+                task,
                 "Shell network authority requires an isolated sandbox and "
-                "destination-enforcing egress proxy."
+                "destination-enforcing egress proxy.",
+                "shell_network_isolation_required",
             )
             task.workspace_path = str(workspace.root)
             self._ensure_unverified_receipt(task)
@@ -678,9 +637,11 @@ class AgentReactService:
         needs_authority_token = uses_gateway or Capability.NET_SHELL in resolved_capabilities
         authority_key = settings.authority_signing_key_pem()
         if needs_authority_token and not authority_key:
-            task.status = TaskStatus.FAILED.value
-            task.stop_reason = StopReason.ERROR.value
-            task.error = "Isolated network/provider execution requires an authority signing key."
+            self._fail_task(
+                task,
+                "Isolated network/provider execution requires an authority signing key.",
+                "authority_signing_key_missing",
+            )
             task.workspace_path = str(workspace.root)
             self._ensure_unverified_receipt(task)
             await self._commit()
@@ -864,9 +825,11 @@ class AgentReactService:
             try:
                 await provider_gateway.start()
             except Exception as exc:
-                task.status = TaskStatus.FAILED.value
-                task.stop_reason = StopReason.ERROR.value
-                task.error = f"Isolated gateway is unavailable: {str(exc)[:300]}"
+                self._fail_task(
+                    task,
+                    f"Isolated gateway is unavailable: {str(exc)[:300]}",
+                    "isolated_gateway_start_failed",
+                )
                 task.workspace_path = str(workspace.root)
                 self._ensure_unverified_receipt(task)
                 await self._commit()
@@ -894,9 +857,11 @@ class AgentReactService:
                 missing.append(Capability.NET_BROWSER.value)
             if missing:
                 await provider_gateway.stop()
-                task.status = TaskStatus.FAILED.value
-                task.stop_reason = StopReason.ERROR.value
-                task.error = f"Isolated gateways lack requested capabilities: {', '.join(missing)}"
+                self._fail_task(
+                    task,
+                    f"Isolated gateways lack requested capabilities: {', '.join(missing)}",
+                    "isolated_gateway_capability_missing",
+                )
                 task.workspace_path = str(workspace.root)
                 self._ensure_unverified_receipt(task)
                 await self._commit()
@@ -911,9 +876,11 @@ class AgentReactService:
             elif envelope.permits_capability(Capability.NET_BROWSER):
                 if provider_gateway is not None:
                     await provider_gateway.stop()
-                task.status = TaskStatus.FAILED.value
-                task.stop_reason = StopReason.ERROR.value
-                task.error = "The requested browser capability is unavailable."
+                self._fail_task(
+                    task,
+                    "The requested browser capability is unavailable.",
+                    "browser_unavailable",
+                )
                 task.workspace_path = str(workspace.root)
                 self._ensure_unverified_receipt(task)
                 await self._commit()
@@ -936,9 +903,11 @@ class AgentReactService:
                 await browser.stop()
             if provider_gateway is not None:
                 await provider_gateway.stop()
-            task.status = TaskStatus.FAILED.value
-            task.stop_reason = StopReason.ERROR.value
-            task.error = "The requested email capability is not configured."
+            self._fail_task(
+                task,
+                "The requested email capability is not configured.",
+                "email_unavailable",
+            )
             task.workspace_path = str(workspace.root)
             self._ensure_unverified_receipt(task)
             await self._commit()
@@ -961,9 +930,11 @@ class AgentReactService:
                 await browser.stop()
             if provider_gateway is not None:
                 await provider_gateway.stop()
-            task.status = TaskStatus.FAILED.value
-            task.stop_reason = StopReason.ERROR.value
-            task.error = "The requested calendar capability is not configured."
+            self._fail_task(
+                task,
+                "The requested calendar capability is not configured.",
+                "calendar_unavailable",
+            )
             task.workspace_path = str(workspace.root)
             self._ensure_unverified_receipt(task)
             await self._commit()
@@ -994,9 +965,11 @@ class AgentReactService:
                 await browser.stop()
             if provider_gateway is not None:
                 await provider_gateway.stop()
-            task.status = TaskStatus.FAILED.value
-            task.stop_reason = StopReason.ERROR.value
-            task.error = "The requested vision capability is not configured."
+            self._fail_task(
+                task,
+                "The requested vision capability is not configured.",
+                "vision_unavailable",
+            )
             task.workspace_path = str(workspace.root)
             self._ensure_unverified_receipt(task)
             await self._commit()
@@ -1010,9 +983,11 @@ class AgentReactService:
                     await browser.stop()
                 if provider_gateway is not None:
                     await provider_gateway.stop()
-                task.status = TaskStatus.FAILED.value
-                task.stop_reason = StopReason.ERROR.value
-                task.error = f"Requested MCP provider is unavailable: {str(exc)[:300]}"
+                self._fail_task(
+                    task,
+                    f"Requested MCP provider is unavailable: {str(exc)[:300]}",
+                    "host_mcp_start_failed",
+                )
                 task.workspace_path = str(workspace.root)
                 self._ensure_unverified_receipt(task)
                 await self._commit()
@@ -1032,7 +1007,6 @@ class AgentReactService:
                 "production must keep host providers disabled.\n"
             )
 
-        task.status = TaskStatus.RUNNING.value
         task.workspace_path = str(workspace.root)
         # Rebuild the working memory from whatever has already happened so a
         # resumed run sees its own past actions (and the user's answer).
@@ -1070,9 +1044,7 @@ class AgentReactService:
             raise
         except Exception as exc:  # any unhandled error fails the task cleanly
             log.exception("agent.failed", task_id=str(task.id))
-            task.status = TaskStatus.FAILED.value
-            task.stop_reason = StopReason.ERROR.value
-            task.error = str(exc)[:1000]
+            self._fail_task(task, str(exc), "unhandled_runtime_error")
             self._ensure_unverified_receipt(task)  # a crash is auditable too
             await self._commit()
         finally:
@@ -1109,9 +1081,11 @@ class AgentReactService:
                 or not draft.critique.accepted
                 or not verify_contract_hash(draft, task.contract_hash)
             ):
-                task.status = TaskStatus.FAILED.value
-                task.stop_reason = StopReason.ERROR.value
-                task.error = "The locked acceptance contract failed its content hash check."
+                self._fail_task(
+                    task,
+                    "The locked acceptance contract failed its content hash check.",
+                    "contract_hash_invalid",
+                )
                 self._ensure_unverified_receipt(task)
                 await self._commit()
                 return False
@@ -1135,10 +1109,13 @@ class AgentReactService:
         clarifications = [
             str(item) for item in previous.get("clarifications", []) if str(item).strip()
         ]
-        compilation_budget = max(
-            0,
-            task.token_budget - task.tokens_used - _verification_reserve(task.token_budget),
-        )
+        compilation_budget = ContextBudget.allocate(
+            task.token_budget,
+            task.tokens_used,
+            settings.agent_verification_token_reserve,
+        ).planning
+        self._transition(task, LoopEvent.CONTRACT_REQUIRED, "contract_compilation_started")
+        await self._commit()
         try:
             compiled = await compile_project_contract(
                 goal=task.goal,
@@ -1162,7 +1139,7 @@ class AgentReactService:
             task.contract_hash = None
             task.contract_status = "awaiting_input"
             task.pending_question = draft.critique.question
-            task.status = TaskStatus.AWAITING_INPUT.value
+            self._transition(task, LoopEvent.INPUT_REQUIRED, "contract_compilation_failed")
             await self._commit()
             return False
 
@@ -1172,7 +1149,7 @@ class AgentReactService:
         if compiled.contract_hash is None:
             task.contract_status = "awaiting_input"
             task.pending_question = compiled.draft.critique.question
-            task.status = TaskStatus.AWAITING_INPUT.value
+            self._transition(task, LoopEvent.INPUT_REQUIRED, "contract_clarification_required")
             await self._commit()
             return False
 
@@ -1180,6 +1157,7 @@ class AgentReactService:
         task.criteria_source = "compiled"
         task.pending_question = None
         self._apply_locked_contract(task, compiled.draft)
+        self._transition(task, LoopEvent.CONTRACT_READY, "contract_locked")
         await self._commit()
         return True
 
@@ -1315,9 +1293,16 @@ class AgentReactService:
     async def _run_loop(
         self, task: TaskModel, workspace: Workspace, executor: ToolExecutor, *, start: int
     ) -> None:
-        verification_reserve = _verification_reserve(task.token_budget)
+        context_budget = ContextBudget.allocate(
+            task.token_budget,
+            task.tokens_used,
+            settings.agent_verification_token_reserve,
+        )
+        verification_reserve = context_budget.verification_reserve
         if not task.rubric:  # only on a fresh run, not a resume
-            understand_budget = max(0, task.token_budget - task.tokens_used - verification_reserve)
+            self._transition(task, LoopEvent.RUBRIC_REQUIRED, "rubric_generation_started")
+            await self._commit()
+            understand_budget = context_budget.planning
             try:
                 rubric, understand_result = await self._understand(task.goal, understand_budget)
                 tokens = understand_result.tokens
@@ -1330,13 +1315,23 @@ class AgentReactService:
                 rubric, tokens = ["Fully and correctly satisfies the task"], exc.tokens_spent
             task.rubric = rubric
             task.tokens_used += tokens
+            self._transition(task, LoopEvent.RUBRIC_READY, "rubric_ready")
             await self._commit()
+        else:
+            if LoopState(task.loop_state) is LoopState.PREPARING:
+                self._transition(task, LoopEvent.PREPARATION_COMPLETED, "runtime_prepared")
+                await self._commit()
 
         # Resuming from an approved action: run it now as this step, then continue.
         if task.pending_action is not None:
             action = dict(task.pending_action)
             task.pending_action = None
             approved_tool = str(action["tool"])
+            self._transition(
+                task,
+                LoopEvent.ACTION_SELECTED,
+                f"approved_action_selected:{approved_tool}",
+            )
             args = await self._begin_operation(
                 task,
                 number=start,
@@ -1346,6 +1341,7 @@ class AgentReactService:
                 tokens=0,
             )
             result = await executor.execute(approved_tool, args)
+            self._transition(task, LoopEvent.ACTION_RECORDED, f"action_recorded:{approved_tool}")
             await self._record_step(
                 task,
                 start,
@@ -1389,8 +1385,12 @@ class AgentReactService:
                 await self._finish(task, StopReason.BUDGET_EXHAUSTED)
                 return
 
-            tokens_left = max(0, task.token_budget - task.tokens_used)
-            planning_budget = max(0, tokens_left - verification_reserve)
+            context_budget = ContextBudget.allocate(
+                task.token_budget,
+                task.tokens_used,
+                settings.agent_verification_token_reserve,
+            )
+            planning_budget = context_budget.planning
             if planning_budget <= 0:
                 await self._finish(task, StopReason.BUDGET_EXHAUSTED)
                 return
@@ -1435,7 +1435,16 @@ class AgentReactService:
                 raise
             self._record_model_use(task, decision)
             step_tokens = decision.tokens
-            thought, tool, args = self._parse_decision(_extract_json(decision.content))
+            parsed_decision = self._decision_parser.parse(
+                decision.content,
+                valid_tools=VALID_TOOLS,
+                dynamic_tools=self._mcp_tools,
+            )
+            thought, tool, args = (
+                parsed_decision.thought,
+                parsed_decision.tool,
+                parsed_decision.args,
+            )
 
             if tool == "finish":
                 finish_marker = workspace.state_marker()
@@ -1454,11 +1463,18 @@ class AgentReactService:
                     )
                     await self._finish(task, StopReason.STUCK)
                     return
+                self._transition(task, LoopEvent.VERIFICATION_REQUESTED, "finish_requested")
                 accepted, score, summary, _ = await self._handle_finish(
                     task, workspace, args, thought, number, step_tokens
                 )
                 if accepted:
                     return
+                self._transition(
+                    task,
+                    LoopEvent.VERIFICATION_REJECTED,
+                    f"verification_rejected:score={score}",
+                )
+                await self._commit()
                 last_rejected_finish_marker = finish_marker
                 finish_retries += 1
                 if finish_retries > settings.agent_max_finish_retries:
@@ -1468,11 +1484,17 @@ class AgentReactService:
                     return
                 continue
 
+            self._transition(
+                task,
+                LoopEvent.ACTION_SELECTED,
+                f"action_selected:{tool or 'invalid'}",
+            )
             if tool == "ask_user":
                 await self._pause_for_user(task, args, thought, number, step_tokens)
                 return  # the run resumes when the user answers
 
             if tool in {"remember", "spawn"} and not executor.envelope.permits(tool):
+                self._transition(task, LoopEvent.ACTION_RECORDED, f"action_blocked:{tool}")
                 await self._record_step(
                     task,
                     number,
@@ -1507,6 +1529,7 @@ class AgentReactService:
                 observation = self.memory.remember(note, str(topic) if topic else None)
                 if note:  # make it visible to the rest of this run too
                     self._memory_snapshot = f"{self._memory_snapshot}\n- {note}".strip()
+                self._transition(task, LoopEvent.ACTION_RECORDED, "action_recorded:remember")
                 await self._record_step(
                     task, number, thought, "remember", args, observation, ToolStatus.OK, step_tokens
                 )
@@ -1523,6 +1546,7 @@ class AgentReactService:
             if tool == "spawn":
                 guard_block = guard.preflight(tool, args)
                 if guard_block:
+                    self._transition(task, LoopEvent.ACTION_RECORDED, "action_blocked:spawn")
                     await self._record_step(
                         task,
                         number,
@@ -1601,38 +1625,36 @@ class AgentReactService:
 
             guard_block = guard.preflight(tool, args) if tool is not None else None
             workspace_before = workspace.state_marker()
-
-            if tool is None:
-                observation, status = (
-                    "Could not parse a valid action. Respond with one JSON object "
-                    f"using a valid tool: {sorted(VALID_TOOLS)}.",
-                    ToolStatus.ERROR,
-                )
-            elif guard_block:
-                observation, status = guard_block, ToolStatus.BLOCKED
-            elif tool in ("write_file", "edit_file") and same_path_writes >= 3:
-                observation, status = (
-                    f"Blocked: you have written '{last_write_path}' {same_path_writes} times "
-                    "without running it. Writing it again is not allowed — run it with "
-                    "run_command, call finish with checks, or take a different action.",
-                    ToolStatus.BLOCKED,
-                )
-            elif tool == "run_command" and approval_required:
+            approval_reason: str | None = None
+            if tool == "run_command" and approval_required:
                 verdict, reason = evaluate_command(str(args.get("command", "")))
                 if verdict is Verdict.NEEDS_APPROVAL:
-                    await self._pause_for_approval(task, args, thought, number, step_tokens, reason)
-                    return  # resumes when the user approves or denies
-                args = await self._begin_operation(
+                    approval_reason = reason
+            route = self._dispatch_policy.route(
+                tool,
+                valid_tools=VALID_TOOLS,
+                guard_block=guard_block,
+                repeated_write_count=same_path_writes,
+                approval_reason=approval_reason,
+                last_write_path=last_write_path,
+            )
+            if route.kind is DispatchKind.INVALID:
+                observation, status = route.observation or "Invalid action.", ToolStatus.ERROR
+            elif route.kind is DispatchKind.BLOCKED:
+                observation, status = route.observation or "Action blocked.", ToolStatus.BLOCKED
+            elif route.kind is DispatchKind.APPROVAL:
+                assert tool is not None and route.approval_reason is not None
+                await self._pause_for_approval(
                     task,
-                    number=number,
-                    thought=thought,
-                    tool=tool,
-                    args=args,
-                    tokens=step_tokens,
+                    args,
+                    thought,
+                    number,
+                    step_tokens,
+                    route.approval_reason,
                 )
-                tool_result = await executor.execute(tool, args)
-                observation, status = tool_result.observation, tool_result.status
+                return
             else:
+                assert tool is not None
                 args = await self._begin_operation(
                     task,
                     number=number,
@@ -1649,6 +1671,11 @@ class AgentReactService:
                         "do not rewrite it again.]"
                     )
 
+            self._transition(
+                task,
+                LoopEvent.ACTION_RECORDED,
+                f"action_recorded:{tool or 'invalid'}:{status.value}",
+            )
             await self._record_step(
                 task, number, thought, tool or "invalid", args, observation, status, step_tokens
             )
@@ -1681,6 +1708,11 @@ class AgentReactService:
                         "Loop submitted the workspace after every user-required check passed."
                     )
                 }
+                self._transition(
+                    task,
+                    LoopEvent.VERIFICATION_REQUESTED,
+                    "contract_evidence_ready",
+                )
                 accepted, score, summary, _ = await self._handle_finish(
                     task,
                     workspace,
@@ -1691,6 +1723,12 @@ class AgentReactService:
                 )
                 if accepted:
                     return
+                self._transition(
+                    task,
+                    LoopEvent.VERIFICATION_REJECTED,
+                    f"verification_rejected:score={score}",
+                )
+                await self._commit()
                 skipped_step_number = auto_number
                 last_rejected_finish_marker = workspace.state_marker()
                 finish_retries += 1
@@ -1735,7 +1773,7 @@ class AgentReactService:
             tokens,
         )
         task.pending_question = question
-        task.status = TaskStatus.AWAITING_INPUT.value
+        self._transition(task, LoopEvent.INPUT_REQUIRED, "agent_requested_input")
         await self._commit()
         log.info("agent.awaiting_input", task_id=str(task.id), number=number)
 
@@ -1784,7 +1822,7 @@ class AgentReactService:
         )
         task.pending_action = {"tool": tool, "args": args}
         task.pending_question = f"Approve this action? Answer yes or no.\n  {summary}"
-        task.status = TaskStatus.AWAITING_INPUT.value
+        self._transition(task, LoopEvent.APPROVAL_REQUIRED, f"approval_required:{tool}")
         await self._commit()
         log.info("agent.awaiting_approval", task_id=str(task.id), number=number, tool=tool)
 
@@ -1795,6 +1833,7 @@ class AgentReactService:
         sandboxed loop under a sub-budget, and its result + output files come back
         as this step's observation. The child's tokens count against this task."""
         if task.depth >= settings.agent_max_spawn_depth:
+            self._transition(task, LoopEvent.ACTION_RECORDED, "action_blocked:spawn_depth")
             await self._record_step(
                 task,
                 number,
@@ -1809,6 +1848,7 @@ class AgentReactService:
             return
         goal = str(args.get("goal", "")).strip()
         if len(goal) < 4:
+            self._transition(task, LoopEvent.ACTION_RECORDED, "action_failed:spawn_goal")
             await self._record_step(
                 task,
                 number,
@@ -1822,9 +1862,11 @@ class AgentReactService:
             return
 
         remaining = max(0, task.token_budget - task.tokens_used - plan_tokens)
-        if remaining < _MIN_SPAWN_BUDGET:
+        allocation = self._delegation_policy.allocate(args, remaining)
+        if allocation is None:
             # Flooring the child at 1000 here would let the sub-tree overshoot the
             # parent's (and the global) token ceiling. Refuse instead.
+            self._transition(task, LoopEvent.ACTION_RECORDED, "action_blocked:spawn_budget")
             await self._record_step(
                 task,
                 number,
@@ -1837,15 +1879,8 @@ class AgentReactService:
                 plan_tokens,
             )
             return
-        # Never exceed what the parent actually has left, so the ceiling holds.
-        child_budget = max(1, min(_as_int(args.get("token_budget"), remaining), remaining))
-        child_steps = max(
-            1,
-            min(
-                _as_int(args.get("max_steps"), settings.agent_max_steps_default),
-                settings.agent_max_steps_cap,
-            ),
-        )
+        child_budget = allocation.token_budget
+        child_steps = allocation.max_steps
         allowed = args.get("allowed_tools")
         raw_capabilities = args.get("capabilities")
         if isinstance(raw_capabilities, list):
@@ -1878,6 +1913,7 @@ class AgentReactService:
             if any(host == allowed or host.endswith(f".{allowed}") for allowed in parent_hosts)
         )
         if child_capabilities & {Capability.NET_SHELL, Capability.NET_BROWSER} and not child_hosts:
+            self._transition(task, LoopEvent.ACTION_RECORDED, "action_blocked:spawn_egress")
             await self._record_step(
                 task,
                 number,
@@ -1944,6 +1980,7 @@ class AgentReactService:
             f"stop={child.stop_reason}, verified_by={child.verified_by}, "
             f"score={child.verification_score}.\nSummary: {child.summary or '(none)'}.{files_line}"
         )
+        self._transition(task, LoopEvent.ACTION_RECORDED, "action_recorded:spawn")
         await self._record_step(
             task,
             number,
@@ -2073,9 +2110,6 @@ class AgentReactService:
         contract_substantiation_authoritative = mark_supplementary_agent_checks(
             check_results, len(task.rubric or [])
         )
-        gates_passed = completion_gates_pass(check_results)
-        coverage_complete = execution_coverage_complete(check_results, len(task.rubric or []))
-
         system, user = verify_prompts(
             task.goal,
             task.rubric,
@@ -2085,7 +2119,11 @@ class AgentReactService:
             workspace.contents_digest(),
             today=date.today().isoformat(),
         )
-        verify_budget = max(0, task.token_budget - task.tokens_used - plan_tokens)
+        verify_budget = ContextBudget.allocate(
+            task.token_budget,
+            task.tokens_used,
+            settings.agent_verification_token_reserve,
+        ).verification_after(plan_tokens)
         try:
             result = await self.verifier_llm.complete(
                 system,
@@ -2111,40 +2149,19 @@ class AgentReactService:
                 return True, 0, summary, exc.tokens_spent
             raise
         self._record_model_use(task, result, verifier=True)
-        parsed = _extract_json(result.content)
-        if isinstance(parsed, dict):
-            score = _clamp_score(parsed.get("score"))
-            raw_missing = parsed.get("missing") or []
-            missing = [str(item) for item in raw_missing] if isinstance(raw_missing, list) else []
-            llm_met = bool(parsed.get("met"))
-            # Strict parse: omit -> True (prior behavior), but the stronger label
-            # must be EARNED, so a string "false"/"no" or a null doesn't slip through
-            # bool() as truthy. Only an explicit true earns it.
-            _sub = parsed.get("checks_substantiate", True)
-            substantiate = _sub is True or (
-                isinstance(_sub, str) and _sub.strip().lower() in {"true", "yes", "1"}
-            )
-        else:
-            score, missing, llm_met, substantiate = 0, ["verifier returned no verdict"], False, True
-
-        execution_ready = bool(
-            check_results
-            and coverage_complete
-            and gates_passed
-            and (substantiate or contract_substantiation_authoritative)
+        decision = self._verification_policy.evaluate(
+            _extract_json(result.content),
+            check_results,
+            criterion_count=len(task.rubric or []),
+            acceptance_score=settings.agent_acceptance_score,
+            strict=task.verification_mode == "strict",
+            contract_substantiation_authoritative=contract_substantiation_authoritative,
         )
-        verified_by = "execution" if execution_ready else "judgment"
-        met = llm_met and score >= settings.agent_acceptance_score and gates_passed
-        if task.verification_mode == "strict" and not execution_ready:
-            met = False
-            if not coverage_complete:
-                missing.append("Every success criterion needs a mapped execution check.")
-            if not gates_passed:
-                missing.append("A required check failed or a project quality gate regressed.")
-            if check_results and not substantiate and not contract_substantiation_authoritative:
-                missing.append("The proposed checks do not substantiate the task goal.")
-        for regression in regressions(check_results):
-            missing.append(f"Regression in {regression.target}.")
+        score = decision.score
+        missing = list(decision.missing)
+        met = decision.accepted
+        verified_by = decision.verified_by
+        coverage_complete = decision.coverage_complete
 
         verdict = (
             f"verifier: score {score}, met={met}, verified_by={verified_by}, "
@@ -2225,18 +2242,6 @@ class AgentReactService:
         used = list(task.executor_models or [])
         if identity not in used:
             task.executor_models = [*used, identity]
-
-    def _parse_decision(self, decision: Any) -> tuple[str, str | None, dict[str, Any]]:
-        if not isinstance(decision, dict):
-            return "", None, {}
-        thought = str(decision.get("thought", "")).strip()
-        tool = decision.get("tool")
-        args = decision.get("args")
-        if not isinstance(args, dict):
-            args = {}
-        if tool not in VALID_TOOLS and tool not in self._mcp_tools:
-            return thought, None, {}
-        return thought, str(tool), args
 
     async def _record_step(
         self,
@@ -2320,29 +2325,7 @@ class AgentReactService:
         self._last_hash = steps[-1].hash if steps else genesis_hash(task_id)
 
     def _history_view(self) -> str:
-        """The history the planner sees: recent steps in full, older ones
-        compacted into durable decisions/evidence so a long run stays bounded
-        without forgetting failed branches."""
-        if len(self._history) <= _HISTORY_WINDOW:
-            rendered = [entry.render() for entry in self._history[:-1]]
-            if self._history:
-                rendered.append(self._render_latest_history(self._history[-1]))
-            return "\n".join(rendered) or "(nothing yet)"
-        older = self._history[:-_HISTORY_WINDOW]
-        recent = self._history[-_HISTORY_WINDOW:]
-        return (
-            compact_history(older)
-            + "\n\n[RECENT STEPS]\n"
-            + "\n".join(
-                self._render_latest_history(entry) if index == len(recent) - 1 else entry.render()
-                for index, entry in enumerate(recent)
-            )
-        )
-
-    @staticmethod
-    def _render_latest_history(entry: HistoryEntry) -> str:
-        limit = 2_400 if entry.tool in {"run_command", "read_file"} else None
-        return entry.render(observation_limit=limit)
+        return self._history_window.render(self._history)
 
     @staticmethod
     def _required_checks_view(checks: list[dict[str, Any]]) -> str:
@@ -2381,12 +2364,15 @@ class AgentReactService:
         return "Stopped without a verified result."
 
     async def _finish(self, task: TaskModel, reason: StopReason) -> None:
-        task.status = (
-            TaskStatus.COMPLETED.value
-            if reason is StopReason.GOAL_ACHIEVED
-            else TaskStatus.STOPPED.value
-        )
-        task.stop_reason = reason.value
+        if reason is StopReason.GOAL_ACHIEVED:
+            self._transition(task, LoopEvent.VERIFICATION_ACCEPTED, "verification_accepted")
+        else:
+            self._transition(
+                task,
+                LoopEvent.LIMIT_REACHED,
+                f"bounded_stop:{reason.value}",
+                stop_reason=reason,
+            )
         # The accepted path sets its own summary; for the other stops the agent
         # never wrote one, so give the user a reason-specific explanation.
         if not task.summary and reason is not StopReason.GOAL_ACHIEVED:

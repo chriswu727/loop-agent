@@ -39,6 +39,7 @@ from app.services.changeset import (
     save_patch,
 )
 from app.services.ledger import genesis_hash, step_hash, verify_chain
+from app.services.loop import LoopEvent, LoopTransitionPolicy
 from app.tools.base import ToolError
 from app.tools.workspace import Workspace
 
@@ -76,6 +77,7 @@ class TaskService:
         self.tasks = tasks
         self.steps = steps
         self.subject = subject
+        self._transition_policy = LoopTransitionPolicy()
 
     def _resolve_limits(self, limits: LimitsIn) -> tuple[int, int]:
         """Apply defaults for omitted fields, then clamp to the hard caps so no
@@ -721,10 +723,14 @@ class TaskService:
         )
         if task.status not in active:
             raise ConflictError(f"Task is {task.status} and cannot be cancelled")
-        task.status = TaskStatus.CANCELLED.value
+        self._transition_policy.apply(task, LoopEvent.CANCEL, "cancelled_by_user")
         for descendant in await self.tasks.list_descendants(task.id):
             if descendant.status in active:
-                descendant.status = TaskStatus.CANCELLED.value
+                self._transition_policy.apply(
+                    descendant,
+                    LoopEvent.CANCEL,
+                    "cancelled_with_parent",
+                )
         await self.tasks.session.flush()
         await self.tasks.session.refresh(task)
         return task
@@ -775,7 +781,7 @@ class TaskService:
             )
 
         task.pending_question = None
-        task.status = TaskStatus.PENDING.value  # pending == ready to (re)run
+        self._transition_policy.apply(task, LoopEvent.USER_RESPONDED, "user_response_recorded")
         # flush+refresh pulls the server-side onupdate ``updated_at`` before it is
         # serialized (otherwise it lazy-loads in a sync context and 500s). Commit
         # before the caller schedules the resume so the agent's own session sees

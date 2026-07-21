@@ -6,6 +6,44 @@ loop. The product contract is in the README; the deployment boundary is in
 
 ## State machine
 
+The authoritative lifecycle is not inferred from the coarse task status or recent Step.
+Each task persists:
+
+- `loop_state`: `queued`, `preparing`, `understanding`, `planning`, `acting`,
+  `verifying`, `awaiting_input`, `awaiting_approval`, or a terminal state;
+- `transition_reason`: the stable machine-readable reason for the latest transition;
+- `transition_sequence`: a monotonic counter that distinguishes successive phase changes.
+
+`LoopTransitionPolicy` is the only in-process policy allowed to project these phases to
+the public task status and stop reason. Invalid transitions raise instead of silently
+repairing state. Atomic SQL claim/recovery paths reproduce the same state, reason, and
+sequence semantics so duplicate workers cannot race through an ORM read-modify-write.
+The API and task page expose the persisted values directly.
+
+```mermaid
+flowchart LR
+    Q["queued"] --> P["preparing"]
+    P --> U["understanding"]
+    P --> L["planning"]
+    U --> L
+    L --> A["acting"]
+    A --> L
+    L --> V["verifying"]
+    V -->|"rejected"| L
+    V -->|"accepted"| C["completed"]
+    P --> I["awaiting_input"]
+    A --> I
+    A --> H["awaiting_approval"]
+    I -->|"response"| Q
+    H -->|"response"| Q
+```
+
+All five working phases have explicit `max_steps`, `budget_exhausted`, and `stuck`
+paths to `stopped`. All eight active/resumable phases have `cancelled` and `failed`
+paths. Interrupted working phases can be recovered to `preparing`; waiting phases are
+never automatically claimed. Transition tests exhaust these terminal, resumable, and
+recovery paths rather than testing only the happy path.
+
 The same `AgentReactService.run` is driven by inline and Redis worker execution:
 
 ```text

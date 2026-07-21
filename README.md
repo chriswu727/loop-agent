@@ -76,6 +76,9 @@ an instruction to an accepted result. It separates **work** from **acceptance**:
 - **Interruption is a first-class state.** In-flight cancellation tears down the active
   execution boundary, while a durable operation journal refuses crash recovery that
   could repeat a mutation with an unknown outcome.
+- **The loop is an explicit state machine.** Phase, transition reason, and sequence are
+  persisted rather than inferred from logs; recovery, the API, and the task UI therefore
+  share the same semantics.
 
 If the evidence fails, the task does not become `completed` merely because the model
 called `finish`. Limit, stuck, cancelled, and error outcomes still receive an
@@ -158,6 +161,9 @@ and residual risks.
   first mutation, and an explicit pause when risk, confidence, or authority is not
   safe to infer.
 - ReAct planning with independent executor/verifier provider selection and fallback.
+- A persisted fail-closed loop state machine with independently tested policies for
+  transitions, decision parsing, context budgeting, progress control, dispatch,
+  verification, and delegation.
 - Strict acceptance contracts with required final artifacts, independent check
   snapshots, baseline regression checks, criterion-to-evidence mappings, Receipt
   replay, and offline verification.

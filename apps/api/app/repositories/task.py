@@ -4,11 +4,12 @@ from __future__ import annotations
 
 import uuid
 
-from sqlalchemy import func, select, update
+from sqlalchemy import case, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql.elements import ColumnElement
 
 from app.db.models.task import TaskModel
+from app.domain.loop import LoopState, LoopTransitionPolicy
 from app.repositories.base import BaseRepository
 
 
@@ -44,17 +45,37 @@ class TaskRepository(BaseRepository[TaskModel]):
         return result
 
     async def claim_pending(self, task_id: uuid.UUID) -> TaskModel | None:
+        claimable_states = tuple(state.value for state in LoopTransitionPolicy.claimable_states())
         claimed = await self.session.scalar(
             update(TaskModel)
-            .where(TaskModel.id == task_id, TaskModel.status == "pending")
-            .values(status="running")
+            .where(
+                TaskModel.id == task_id,
+                TaskModel.status == "pending",
+                TaskModel.loop_state.in_(claimable_states),
+            )
+            .values(
+                status="running",
+                loop_state=LoopState.PREPARING.value,
+                transition_reason=case(
+                    (
+                        TaskModel.loop_state == LoopState.QUEUED.value,
+                        "worker_claimed_task",
+                    ),
+                    else_="worker_recovered_interrupted_task",
+                ),
+                transition_sequence=TaskModel.transition_sequence + 1,
+                stop_reason=None,
+            )
             .returning(TaskModel.id)
         )
         if claimed is None:
             await self.session.rollback()
             return None
         await self.session.commit()
-        return await self.get(task_id)
+        task = await self.get(task_id)
+        if task is not None:
+            await self.session.refresh(task)
+        return task
 
     async def count_roots(self, *, owner_id: str | None = None) -> int:
         conditions: list[ColumnElement[bool]] = [TaskModel.parent_id.is_(None)]

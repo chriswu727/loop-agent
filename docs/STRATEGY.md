@@ -188,6 +188,15 @@ duplicate mutation, and no cross-workspace leakage under at least 20 concurrent 
 
 ### Gate 3 — Explicit loop state machine
 
+**Implementation status (2026-07-21): gate complete.** The production coordinator
+now composes independently tested transition, decision, context, progress, dispatch,
+verification, and delegation policies. The authoritative phase, latest reason, and
+monotonic transition sequence are persisted on every task and exposed through the API
+and task UI. Fresh success, both human pause/resume paths, all bounded stop reasons
+from every working phase, cancel/failure from every active phase, and interrupted-run
+recovery are transition-tested. The deterministic HTTP benchmark remains at 1/1 solved,
+zero false acceptances, two steps, 24 tokens, valid Receipt integrity, and passing replay.
+
 - Add characterization tests before moving behavior.
 - Split the current orchestration service into explicit transition policy, decision
   parsing, context budgeting, progress control, action dispatch, verification, and

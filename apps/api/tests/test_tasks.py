@@ -19,6 +19,11 @@ async def test_publish_creates_pending_task_with_clamped_limits(client: AsyncCli
     assert resp.status_code == 201
     task = resp.json()
     assert task["status"] == "pending"
+    assert task["loop"] == {
+        "state": "queued",
+        "transition_reason": None,
+        "sequence": 0,
+    }
     assert task["goal"] == "build a small script"
     assert task["limits"]["max_steps"] == 40  # clamped to the cap
     assert task["limits"]["token_budget"] == 200_000  # clamped to the cap
@@ -124,6 +129,11 @@ async def test_cancel_pending_task(client: AsyncClient) -> None:
     cancelled = await client.post(f"/api/v1/tasks/{task_id}/cancel")
     assert cancelled.status_code == 200
     assert cancelled.json()["status"] == "cancelled"
+    assert cancelled.json()["loop"] == {
+        "state": "cancelled",
+        "transition_reason": "cancelled_by_user",
+        "sequence": 1,
+    }
 
     again = await client.post(f"/api/v1/tasks/{task_id}/cancel")
     assert again.status_code == 409

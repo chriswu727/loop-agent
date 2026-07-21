@@ -82,6 +82,43 @@ async def test_duplicate_delivery_claims_one_task_exactly_once(tmp_path) -> None
         await engine.dispose()
 
 
+async def test_claim_recovers_working_state_but_never_human_wait_state(session) -> None:
+    from app.domain.loop import LoopState
+    from app.repositories.task import TaskRepository
+
+    repo = TaskRepository(session)
+    common = {
+        "status": "pending",
+        "rubric": [],
+        "max_steps": 4,
+        "token_budget": 10_000,
+        "summary": None,
+        "verification_score": 0,
+        "steps_used": 0,
+        "tokens_used": 0,
+        "workspace_path": None,
+    }
+    interrupted = await repo.create(
+        goal="recover me",
+        loop_state=LoopState.ACTING.value,
+        transition_sequence=3,
+        **common,
+    )
+    waiting = await repo.create(
+        goal="wait for me",
+        loop_state=LoopState.AWAITING_INPUT.value,
+        **common,
+    )
+    await session.commit()
+
+    claimed = await repo.claim_pending(interrupted.id)
+    assert claimed is not None
+    assert claimed.loop_state == LoopState.PREPARING.value
+    assert claimed.transition_reason == "worker_recovered_interrupted_task"
+    assert claimed.transition_sequence == 4
+    assert await repo.claim_pending(waiting.id) is None
+
+
 async def test_worker_run_task_handler_dispatches(monkeypatch: pytest.MonkeyPatch) -> None:
     """The worker's run_task handler runs the loop for the payload's task id."""
     import app.workers.worker as worker

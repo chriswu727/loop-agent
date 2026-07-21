@@ -9,6 +9,7 @@ from httpx import AsyncClient
 
 from app.db.models.task import TaskModel
 from app.domain.task import StopReason, TaskStatus
+from app.services.loop import LoopState
 
 
 async def test_chat_endpoint_replies(client: AsyncClient, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -56,6 +57,7 @@ async def test_run_chat_turn_routes_new_vs_resume(engine: object) -> None:
         async with sm() as s:
             t = await TaskRepository(s).get(task_id)  # type: ignore[arg-type]
             t.status = "completed"
+            t.loop_state = LoopState.COMPLETED.value
             t.stop_reason = "goal_achieved"
             t.summary = "done"
             await s.commit()
@@ -71,6 +73,7 @@ async def test_run_chat_turn_routes_new_vs_resume(engine: object) -> None:
         svc = TaskService(TaskRepository(s), StepRepository(s))
         awaiting = await svc.publish(TaskCreate(goal="do the thing here", chat_id="conv-2"))
         awaiting.status = "awaiting_input"
+        awaiting.loop_state = LoopState.AWAITING_INPUT.value
         awaiting.pending_question = "what colour?"
         await s.commit()
         awaiting_id = awaiting.id
