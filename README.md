@@ -50,6 +50,12 @@ The loop is autonomous, not unbounded. Capabilities, filesystem scope, egress po
 approvals, step limits, token budgets, no-progress detection, and a verification reserve
 are enforced by the runtime rather than left to the model's discretion.
 
+Loop is designed as the controlled execution layer inside a broader loop-engineering
+process: it owns the fast agentic coding loop, gives the developer-feedback loop
+versioned evidence, and supports external feedback without pretending to replace human
+product judgment. The [product strategy](./docs/STRATEGY.md) records that model and the
+ordered v0.2 release gates.
+
 ## What makes Loop different
 
 Most agent frameworks help a model call tools. Loop supervises the complete journey from
@@ -216,6 +222,7 @@ docs/              ADRs, operational guides, product/system rationale
 ```
 
 - [Architecture](./ARCHITECTURE.md)
+- [Product strategy and v0.2 gates](./docs/STRATEGY.md)
 - [Verified Completion evaluation](./evals/README.md)
 - [Local development](./docs/guides/local-development.md)
 - [Deployment](./docs/guides/deployment.md)

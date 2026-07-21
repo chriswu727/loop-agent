@@ -1,5 +1,11 @@
 # Documentation
 
+- **[Product strategy](./STRATEGY.md)** — the three-loop product model and ordered
+  v0.2 release gates.
+- **[Loop engine](./loop.md)** — execution invariants, verification, budgets, and
+  recovery behavior.
+- **[Comparison](./comparison-openclaw.md)** — Loop's bounded-handoff positioning
+  relative to chat-first personal agents.
 - **[../ARCHITECTURE.md](../ARCHITECTURE.md)** — the system design in depth.
 - **Guides** — practical how-tos:
   - [Local development](./guides/local-development.md)
