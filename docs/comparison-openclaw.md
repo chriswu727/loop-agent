@@ -39,7 +39,8 @@ injection is impossible.
 ## Where Loop remains behind
 
 - It has little adoption history and no large third-party extension ecosystem.
-- Public real-provider benchmark results have not yet been paid for and published.
+- It has one published 12-case DeepSeek run, but no repeated-run, cross-model, or
+  production-isolation benchmark yet.
 - Desktop installers are CI-built but not publicly signed, notarized, or auto-updated.
 - The safest local path depends on Docker; the zero-key demo uses visibly reduced
   inline isolation.

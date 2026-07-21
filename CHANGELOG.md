@@ -2,6 +2,20 @@
 
 All notable changes are documented here. The project follows Semantic Versioning.
 
+## [Unreleased]
+
+### Security
+
+- Pinned patched `brace-expansion` releases across transitive dependency trees.
+
+### Documentation
+
+- Defined Loop as the controlled execution layer for loop engineering, mapped the
+  agentic coding, developer-feedback, and external-feedback loops, and added ordered,
+  testable v0.2 iteration gates.
+- Corrected the comparison document to acknowledge the published DeepSeek evaluation
+  while retaining its repeated-run and production-isolation limitations.
+
 ## [0.1.0] - 2026-07-15
 
 First portfolio/research release of Loop's contract-first autonomous runtime.
