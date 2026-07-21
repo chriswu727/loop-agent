@@ -140,6 +140,23 @@ export interface Task {
   owner_id: string;
   project_id: string;
   status: TaskStatus;
+  loop: {
+    state:
+      | 'queued'
+      | 'preparing'
+      | 'understanding'
+      | 'planning'
+      | 'acting'
+      | 'verifying'
+      | 'awaiting_input'
+      | 'awaiting_approval'
+      | 'completed'
+      | 'stopped'
+      | 'cancelled'
+      | 'failed';
+    transition_reason: string | null;
+    sequence: number;
+  };
   rubric: string[];
   criteria_source: 'user' | 'generated' | 'compiled';
   verification_mode: 'strict' | 'judgment';

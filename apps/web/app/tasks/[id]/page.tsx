@@ -12,6 +12,7 @@ import { ContractPanel } from '@/components/contract-panel';
 import { ReceiptPanel } from '@/components/receipt-panel';
 import { StepItem } from '@/components/step-item';
 import { StatusPill, stopReasonLabel } from '@/components/status-pill';
+import { LoopState } from '@/components/loop-state';
 import { WorkspaceFiles } from '@/components/workspace-files';
 import { ApiError, tasksApi } from '@/lib/api-client';
 import { apiBaseUrl } from '@/lib/env';
@@ -157,6 +158,7 @@ export default function TaskDetail() {
         <h1 className="text-lg font-semibold leading-snug">{task.goal}</h1>
         <StatusPill status={task.status} />
       </div>
+      <LoopState loop={task.loop} />
 
       {reason && task.status === 'stopped' && (
         <p className="mt-2 text-xs opacity-60">Stopped: {reason}.</p>

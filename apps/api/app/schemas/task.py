@@ -14,6 +14,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 from app.core.config import settings
 from app.domain.authority_token import AuthorityTokenError, normalize_hosts
 from app.domain.capability import CAPABILITY_SCHEMA_VERSION, Capability
+from app.domain.loop import LoopState
 from app.domain.task import StopReason, TaskStatus
 from app.schemas.contract import ContractDraft
 from app.schemas.file import FileEntry
@@ -184,6 +185,12 @@ class AuthorityRead(BaseModel):
     enforcement: AuthorityEnforcementRead
 
 
+class LoopStateRead(BaseModel):
+    state: LoopState
+    transition_reason: str | None
+    sequence: int
+
+
 class TaskRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -192,6 +199,7 @@ class TaskRead(BaseModel):
     owner_id: str
     project_id: str
     status: str
+    loop: LoopStateRead
     rubric: list[str]
     criteria_source: str
     verification_mode: str
@@ -244,6 +252,11 @@ class TaskRead(BaseModel):
             owner_id=m.owner_id,  # type: ignore[attr-defined]
             project_id=m.project_id,  # type: ignore[attr-defined]
             status=status,
+            loop=LoopStateRead(
+                state=m.loop_state,  # type: ignore[attr-defined]
+                transition_reason=m.transition_reason,  # type: ignore[attr-defined]
+                sequence=m.transition_sequence,  # type: ignore[attr-defined]
+            ),
             rubric=m.rubric or [],  # type: ignore[attr-defined]
             criteria_source=m.criteria_source,  # type: ignore[attr-defined]
             verification_mode=m.verification_mode,  # type: ignore[attr-defined]

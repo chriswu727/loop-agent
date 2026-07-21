@@ -7,6 +7,7 @@ boundary.
 - [Design principles](#design-principles)
 - [System topology](#system-topology)
 - [Backend: layered architecture](#backend-layered-architecture)
+- [Loop orchestration](#loop-orchestration)
 - [Request lifecycle](#request-lifecycle)
 - [Data & persistence](#data--persistence)
 - [Caching & background work](#caching--background-work)
@@ -99,6 +100,57 @@ different layer.
 The separation keeps HTTP, persistence, and orchestration concerns independently
 testable. New resources should follow an existing task, trigger, or memory vertical
 slice rather than bypassing the service/repository boundary.
+
+---
+
+## Loop orchestration
+
+`AgentReactService` is the runtime coordinator, not the source of every orchestration
+decision. It wires model clients, sandboxes, gateways, repositories, and Receipts around
+small policy components with explicit inputs and no side effects:
+
+| Component              | Owns                                                            |
+| ---------------------- | --------------------------------------------------------------- |
+| `domain/loop.py`       | allowed lifecycle transitions and status/stop-reason projection |
+| `loop/decisions.py`    | extraction and validation of one model action                   |
+| `loop/context.py`      | planner/verifier token allocation and bounded history           |
+| `progress.py`          | semantic no-progress and repeated-branch detection              |
+| `loop/dispatch.py`     | invalid, blocked, approval, or executable routing               |
+| `loop/verification.py` | evidence gates, coverage, verifier verdict, and acceptance      |
+| `loop/delegation.py`   | child step/token allocation within the parent's remainder       |
+
+The lifecycle is persisted as `loop_state`, `transition_reason`, and a monotonically
+increasing `transition_sequence`. `status` remains the coarse external compatibility
+projection. A transition not present in the policy fails closed.
+
+```mermaid
+stateDiagram-v2
+    [*] --> queued
+    queued --> preparing: claim
+    preparing --> understanding: contract or rubric required
+    preparing --> planning: runtime prepared
+    understanding --> planning: contract or rubric ready
+    planning --> acting: action selected
+    acting --> planning: action recorded
+    planning --> verifying: verification requested
+    verifying --> planning: evidence rejected
+    verifying --> completed: evidence accepted
+    preparing --> awaiting_input: clarification required
+    acting --> awaiting_input: input required
+    acting --> awaiting_approval: approval required
+    awaiting_input --> queued: user responded
+    awaiting_approval --> queued: user responded
+    preparing --> stopped: bounded limit
+    understanding --> stopped: bounded limit
+    planning --> stopped: bounded limit
+    acting --> stopped: bounded limit
+    verifying --> stopped: bounded limit
+```
+
+Every active phase also allows cancellation and failure. Every working phase can recover
+to `preparing`; the durable runner normally requeues an interrupted task first, while
+atomic claiming also repairs a legacy or partially upgraded `pending`/working-state row.
+Waiting phases are deliberately excluded from automatic claiming.
 
 ---
 

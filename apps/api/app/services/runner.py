@@ -24,6 +24,7 @@ from app.core.config import settings
 from app.core.llm import get_llm_client, get_verifier_client
 from app.core.logging import get_logger
 from app.db.session import get_sessionmaker
+from app.domain.loop import LoopState
 from app.domain.task import StopReason, TaskStatus
 from app.observability.metrics import TASK_RUN_DURATION, TASK_RUNS
 from app.repositories.step import StepRepository
@@ -129,12 +130,19 @@ async def reconcile_interrupted_tasks(
     values: dict[str, object] = (
         {
             "status": TaskStatus.PENDING.value,
+            "loop_state": LoopState.QUEUED.value,
+            "transition_reason": "worker_requeued_interrupted_task",
+            "transition_sequence": TaskModel.transition_sequence + 1,
+            "stop_reason": None,
             "error": "Interrupted — recovered by the durable worker queue.",
             "attempt": TaskModel.attempt + 1,
         }
         if requeue
         else {
             "status": TaskStatus.FAILED.value,
+            "loop_state": LoopState.FAILED.value,
+            "transition_reason": "runner_interrupted_task",
+            "transition_sequence": TaskModel.transition_sequence + 1,
             "stop_reason": StopReason.ERROR.value,
             "error": "Interrupted — the runner crashed or restarted mid-run.",
         }

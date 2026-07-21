@@ -20,6 +20,7 @@ from app.domain.task import StopReason, TaskStatus
 from app.repositories.step import StepRepository
 from app.repositories.task import TaskRepository
 from app.services.agent_react import AgentReactService, _extract_json
+from app.services.loop import LoopState
 from app.services.progress import HistoryEntry, ProgressGuard, compact_history
 from app.services.task import TaskService
 from app.tools import ToolStatus, Workspace
@@ -170,6 +171,8 @@ async def test_goal_achieved_when_verifier_accepts_finish(session: AsyncSession)
 
     await session.refresh(task)
     assert task.status == TaskStatus.COMPLETED.value
+    assert task.loop_state == LoopState.COMPLETED.value
+    assert task.transition_reason == "verification_accepted"
     assert task.stop_reason == StopReason.GOAL_ACHIEVED.value
     assert task.verification_score == 92
     assert task.summary == "wrote result.txt"
@@ -192,7 +195,7 @@ async def test_running_shell_is_killed_when_task_is_cancelled(
     async def cancellation_probe(_task_id: object) -> bool:
         if not requested:
             return False
-        task.status = TaskStatus.CANCELLED.value
+        await TaskService(TaskRepository(session), StepRepository(session)).cancel(task.id)
         await session.commit()
         return True
 
@@ -226,6 +229,7 @@ async def test_running_shell_is_killed_when_task_is_cancelled(
         os.kill(child_pid, 0)
     await session.refresh(task)
     assert task.status == TaskStatus.CANCELLED.value
+    assert task.loop_state == LoopState.CANCELLED.value
     assert task.stop_reason == StopReason.CANCELLED.value
     assert (Path(task.workspace_path) / "receipt.json").is_file()
 
@@ -324,6 +328,7 @@ async def test_cancelling_parent_cancels_active_descendants(session: AsyncSessio
     for item in (parent, child, grandchild):
         await session.refresh(item)
         assert item.status == TaskStatus.CANCELLED.value
+        assert item.loop_state == LoopState.CANCELLED.value
 
 
 async def test_agent_scopes_protocol_and_browser_gateway_tokens(
@@ -640,6 +645,7 @@ async def test_rejected_finish_then_gives_up_stuck(session: AsyncSession) -> Non
     await session.refresh(task)
     assert task.stop_reason == StopReason.STUCK.value
     assert task.status == TaskStatus.STOPPED.value
+    assert task.loop_state == LoopState.STOPPED.value
     assert task.steps_used == 2
     assert llm.verify_calls == 1
     steps = await StepRepository(session).list_for_task(task.id)
@@ -686,6 +692,7 @@ async def test_stops_at_step_cap(session: AsyncSession) -> None:
     await session.refresh(task)
     assert task.stop_reason == StopReason.MAX_STEPS.value
     assert task.status == TaskStatus.STOPPED.value
+    assert task.loop_state == LoopState.STOPPED.value
     assert task.steps_used == 3
 
 
@@ -766,6 +773,7 @@ async def test_ask_user_pauses_then_resumes_to_completion(session: AsyncSession)
     await service.run(task.id)
     await session.refresh(task)
     assert task.status == TaskStatus.AWAITING_INPUT.value
+    assert task.loop_state == LoopState.AWAITING_INPUT.value
     assert task.pending_question == "Which language?"
     assert task.steps_used == 1
 
@@ -774,12 +782,14 @@ async def test_ask_user_pauses_then_resumes_to_completion(session: AsyncSession)
     await tasks_service.respond(task.id, "Python")
     await session.refresh(task)
     assert task.status == TaskStatus.PENDING.value
+    assert task.loop_state == LoopState.QUEUED.value
     assert task.pending_question is None
 
     # Second run resumes from history and finishes.
     await service.run(task.id)
     await session.refresh(task)
     assert task.stop_reason == StopReason.GOAL_ACHIEVED.value
+    assert task.loop_state == LoopState.COMPLETED.value
     assert task.summary == "built it"
 
 
@@ -1198,6 +1208,7 @@ async def test_approval_pauses_then_runs_on_approve(session: AsyncSession) -> No
     await svc.run(task.id)
     await session.refresh(task)
     assert task.status == TaskStatus.AWAITING_INPUT.value
+    assert task.loop_state == LoopState.AWAITING_APPROVAL.value
     assert task.pending_action is not None
     assert "whoami" in (task.pending_question or "")
 

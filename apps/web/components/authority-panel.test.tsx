@@ -10,6 +10,7 @@ const baseTask: Task = {
   owner_id: 'owner-1',
   project_id: 'default',
   status: 'completed',
+  loop: { state: 'completed', transition_reason: 'verification_accepted', sequence: 4 },
   rubric: [],
   criteria_source: 'generated',
   verification_mode: 'judgment',

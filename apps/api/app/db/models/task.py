@@ -14,6 +14,7 @@ from sqlalchemy import JSON, Boolean, Integer, String, Text, UniqueConstraint, U
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
+from app.domain.loop import LoopState
 from app.domain.task import TaskStatus
 
 
@@ -29,6 +30,11 @@ class TaskModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     status: Mapped[str] = mapped_column(
         String(20), nullable=False, default=TaskStatus.PENDING.value, index=True
     )
+    loop_state: Mapped[str] = mapped_column(
+        String(30), nullable=False, default=LoopState.QUEUED.value, index=True
+    )
+    transition_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    transition_sequence: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     rubric: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
     criteria_source: Mapped[str] = mapped_column(String(20), nullable=False, default="generated")
     verification_mode: Mapped[str] = mapped_column(String(20), nullable=False, default="judgment")
