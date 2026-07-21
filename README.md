@@ -117,6 +117,12 @@ seconds. Every case was execution-verified, fully covered, artifact-complete,
 integrity-valid, and replayable. This is one clean local run using visibly reduced
 `inline` isolation—not a cross-model quality claim or a production-sandbox result.
 
+The separate [one-instruction local-project run](./evals/results/deepseek-chat-one-instruction-v0.1.0.json)
+started with only a repository and natural-language goal. It compiled and locked its
+own contract, changed the implementation and tests, completed in 5 steps using 8,610
+provider-reported tokens and 13.459 seconds, then passed Receipt replay, Apply, and
+Undo. This is one clean Gate 1 sample, not a repeated-run reliability estimate.
+
 ## The trust boundary
 
 Loop treats the model as a planner, not an authority source.

@@ -24,7 +24,13 @@ def test_discovers_python_and_javascript_project_quality_gates(tmp_path) -> None
 
     checks = discover_project_checks(tmp_path)
     commands = {check["command"] for check in checks}
-    assert commands == {"pnpm run lint", "pnpm run test", "pytest -q", "ruff check .", "mypy ."}
+    assert commands == {
+        "pnpm run lint",
+        "pnpm run test",
+        "python -m pytest -q",
+        "ruff check .",
+        "mypy .",
+    }
     assert all(check["source"] == "system" for check in checks)
 
 
@@ -34,7 +40,7 @@ def test_contract_checks_are_mapped_and_cannot_be_spoofed_by_agent() -> None:
             {
                 "id": "contract-001",
                 "kind": "command",
-                "command": "pytest -q",
+                "command": "python -m pytest -q",
                 "source": "contract",
             }
         ],

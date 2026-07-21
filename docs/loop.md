@@ -13,6 +13,7 @@ verify any signed skill and resolve the authority envelope
 for a local project without a user-authored contract:
   discover repository structure and quality gates without mutation
   compile a typed contract and challenge it with the independent critic
+  repair a rejected draft inside a bounded, no-progress-detected critic loop
   reject unsafe checks or authority expansion
   pause on material ambiguity, risk, or low confidence
   persist and hash-lock the accepted contract
@@ -44,8 +45,11 @@ required final artifacts become immutable `contract` checks. When a local-projec
 starts with only an instruction, Loop first inspects a bounded list of manifests,
 scripts, tests, and build outputs without mutation. A compiler proposes observable
 criteria, checks, artifacts, assumptions, risk, confidence, and authority requests; an
-independent critic challenges that proposal. Deterministic policy additionally rejects
-tautologies, uncovered criteria, unsafe or ungranted commands, authority expansion,
+independent critic challenges that proposal. Unambiguous provider schema variations are
+normalized, deterministic repository checks are deduplicated, and a rejected proposal
+gets at most two critic-driven repairs; an unchanged proposal plus unchanged issues ends
+the repair loop immediately. Deterministic policy additionally rejects tautologies,
+over-decomposed or uncovered criteria, unsafe or ungranted commands, authority expansion,
 non-low risk, and confidence below the automatic-start threshold.
 
 An accepted `loop.contract-draft/v1` is serialized canonically and SHA-256 locked before
