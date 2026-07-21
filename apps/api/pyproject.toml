@@ -23,6 +23,7 @@ dependencies = [
     "pyjwt>=2.10",
     "prometheus-client>=0.21",
     "kubernetes-asyncio>=36.1,<37",
+    "filelock>=3.20,<4",
     # --- Observability (OpenTelemetry) ---
     "opentelemetry-sdk>=1.43",
     "opentelemetry-exporter-otlp>=1.43",

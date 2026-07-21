@@ -80,6 +80,13 @@ class ProviderGatewayRuntime:
             raise AuthorityTokenError(f"Authority token does not grant {tool!r}")
         if required is None and not grant.permits(Capability.NET_BROWSER):
             raise AuthorityTokenError("Authority token does not grant browser access")
+        if tool in {"send_email", "create_event"}:
+            try:
+                uuid.UUID(str(args["operation_id"]))
+            except (KeyError, ValueError) as exc:
+                raise AuthorityTokenError(
+                    f"{tool} requires a Loop operation_id for duplicate protection"
+                ) from exc
 
         if browser is not None and tool in browser_tools:
             if not egress_token:

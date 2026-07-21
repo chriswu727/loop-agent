@@ -22,6 +22,7 @@ discover project checks and record the pre-change baseline
 repeat:
   plan exactly one action
   enforce capability, budget, approval, egress, and workspace policy
+  persist an operation journal before crossing a side-effect boundary
   execute and persist one hash-chained step
   when finish is proposed:
     copy the final workspace independently for each check
@@ -129,10 +130,23 @@ prevents duplicate deliveries from executing the same run concurrently. Terminal
 runs revoke their authority tokens and close live proxy/browser connections where the
 protocol supports it.
 
+A planned tool call is journaled and committed before execution. The resulting Step
+and journal deletion commit together. If a process disappears between those boundaries,
+recovery reports the operation outcome as unknown and fails closed instead of replaying
+a command, external write, memory append, or delegated task that may already have
+completed. This is an explicit at-most-once policy. Email and calendar writes also carry
+the stable operation id into Message-ID/UID, but Loop does not claim an upstream server
+will deduplicate or roll back a request it already accepted.
+
+API cancellation is not a between-step flag: a database watcher cancels the active
+coroutine. Async transports abort model/gateway requests, shell cancellation kills the
+whole process group, sandbox cleanup removes the Docker container or Kubernetes Job,
+and cancelling a parent marks all active descendants cancelled.
+
 The enforcement acceptance harness abandons a claimed job, restarts Redis, and proves
 another worker reclaims and finishes it. Kubernetes acceptance additionally exercises
-migration, per-command Jobs, Receipt authenticity, NetworkPolicy, a deliberately
-broken API rollout, and rollback.
+migration, per-command Jobs, Receipt authenticity, NetworkPolicy, Postgres interruption
+and recovery, a deliberately broken API rollout, and rollback.
 
 ## MCP and provider surfaces
 
@@ -173,8 +187,6 @@ untouched. Undo reverses only the exact applied patch and refuses overlapping ch
 
 ## Residual edges
 
-- Cancellation is observed between steps; it does not interrupt an in-flight provider
-  request or shell command.
 - Protocol operations already accepted by an upstream service cannot be rolled back.
 - Browser sessions are pod-local; a gateway restart loses them.
 - Inline mode is not a security sandbox.

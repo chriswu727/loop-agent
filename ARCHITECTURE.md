@@ -174,7 +174,10 @@ flowchart LR
 - **Background jobs:** Redis Streams consumer groups provide an atomic producer,
   cross-pod consumers, visibility leases, `XAUTOCLAIM` recovery, retries, and a
   dead-letter stream. The task row is claimed with a compare-and-update before the
-  loop starts, so duplicate deliveries do not execute a task twice.
+  loop starts, so duplicate deliveries do not execute a task twice. Every tool call
+  commits a write-ahead operation journal before execution; its Step clears the journal
+  in the same commit, and recovery fails closed on an unknown outcome rather than
+  duplicating a mutation.
 - **Why a separate worker tier?** Long or bursty work must not block request
   threads or share the API's scaling signal. The checked-in worker HPA uses CPU as a
   portable baseline; queue-depth scaling requires KEDA or a custom metrics adapter.
@@ -297,7 +300,12 @@ Full playbook: [`docs/guides/scaling.md`](./docs/guides/scaling.md).
   drains and upgrades.
 - **Idempotency:** publishes persist an owner-scoped idempotency key with a database
   uniqueness constraint. Trigger fires use an atomic timestamp claim plus a derived
-  idempotency key, so multiple scheduler replicas are safe.
+  idempotency key, so multiple scheduler replicas are safe. External writes require a
+  stable operation id (also used as SMTP Message-ID/CalDAV UID), without claiming that
+  an upstream protocol provides exactly-once delivery.
+- **Cancellation:** a DB watcher cancels the active run coroutine rather than waiting
+  for the next step. Cancellation reaches provider transports, descendant runs, shell
+  process groups, Docker cleanup, and Kubernetes Job deletion.
 
 ---
 

@@ -722,6 +722,9 @@ class TaskService:
         if task.status not in active:
             raise ConflictError(f"Task is {task.status} and cannot be cancelled")
         task.status = TaskStatus.CANCELLED.value
+        for descendant in await self.tasks.list_descendants(task.id):
+            if descendant.status in active:
+                descendant.status = TaskStatus.CANCELLED.value
         await self.tasks.session.flush()
         await self.tasks.session.refresh(task)
         return task

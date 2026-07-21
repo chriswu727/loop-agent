@@ -46,7 +46,13 @@ async def test_send_email(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("app.tools.email.smtplib.SMTP", _FakeSMTP)
 
     out = await EmailTools().call(
-        "send_email", {"to": "you@example.com", "subject": "Hi", "body": "hello there"}
+        "send_email",
+        {
+            "to": "you@example.com",
+            "subject": "Hi",
+            "body": "hello there",
+            "operation_id": "47e20763-0997-43fe-ab29-c36112e9f495",
+        },
     )
     assert "sent to you@example.com" in out
     sent = _FakeSMTP.last
@@ -54,12 +60,18 @@ async def test_send_email(monkeypatch: pytest.MonkeyPatch) -> None:
     assert sent.creds == ("me@example.com", "app-pass")
     assert sent.msg["To"] == "you@example.com"
     assert sent.msg["Subject"] == "Hi"
+    assert sent.msg["Message-ID"] == "<47e20763-0997-43fe-ab29-c36112e9f495@loop>"
     assert "hello there" in sent.msg.get_content()
 
 
 async def test_send_email_requires_to() -> None:
     out = await EmailTools().call("send_email", {"subject": "x"})
     assert "needs a 'to'" in out
+
+
+async def test_send_email_requires_operation_id() -> None:
+    out = await EmailTools().call("send_email", {"to": "you@example.com"})
+    assert "operation_id" in out
 
 
 class _FakeIMAP:

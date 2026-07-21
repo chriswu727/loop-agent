@@ -133,7 +133,10 @@ class Settings(BaseSettings):
     execution_mode: Literal["inline", "worker"] = "inline"
     # Cap concurrent inline runs: each pins a DB connection for its whole run, so
     # without a bound a burst of publishes exhausts the pool. Excess runs queue.
-    agent_max_concurrent_runs: int = 8
+    agent_max_concurrent_runs: int = Field(default=8, ge=1, le=256)
+    # A separate DB session watches a running task so API cancellation interrupts
+    # an in-flight provider/tool call instead of waiting for the next agent step.
+    agent_cancellation_poll_seconds: float = Field(default=0.25, ge=0.05, le=5.0)
     # A task RUNNING with no update for longer than this is treated as stranded by a
     # crash and failed on reconcile. Must exceed the longest gap between step commits
     # (one LLM call + one command + retries), so a live run is never wrongly failed.

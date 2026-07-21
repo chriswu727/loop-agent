@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import base64
 import contextlib
 from collections.abc import Callable
@@ -53,6 +54,9 @@ class ProviderGatewayClient:
             self.tool_names = {
                 str(item["name"]) for item in self.tools if isinstance(item.get("name"), str)
             }
+        except asyncio.CancelledError:
+            await self.client.aclose()
+            raise
         except Exception:
             await self.client.aclose()
             raise
@@ -149,6 +153,10 @@ class ProviderGatewayPool:
                 self.tools.extend(client.tools)
                 self.tool_names.update(client.tool_names)
                 self._routes.update(dict.fromkeys(client.tool_names, client))
+        except asyncio.CancelledError:
+            for client in reversed(started):
+                await client.stop()
+            raise
         except Exception:
             for client in reversed(started):
                 await client.stop()

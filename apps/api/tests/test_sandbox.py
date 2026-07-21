@@ -5,10 +5,12 @@ offline by stubbing the container runner.)"""
 
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 
 import pytest
 
+from app.core.config import settings
 from app.tools import CapabilityEnvelope, ToolExecutor, ToolResult, ToolStatus, Workspace
 from app.tools.egress import resolve_proxy_endpoint
 from app.tools.sandbox import image_present
@@ -190,6 +192,117 @@ async def test_networked_docker_sandbox_disables_dns(
     assert any(
         value.startswith("HTTP_PROXY=http://loop:short-token@172.30.0.2:8080") for value in argv
     )
+
+
+async def test_cancelling_docker_command_force_removes_container(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import app.tools.sandbox as sandbox
+
+    started = asyncio.Event()
+    removed = asyncio.Event()
+
+    async def fake_create(*_argv: str, **_kwargs: object) -> object:
+        return object()
+
+    async def blocked_collect(
+        _proc: object, *, timeout_seconds: int, output_limit: int
+    ) -> tuple[bytes, int]:
+        del timeout_seconds, output_limit
+        started.set()
+        await asyncio.Event().wait()
+        return b"", 0
+
+    async def fake_remove(_name: str) -> None:
+        removed.set()
+
+    monkeypatch.setattr(sandbox.asyncio, "create_subprocess_exec", fake_create)
+    monkeypatch.setattr(sandbox, "collect_output", blocked_collect)
+    monkeypatch.setattr(sandbox, "_force_remove", fake_remove)
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+
+    running = asyncio.create_task(
+        sandbox.run_command_in_container(
+            "sleep 30",
+            workspace,
+            image="sandbox:latest",
+            network=False,
+        )
+    )
+    await started.wait()
+    running.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await running
+    assert removed.is_set()
+
+
+async def test_cancelling_kubernetes_command_deletes_job(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from kubernetes_asyncio import client, config
+
+    from app.tools.kubernetes_sandbox import run_command_in_kubernetes
+
+    created = asyncio.Event()
+    deleted = asyncio.Event()
+    closed = asyncio.Event()
+
+    class FakeApiClient:
+        async def close(self) -> None:
+            closed.set()
+
+    class FakeBatch:
+        def __init__(self, _client: object) -> None:
+            pass
+
+        async def create_namespaced_job(self, **_kwargs: object) -> None:
+            created.set()
+
+        async def read_namespaced_job_status(self, **_kwargs: object) -> object:
+            class Status:
+                succeeded = 0
+                failed = 0
+
+            class Job:
+                status = Status()
+
+            return Job()
+
+        async def delete_namespaced_job(self, **_kwargs: object) -> None:
+            deleted.set()
+
+    class FakeCore:
+        def __init__(self, _client: object) -> None:
+            pass
+
+    mount = tmp_path / "data"
+    workspace = mount / "workspaces" / "task-id"
+    workspace.mkdir(parents=True)
+    monkeypatch.setattr(settings, "agent_kubernetes_data_mount", str(mount))
+    monkeypatch.setattr(config, "load_incluster_config", lambda: None)
+    monkeypatch.setattr(client, "ApiClient", FakeApiClient)
+    monkeypatch.setattr(client, "BatchV1Api", FakeBatch)
+    monkeypatch.setattr(client, "CoreV1Api", FakeCore)
+
+    running = asyncio.create_task(
+        run_command_in_kubernetes(
+            "sleep 30",
+            workspace,
+            image="sandbox:latest",
+            network=False,
+            timeout_seconds=60,
+            output_limit=4000,
+            memory="512m",
+            cpus="1",
+        )
+    )
+    await created.wait()
+    running.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await running
+    assert deleted.is_set()
+    assert closed.is_set()
 
 
 def test_docker_available_does_not_cache_negative(monkeypatch: pytest.MonkeyPatch) -> None:

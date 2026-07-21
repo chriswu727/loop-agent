@@ -4,6 +4,7 @@ obvious foot-guns are stopped, offline and deterministically.
 
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 
 import pytest
@@ -162,6 +163,24 @@ async def test_run_command_reports_nonzero_exit(tmp_path: Path) -> None:
     result = await run_command("exit 3", tmp_path)
     assert result.status.value == "error"
     assert "exit code 3" in result.observation
+
+
+async def test_twenty_concurrent_workspaces_do_not_leak(tmp_path: Path) -> None:
+    async def write(index: int) -> None:
+        executor = ToolExecutor(
+            Workspace(tmp_path / f"task-{index}"),
+            envelope=CapabilityEnvelope.from_capabilities(["fs.write"]),
+        )
+        result = await executor.execute(
+            "write_file", {"path": "result.txt", "content": f"task-{index}"}
+        )
+        assert result.status is ToolStatus.OK
+
+    await asyncio.gather(*(write(index) for index in range(20)))
+
+    assert {(tmp_path / f"task-{index}" / "result.txt").read_text() for index in range(20)} == {
+        f"task-{index}" for index in range(20)
+    }
 
 
 def test_envelope_permits_logic() -> None:

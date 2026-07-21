@@ -3,9 +3,12 @@ The live browser path is exercised by a real run; here we test the wiring."""
 
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 from types import SimpleNamespace
 from typing import ClassVar
+
+import pytest
 
 from app.domain.capability import Capability
 from app.tools import CapabilityEnvelope, ToolExecutor, ToolStatus, Workspace
@@ -22,6 +25,29 @@ class _FakeMcp:
     async def call(self, name: str, args: dict) -> str:
         self.calls.append((name, args))
         return f"navigated to {args.get('url')}"
+
+
+async def test_pool_cancellation_stops_partially_started_provider() -> None:
+    started = asyncio.Event()
+    stopped = asyncio.Event()
+
+    class BlockingProvider:
+        tool_names: ClassVar[set[str]] = set()
+
+        async def start(self) -> None:
+            started.set()
+            await asyncio.Event().wait()
+
+        async def stop(self) -> None:
+            stopped.set()
+
+    pool = McpPool([BlockingProvider()])  # type: ignore[list-item]
+    running = asyncio.create_task(pool.start())
+    await started.wait()
+    running.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await running
+    assert stopped.is_set()
 
 
 async def test_executor_dispatches_mcp_tool(tmp_path: Path) -> None:

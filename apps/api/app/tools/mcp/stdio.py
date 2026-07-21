@@ -132,6 +132,10 @@ class McpPool:
                     raise RuntimeError(f"Duplicate MCP tool names: {sorted(overlap)}")
                 self.tool_names |= provider.tool_names
                 self._by_tool.update(dict.fromkeys(provider.tool_names, provider))
+        except asyncio.CancelledError:
+            for provider in reversed(started):
+                await provider.stop()
+            raise
         except Exception:
             for provider in reversed(started):
                 await provider.stop()

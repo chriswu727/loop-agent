@@ -20,11 +20,12 @@ executor, so the whole loop runs deterministically under test with a fake model.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import re
 import shutil
 import uuid
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from datetime import date
 from pathlib import Path
 from typing import Any
@@ -213,11 +214,13 @@ class AgentReactService:
         steps: StepRepository,
         llm: LLMClient,
         verifier_llm: LLMClient | None = None,
+        cancellation_probe: Callable[[uuid.UUID], Awaitable[bool]] | None = None,
     ) -> None:
         self.tasks = tasks
         self.steps = steps
         self.llm = llm
         self.verifier_llm = verifier_llm or llm
+        self._cancellation_probe = cancellation_probe
         self.session = tasks.session
         self._history: list[HistoryEntry] = []
         self._last_hash = ""  # head of the step hash chain
@@ -238,8 +241,134 @@ class AgentReactService:
         self._sandbox_backend: str | None = None
         self._egress_allowed = False  # resolved egress; verification checks mirror it
         self._authority_token_factory: Callable[[str], str] | None = None
+        self._active_resources: list[Any] = []
+        self._active_authority_clients: list[tuple[str, Any]] = []
+        self._active_run_id: str | None = None
+        self._authority_revoked = False
 
     async def run(self, task_id: uuid.UUID) -> None:
+        if self._cancellation_probe is None:
+            try:
+                await self._run_claimed(task_id)
+            finally:
+                with contextlib.suppress(Exception):
+                    await self._revoke_terminal_authority(task_id)
+                await self._stop_active_resources()
+            return
+        execution = asyncio.create_task(self._run_claimed(task_id), name=f"loop-run-{task_id}")
+        cancellation = asyncio.create_task(
+            self._wait_for_cancellation(task_id), name=f"loop-cancel-{task_id}"
+        )
+        try:
+            done, _ = await asyncio.wait(
+                {execution, cancellation}, return_when=asyncio.FIRST_COMPLETED
+            )
+            if cancellation in done and cancellation.result():
+                execution.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await execution
+                await self._finalize_cancellation(task_id)
+                return
+            await execution
+        except asyncio.CancelledError:
+            execution.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await execution
+            with contextlib.suppress(Exception):
+                await self._finalize_cancellation(task_id)
+            raise
+        finally:
+            cancellation.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await cancellation
+            with contextlib.suppress(Exception):
+                await self._revoke_terminal_authority(task_id)
+            await self._stop_active_resources()
+
+    async def _stop_active_resources(self) -> None:
+        resources = self._active_resources
+        self._active_resources = []
+        seen: set[int] = set()
+        for resource in reversed(resources):
+            if id(resource) in seen:
+                continue
+            seen.add(id(resource))
+            with contextlib.suppress(Exception):
+                await resource.stop()
+
+    async def _wait_for_cancellation(self, task_id: uuid.UUID) -> bool:
+        while True:
+            await asyncio.sleep(settings.agent_cancellation_poll_seconds)
+            try:
+                assert self._cancellation_probe is not None
+                cancelled = await self._cancellation_probe(task_id)
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                log.warning("agent.cancellation_probe_failed", task_id=str(task_id))
+                continue
+            if cancelled:
+                return True
+
+    async def _finalize_cancellation(self, task_id: uuid.UUID) -> None:
+        await self.session.rollback()
+        task = await self.tasks.get(task_id)
+        if task is None or task.status != TaskStatus.CANCELLED.value:
+            return
+        if task.steps_used and not self._last_hash:
+            await self._rebuild_history(task.id)
+        task.stop_reason = StopReason.CANCELLED.value
+        if not task.summary:
+            task.summary = self._stop_summary(task, StopReason.CANCELLED)
+        self._ensure_unverified_receipt(task)
+        await self._commit()
+        await self._revoke_active_authority(task)
+
+    async def _revoke_active_authority(self, task: TaskModel) -> None:
+        if self._authority_revoked or not self._active_authority_clients:
+            return
+        self._authority_revoked = True
+        events: list[dict[str, Any]] = []
+        for service, client in self._active_authority_clients:
+            try:
+                event = await client.revoke()
+                if isinstance(event, list):
+                    events.extend(event)
+                elif event:
+                    events.append(event)
+            except Exception as exc:
+                events.append(
+                    {
+                        "kind": "authority",
+                        "decision": "revocation_unavailable",
+                        "run_id": self._active_run_id,
+                        "service": service,
+                        "error": type(exc).__name__,
+                    }
+                )
+        if not events:
+            return
+        task.authority_audit = [*(task.authority_audit or []), *events][-200:]
+        if task.receipt_hash and task.workspace_path:
+            try:
+                task.receipt_hash = refresh_receipt_authority(
+                    Workspace(Path(task.workspace_path)), task.authority_audit
+                )
+            except Exception:
+                log.warning("agent.receipt_authority_refresh_failed", task_id=str(task.id))
+        await self._commit()
+
+    async def _revoke_terminal_authority(self, task_id: uuid.UUID) -> None:
+        task = await self.tasks.get(task_id)
+        if task is not None and task.status in {
+            TaskStatus.COMPLETED.value,
+            TaskStatus.STOPPED.value,
+            TaskStatus.CANCELLED.value,
+            TaskStatus.FAILED.value,
+        }:
+            await self._revoke_active_authority(task)
+
+    async def _run_claimed(self, task_id: uuid.UUID) -> None:
         """Run, or resume, a task. A task is resumable when it was paused on an
         ask_user question and the user has since answered (status back to
         pending with steps already on record)."""
@@ -256,11 +385,29 @@ class AgentReactService:
         self._sandbox_image = None
         self._sandbox_backend = None
         self._egress_allowed = False
+        self._active_authority_clients = []
+        self._active_run_id = None
+        self._authority_revoked = False
 
         workspace = Workspace(
             Path(task.workspace_path or settings.agent_workspaces_root)
             / ("" if task.workspace_path else str(task.id))
         )
+        if task.operation_journal is not None:
+            operation = task.operation_journal
+            tool = str(operation.get("tool", "unknown"))
+            operation_id = str(operation.get("id", "unknown"))
+            task.status = TaskStatus.FAILED.value
+            task.stop_reason = StopReason.ERROR.value
+            task.error = (
+                f"Interrupted with {tool!r} operation {operation_id} in flight. Its outcome "
+                "is unknown, so Loop refused to replay it and risk a duplicate mutation."
+            )
+            task.workspace_path = str(workspace.root)
+            await self._rebuild_history(task.id)
+            self._ensure_unverified_receipt(task)
+            await self._commit()
+            return
         self.memory = MemoryStore(
             scoped_memory_root(Path(settings.agent_memory_root), task.owner_id, task.project_id)
         )
@@ -540,6 +687,7 @@ class AgentReactService:
             return
 
         run_id = f"{task.id}:{task.attempt}"
+        self._active_run_id = run_id
 
         def scoped_token_factory(
             granted_capabilities: set[Capability],
@@ -574,6 +722,8 @@ class AgentReactService:
             and settings.agent_egress_proxy_audit_url
             else None
         )
+        if egress_audit is not None:
+            self._active_authority_clients.append(("egress-proxy", egress_audit))
         if not isinstance(task.authority_audit, list):
             task.authority_audit = []
 
@@ -710,6 +860,7 @@ class AgentReactService:
                     )
                 )
             provider_gateway = ProviderGatewayPool(gateway_clients)
+            self._active_authority_clients.append(("provider-gateway", provider_gateway))
             try:
                 await provider_gateway.start()
             except Exception as exc:
@@ -720,6 +871,7 @@ class AgentReactService:
                 self._ensure_unverified_receipt(task)
                 await self._commit()
                 return
+            self._active_resources.append(provider_gateway)
             executor.provider_gateway = provider_gateway
             self._mcp_tools |= provider_gateway.tool_names
             self._browser_specs = provider_gateway.specs("net.browser")
@@ -752,6 +904,7 @@ class AgentReactService:
         if Capability.NET_BROWSER not in gateway_capabilities:
             browser = await self._start_browser(envelope)
             if browser is not None:
+                self._active_resources.append(browser)
                 executor.mcp = browser
                 self._browser_specs = browser.specs()
                 self._mcp_tools |= set(browser.tool_names)
@@ -864,6 +1017,7 @@ class AgentReactService:
                 self._ensure_unverified_receipt(task)
                 await self._commit()
                 return
+            self._active_resources.append(host_mcp)
             executor.auxiliary_mcp = host_mcp
             self._mcp_tools |= host_mcp.tool_names
             self._mcp_specs = host_mcp.specs()
@@ -904,6 +1058,16 @@ class AgentReactService:
 
         try:
             await self._run_loop(task, workspace, executor, start=task.steps_used + 1)
+        except asyncio.CancelledError:
+            await self.session.rollback()
+            await self.session.refresh(task)
+            if task.status == TaskStatus.CANCELLED.value:
+                task.stop_reason = StopReason.CANCELLED.value
+                if not task.summary:
+                    task.summary = self._stop_summary(task, StopReason.CANCELLED)
+                self._ensure_unverified_receipt(task)
+                await self._commit()
+            raise
         except Exception as exc:  # any unhandled error fails the task cleanly
             log.exception("agent.failed", task_id=str(task.id))
             task.status = TaskStatus.FAILED.value
@@ -922,45 +1086,7 @@ class AgentReactService:
                 TaskStatus.CANCELLED.value,
                 TaskStatus.FAILED.value,
             }:
-                revocation_events: list[dict[str, Any]] = []
-                for service, client in (
-                    ("provider-gateway", provider_gateway),
-                    ("egress-proxy", egress_audit),
-                ):
-                    if client is None:
-                        continue
-                    try:
-                        event = await client.revoke()
-                        if isinstance(event, list):
-                            revocation_events.extend(event)
-                        elif event:
-                            revocation_events.append(event)
-                    except Exception as exc:
-                        revocation_events.append(
-                            {
-                                "kind": "authority",
-                                "decision": "revocation_unavailable",
-                                "run_id": run_id,
-                                "service": service,
-                                "error": type(exc).__name__,
-                            }
-                        )
-                if revocation_events:
-                    task.authority_audit = [
-                        *(task.authority_audit or []),
-                        *revocation_events,
-                    ][-200:]
-                    if task.receipt_hash and task.workspace_path:
-                        try:
-                            task.receipt_hash = refresh_receipt_authority(
-                                Workspace(Path(task.workspace_path)), task.authority_audit
-                            )
-                        except Exception:
-                            log.warning(
-                                "agent.receipt_authority_refresh_failed",
-                                task_id=str(task.id),
-                            )
-                    await self._commit()
+                await self._revoke_active_authority(task)
             if provider_gateway is not None:
                 await provider_gateway.stop()
 
@@ -1152,6 +1278,9 @@ class AgentReactService:
         try:
             await browser.start()
             return browser
+        except asyncio.CancelledError:
+            await browser.stop()
+            raise
         except Exception:  # browser unavailable -> run without it, don't fail the task
             log.warning("agent.browser_unavailable")
             await browser.stop()
@@ -1207,13 +1336,22 @@ class AgentReactService:
         if task.pending_action is not None:
             action = dict(task.pending_action)
             task.pending_action = None
-            result = await executor.execute(str(action["tool"]), dict(action.get("args", {})))
+            approved_tool = str(action["tool"])
+            args = await self._begin_operation(
+                task,
+                number=start,
+                thought="(approved by the user)",
+                tool=approved_tool,
+                args=dict(action.get("args", {})),
+                tokens=0,
+            )
+            result = await executor.execute(approved_tool, args)
             await self._record_step(
                 task,
                 start,
                 "(approved by the user)",
-                str(action["tool"]),
-                dict(action.get("args", {})),
+                approved_tool,
+                args,
                 result.observation,
                 result.status,
                 0,
@@ -1358,6 +1496,14 @@ class AgentReactService:
             if tool == "remember":
                 note = str(args.get("note", "")).strip()
                 topic = args.get("topic")
+                args = await self._begin_operation(
+                    task,
+                    number=number,
+                    thought=thought,
+                    tool=tool,
+                    args=args,
+                    tokens=step_tokens,
+                )
                 observation = self.memory.remember(note, str(topic) if topic else None)
                 if note:  # make it visible to the rest of this run too
                     self._memory_snapshot = f"{self._memory_snapshot}\n- {note}".strip()
@@ -1388,6 +1534,14 @@ class AgentReactService:
                         step_tokens,
                     )
                 else:
+                    args = await self._begin_operation(
+                        task,
+                        number=number,
+                        thought=thought,
+                        tool=tool,
+                        args=args,
+                        tokens=step_tokens,
+                    )
                     await self._handle_spawn(task, args, thought, number, step_tokens)
                 last = self._history[-1]
                 guard.observe(tool, args, last.observation, last.status)
@@ -1468,9 +1622,25 @@ class AgentReactService:
                 if verdict is Verdict.NEEDS_APPROVAL:
                     await self._pause_for_approval(task, args, thought, number, step_tokens, reason)
                     return  # resumes when the user approves or denies
+                args = await self._begin_operation(
+                    task,
+                    number=number,
+                    thought=thought,
+                    tool=tool,
+                    args=args,
+                    tokens=step_tokens,
+                )
                 tool_result = await executor.execute(tool, args)
                 observation, status = tool_result.observation, tool_result.status
             else:
+                args = await self._begin_operation(
+                    task,
+                    number=number,
+                    thought=thought,
+                    tool=tool,
+                    args=args,
+                    tokens=step_tokens,
+                )
                 tool_result = await executor.execute(tool, args)
                 observation, status = tool_result.observation, tool_result.status
                 if tool in ("write_file", "edit_file") and same_path_writes == 2:
@@ -1753,7 +1923,11 @@ class AgentReactService:
         await self._commit()
 
         child_service = AgentReactService(
-            self.tasks, self.steps, self.llm, verifier_llm=self.verifier_llm
+            self.tasks,
+            self.steps,
+            self.llm,
+            verifier_llm=self.verifier_llm,
+            cancellation_probe=self._cancellation_probe,
         )
         await child_service.run(child.id)
         await self.session.refresh(child)
@@ -2016,6 +2190,32 @@ class AgentReactService:
 
     # --- Persistence helpers ---------------------------------------------
 
+    async def _begin_operation(
+        self,
+        task: TaskModel,
+        *,
+        number: int,
+        thought: str,
+        tool: str,
+        args: dict[str, Any],
+        tokens: int,
+    ) -> dict[str, Any]:
+        operation_id = str(uuid.uuid4())
+        execution_args = dict(args)
+        if tool in {"send_email", "create_event"}:
+            execution_args["operation_id"] = operation_id
+        task.operation_journal = {
+            "schema": "loop.operation/v1",
+            "id": operation_id,
+            "step": number,
+            "thought": thought,
+            "tool": tool,
+            "args": execution_args,
+            "tokens": tokens,
+        }
+        await self._commit()
+        return execution_args
+
     @staticmethod
     def _record_model_use(task: TaskModel, result: LLMResult, *, verifier: bool = False) -> None:
         identity = {"provider": result.provider, "model": result.model}
@@ -2077,6 +2277,7 @@ class AgentReactService:
             hash=this_hash,
         )
         self._last_hash = this_hash
+        task.operation_journal = None
         task.steps_used = number
         task.tokens_used += tokens
         await self._commit()
