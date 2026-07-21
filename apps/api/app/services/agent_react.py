@@ -55,6 +55,7 @@ from app.domain.capability import (
 from app.domain.task import StopReason, TaskStatus
 from app.repositories.step import StepRepository
 from app.repositories.task import TaskRepository
+from app.schemas.contract import ContractDraft
 from app.services.completion import (
     attach_baseline,
     completion_gates_pass,
@@ -63,6 +64,12 @@ from app.services.completion import (
     mark_supplementary_agent_checks,
     merge_completion_checks,
     regressions,
+)
+from app.services.contract import (
+    compile_project_contract,
+    failed_contract_draft,
+    lock_user_project_contract,
+    verify_contract_hash,
 )
 from app.services.ledger import genesis_hash, step_hash
 from app.services.memory import MemoryStore, scoped_memory_root
@@ -257,7 +264,6 @@ class AgentReactService:
         self.memory = MemoryStore(
             scoped_memory_root(Path(settings.agent_memory_root), task.owner_id, task.project_id)
         )
-
         # Load the signed skill (if any) BEFORE anything runs. A skill that can't
         # be verified is refused outright — provenance is not optional.
         skill_capabilities: frozenset[Capability] | None = None
@@ -337,6 +343,14 @@ class AgentReactService:
             egress_hosts=task.egress_hosts,
         )
         task.resolved_capabilities = sorted_capabilities(resolved_capabilities)
+        if task.project_base_commit:
+            task.workspace_path = str(workspace.root)
+            if not await self._prepare_project_contract(
+                task,
+                workspace,
+                granted_capabilities=set(resolved_capabilities),
+            ):
+                return
         browser_capabilities = {Capability.NET_BROWSER}
         email_capabilities = {Capability.EMAIL_READ, Capability.EMAIL_SEND}
         calendar_capabilities = {Capability.CALENDAR_READ, Capability.CALENDAR_WRITE}
@@ -949,6 +963,107 @@ class AgentReactService:
                     await self._commit()
             if provider_gateway is not None:
                 await provider_gateway.stop()
+
+    async def _prepare_project_contract(
+        self,
+        task: TaskModel,
+        workspace: Workspace,
+        *,
+        granted_capabilities: set[Capability],
+    ) -> bool:
+        """Lock one acceptance source before the executor can mutate the clone."""
+        if task.contract_status == "locked":
+            try:
+                draft = ContractDraft.model_validate(task.contract_draft)
+            except (TypeError, ValueError):
+                draft = None
+            if (
+                draft is None
+                or not task.contract_hash
+                or not draft.critique.accepted
+                or not verify_contract_hash(draft, task.contract_hash)
+            ):
+                task.status = TaskStatus.FAILED.value
+                task.stop_reason = StopReason.ERROR.value
+                task.error = "The locked acceptance contract failed its content hash check."
+                self._ensure_unverified_receipt(task)
+                await self._commit()
+                return False
+            self._apply_locked_contract(task, draft)
+            return True
+
+        if task.criteria_source == "user" and task.rubric:
+            draft, contract_hash = lock_user_project_contract(
+                root=workspace.root,
+                criteria=list(task.rubric),
+                required_checks=list(task.required_checks or []),
+            )
+            task.contract_draft = draft.model_dump(mode="json")
+            task.contract_hash = contract_hash
+            task.contract_status = "locked"
+            self._apply_locked_contract(task, draft)
+            await self._commit()
+            return True
+
+        previous = task.contract_draft if isinstance(task.contract_draft, dict) else {}
+        clarifications = [
+            str(item) for item in previous.get("clarifications", []) if str(item).strip()
+        ]
+        compilation_budget = max(
+            0,
+            task.token_budget - task.tokens_used - _verification_reserve(task.token_budget),
+        )
+        try:
+            compiled = await compile_project_contract(
+                goal=task.goal,
+                root=workspace.root,
+                compiler=self.llm,
+                critic=self.verifier_llm,
+                granted_capabilities=granted_capabilities,
+                required_checks=list(task.required_checks or []),
+                clarifications=clarifications,
+                token_budget=compilation_budget,
+            )
+        except LLMError as exc:
+            task.tokens_used += exc.tokens_spent
+            draft = failed_contract_draft(
+                goal=task.goal,
+                root=workspace.root,
+                issue=f"The contract compiler could not complete: {exc}",
+                clarifications=clarifications,
+            )
+            task.contract_draft = draft.model_dump(mode="json")
+            task.contract_hash = None
+            task.contract_status = "awaiting_input"
+            task.pending_question = draft.critique.question
+            task.status = TaskStatus.AWAITING_INPUT.value
+            await self._commit()
+            return False
+
+        task.tokens_used += compiled.tokens_spent
+        task.contract_draft = compiled.draft.model_dump(mode="json")
+        task.contract_hash = compiled.contract_hash
+        if compiled.contract_hash is None:
+            task.contract_status = "awaiting_input"
+            task.pending_question = compiled.draft.critique.question
+            task.status = TaskStatus.AWAITING_INPUT.value
+            await self._commit()
+            return False
+
+        task.contract_status = "locked"
+        task.criteria_source = "compiled"
+        task.pending_question = None
+        self._apply_locked_contract(task, compiled.draft)
+        await self._commit()
+        return True
+
+    @staticmethod
+    def _apply_locked_contract(task: TaskModel, draft: ContractDraft) -> None:
+        task.rubric = list(draft.criteria)
+        task.verification_mode = "strict"
+        task.required_checks = [
+            check.model_dump(mode="json", exclude_none=True) for check in draft.checks
+        ]
 
     def _resolve_sandbox(self) -> tuple[str | None, str, str | None]:
         """(image, label): which sandbox to use for run_command, and how to label

@@ -15,3 +15,4 @@ a past ADR — supersede it with a new one.
 | [0007](./0007-postgres-redis.md)                           | PostgreSQL + Redis as default datastores                        | Accepted |
 | [0008](./0008-agent-behavior-and-runtime-safety-tuning.md) | Empirically-tuned agent behaviour, reliability & runtime safety | Accepted |
 | [0009](./0009-contract-first-verified-completion.md)       | Contract-first Verified Completion                              | Accepted |
+| [0010](./0010-generated-contract-locking.md)               | Generated contracts are criticized and locked before mutation   | Accepted |

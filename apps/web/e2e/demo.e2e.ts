@@ -9,6 +9,7 @@ test('the built-in demo completes its strict contract and replays the Receipt', 
   await expect(page.getByRole('textbox', { name: 'Publish a task' })).toHaveValue(
     /first 15 Fibonacci numbers/,
   );
+  await page.getByText('Advanced controls', { exact: true }).click();
   await expect(page.getByRole('textbox', { name: 'Acceptance contract' })).toHaveValue(
     /exactly the first 15 Fibonacci numbers/,
   );

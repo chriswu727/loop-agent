@@ -8,6 +8,7 @@ import { AskUserBox } from '@/components/ask-user-box';
 import { AuthorityPanel } from '@/components/authority-panel';
 import { BudgetMeter } from '@/components/budget-meter';
 import { ChangeSetPanel } from '@/components/change-set-panel';
+import { ContractPanel } from '@/components/contract-panel';
 import { ReceiptPanel } from '@/components/receipt-panel';
 import { StepItem } from '@/components/step-item';
 import { StatusPill, stopReasonLabel } from '@/components/status-pill';
@@ -147,7 +148,6 @@ export default function TaskDetail() {
   const reason = stopReasonLabel(task.stop_reason);
   const achieved = task.stop_reason === 'goal_achieved';
   const isolated = task.sandbox === 'container' || task.sandbox === 'kubernetes';
-  const baselineFailures = task.baseline_checks.filter((check) => check.passed === false).length;
 
   return (
     <main className="mx-auto max-w-3xl px-6 py-14">
@@ -218,40 +218,7 @@ export default function TaskDetail() {
 
       <AuthorityPanel task={task} />
 
-      {task.rubric.length > 0 && (
-        <section className="mt-6">
-          <div className="mb-2 flex items-center gap-2">
-            <h2 className="text-xs font-semibold uppercase tracking-wide opacity-50">
-              Acceptance contract
-            </h2>
-            <span className="rounded bg-blue-500/10 px-1.5 py-0.5 text-[10px] text-blue-700 dark:text-blue-300">
-              {task.criteria_source === 'user' ? 'user confirmed' : 'model generated'}
-            </span>
-            <span className="rounded bg-black/5 px-1.5 py-0.5 text-[10px] opacity-60 dark:bg-white/10">
-              {task.verification_mode}
-            </span>
-          </div>
-          <ul className="flex flex-wrap gap-2">
-            {task.rubric.map((c, i) => (
-              <li
-                key={i}
-                className="rounded-full border border-black/10 px-2.5 py-1 text-xs opacity-70 dark:border-white/15"
-              >
-                {c}
-              </li>
-            ))}
-          </ul>
-          {task.required_checks.length > 0 && (
-            <p className="mt-2 text-[11px] opacity-50">
-              {task.required_checks.length} required verification gate
-              {task.required_checks.length === 1 ? '' : 's'} · baseline{' '}
-              {task.baseline_checks.length > 0
-                ? `${baselineFailures} pre-existing failure${baselineFailures === 1 ? '' : 's'}`
-                : 'pending'}
-            </p>
-          )}
-        </section>
-      )}
+      <ContractPanel task={task} />
 
       {/* The agent's final account of what it did. */}
       {task.summary && (

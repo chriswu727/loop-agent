@@ -41,6 +41,39 @@ afterEach(() => {
 });
 
 describe('PublishForm desktop binding', () => {
+  it('starts a local project from one instruction under the offline coding preset', async () => {
+    installBridge();
+    publish.mockResolvedValue({ id: 'task-compiler' });
+    render(
+      <PublishForm
+        defaults={{
+          local_projects_enabled: true,
+          sibyl_available: false,
+          argus_available: false,
+          max_steps_cap: 40,
+          max_steps_default: 12,
+          token_budget_cap: 200000,
+          token_budget_default: 60000,
+        }}
+        isDesktop
+      />,
+    );
+
+    fireEvent.change(screen.getByLabelText('Publish a task'), {
+      target: { value: 'Update the greeting and prove the tests still pass' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /Run the agent/ }));
+
+    await waitFor(() => expect(publish).toHaveBeenCalledOnce());
+    expect(publish.mock.calls[0]?.[0]).toMatchObject({
+      project_path: '.',
+      success_criteria: null,
+      verification_mode: 'strict',
+      capabilities: ['fs.read', 'fs.write', 'exec'],
+    });
+    expect(push).toHaveBeenCalledWith('/tasks/task-compiler');
+  });
+
   it('submits only the relative single-project path', async () => {
     installBridge();
     publish.mockResolvedValue({ id: 'task-1' });

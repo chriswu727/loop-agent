@@ -15,6 +15,7 @@ from app.core.config import settings
 from app.domain.authority_token import AuthorityTokenError, normalize_hosts
 from app.domain.capability import CAPABILITY_SCHEMA_VERSION, Capability
 from app.domain.task import StopReason, TaskStatus
+from app.schemas.contract import ContractDraft
 from app.schemas.file import FileEntry
 from app.schemas.step import LedgerStatus, StepRead
 
@@ -119,8 +120,6 @@ class TaskCreate(BaseModel):
                 self.egress_hosts = sorted(normalize_hosts(self.egress_hosts))
             except AuthorityTokenError as exc:
                 raise ValueError(str(exc)) from exc
-        if self.project_path and self.verification_mode != "judgment" and not self.success_criteria:
-            raise ValueError("strict local-project tasks require user-confirmed success_criteria")
         return self
 
 
@@ -198,6 +197,9 @@ class TaskRead(BaseModel):
     verification_mode: str
     required_checks: list[dict[str, object]]
     baseline_checks: list[dict[str, object]]
+    contract: ContractDraft | None
+    contract_hash: str | None
+    contract_status: str
     pending_question: str | None
     allowed_tools: list[str] | None
     authority: AuthorityRead
@@ -247,6 +249,13 @@ class TaskRead(BaseModel):
             verification_mode=m.verification_mode,  # type: ignore[attr-defined]
             required_checks=m.required_checks or [],  # type: ignore[attr-defined]
             baseline_checks=m.baseline_checks or [],  # type: ignore[attr-defined]
+            contract=(
+                ContractDraft.model_validate(m.contract_draft)  # type: ignore[attr-defined]
+                if m.contract_draft  # type: ignore[attr-defined]
+                else None
+            ),
+            contract_hash=m.contract_hash,  # type: ignore[attr-defined]
+            contract_status=m.contract_status,  # type: ignore[attr-defined]
             pending_question=m.pending_question,  # type: ignore[attr-defined]
             allowed_tools=m.allowed_tools,  # type: ignore[attr-defined]
             authority=AuthorityRead(

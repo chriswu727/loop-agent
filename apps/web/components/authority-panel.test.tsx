@@ -2,6 +2,7 @@ import { render, screen } from '@testing-library/react';
 import type { Task } from '@repo/api-contract';
 import { describe, expect, it } from 'vitest';
 import { AuthorityPanel } from './authority-panel';
+import { ContractPanel } from './contract-panel';
 
 const baseTask: Task = {
   id: 'task-1',
@@ -14,6 +15,9 @@ const baseTask: Task = {
   verification_mode: 'judgment',
   required_checks: [],
   baseline_checks: [],
+  contract: null,
+  contract_hash: null,
+  contract_status: 'not_required',
   pending_question: null,
   allowed_tools: null,
   authority: {
@@ -123,5 +127,68 @@ describe('AuthorityPanel', () => {
     );
 
     expect(screen.getByText('Runtime decisions: 1 allowed / 1 blocked')).toBeInTheDocument();
+  });
+});
+
+describe('ContractPanel', () => {
+  it('shows a compiled contract hash, critic result, and repository evidence', () => {
+    render(
+      <ContractPanel
+        task={{
+          ...baseTask,
+          criteria_source: 'compiled',
+          verification_mode: 'strict',
+          contract_status: 'locked',
+          contract_hash: '0123456789abcdef',
+          contract: {
+            schema_version: 'loop.contract-draft/v1',
+            compiler: { provider: 'fixture', model: 'contract-v1' },
+            criteria: ['The greeting is updated'],
+            checks: [
+              {
+                id: 'contract-001',
+                kind: 'file_contains',
+                command: null,
+                path: 'app.ts',
+                text: 'hello',
+                expect_exit: 0,
+                expect_stdout: null,
+                criterion_ids: ['criterion-001'],
+                source: 'contract',
+              },
+            ],
+            artifacts: ['app.ts'],
+            risk: 'low',
+            assumptions: ['The greeting is local text.'],
+            confidence: 96,
+            authority_requests: [],
+            discovery: {
+              manifests: ['package.json'],
+              scripts: { test: 'vitest run' },
+              test_files: ['app.test.ts'],
+              build_outputs: [],
+              quality_checks: [],
+              files_scanned: 12,
+              truncated: false,
+            },
+            clarifications: [],
+            critique: {
+              accepted: true,
+              issues: [],
+              question: null,
+              provider: 'fixture',
+              model: 'critic-v1',
+            },
+          },
+        }}
+      />,
+    );
+
+    expect(screen.getByText('Loop compiled')).toBeInTheDocument();
+    expect(screen.getByText('locked 0123456789ab')).toBeInTheDocument();
+    expect(screen.getByText('The greeting is updated')).toBeInTheDocument();
+    expect(screen.getByText(/12 files discovered/)).toBeInTheDocument();
+    expect(screen.getByText('compiled by fixture/contract-v1')).toBeInTheDocument();
+    expect(screen.getByText('criticized by fixture/critic-v1')).toBeInTheDocument();
   });
 });

@@ -19,7 +19,7 @@ from sqlalchemy.exc import IntegrityError
 from app.core.config import settings
 from app.db.models.step import StepModel
 from app.db.models.task import TaskModel
-from app.domain.capability import sorted_capabilities
+from app.domain.capability import Capability, sorted_capabilities
 from app.domain.task import StopReason, TaskStatus
 from app.exceptions import ConflictError, NotFoundError
 from app.observability.metrics import RECEIPT_REPLAYS
@@ -123,6 +123,15 @@ class TaskService:
             }
             for index, path in enumerate(payload.required_artifacts, start=1)
         )
+        requested_capabilities = (
+            sorted_capabilities(payload.capabilities)
+            if payload.capabilities is not None
+            else (
+                sorted_capabilities({Capability.FS_READ, Capability.FS_WRITE, Capability.EXEC})
+                if binding is not None and payload.allowed_tools is None
+                else None
+            )
+        )
         task = await self.tasks.create(
             goal=payload.goal.strip(),
             owner_id=self.subject,
@@ -133,11 +142,10 @@ class TaskService:
             verification_mode=verification_mode,
             required_checks=required_checks,
             baseline_checks=[],
-            requested_capabilities=(
-                sorted_capabilities(payload.capabilities)
-                if payload.capabilities is not None
-                else None
-            ),
+            contract_draft=None,
+            contract_hash=None,
+            contract_status="pending" if binding is not None else "not_required",
+            requested_capabilities=requested_capabilities,
             resolved_capabilities=[],
             allowed_tools=payload.allowed_tools,
             allow_egress=payload.allow_egress,
@@ -241,9 +249,12 @@ class TaskService:
             required_checks=[
                 check
                 for check in (original.required_checks or [])
-                if check.get("source") == "contract"
+                if original.criteria_source == "user" and check.get("source") == "contract"
             ],
             baseline_checks=[],
+            contract_draft=None,
+            contract_hash=None,
+            contract_status="pending" if binding is not None else "not_required",
             requested_capabilities=original.requested_capabilities,
             resolved_capabilities=[],
             allowed_tools=original.allowed_tools,
@@ -724,7 +735,15 @@ class TaskService:
         steps = await self.steps.list_for_task(task_id)
 
         edited = False
-        if task.pending_action is not None:
+        if task.contract_status == "awaiting_input" and task.contract_draft is not None:
+            draft = dict(task.contract_draft)
+            clarifications = [
+                str(item) for item in draft.get("clarifications", []) if str(item).strip()
+            ]
+            draft["clarifications"] = [*clarifications, answer.strip()][-12:]
+            task.contract_draft = draft
+            task.contract_status = "pending"
+        elif task.pending_action is not None:
             # Approval gate: yes/no decides whether the pending action runs.
             approved = _is_approval(answer)
             if steps:

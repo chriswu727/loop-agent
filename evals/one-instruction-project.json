@@ -1,0 +1,19 @@
+{
+  "schema": "loop.one-instruction-project-eval/v1",
+  "cases": [
+    {
+      "id": "repair-greeting",
+      "goal": "Change greeting.py so running it prints exactly 'hello verified loop'. Update the existing tests so they prove the new behavior, and keep the test suite passing.",
+      "files": {
+        "greeting.py": "def greeting():\n    return 'hello loop'\n\n\nif __name__ == '__main__':\n    print(greeting())\n",
+        "tests/test_greeting.py": "from greeting import greeting\n\n\ndef test_greeting():\n    assert greeting() == 'hello loop'\n"
+      },
+      "expected_files": ["greeting.py", "tests/test_greeting.py"],
+      "expected_content": {
+        "greeting.py": "hello verified loop",
+        "tests/test_greeting.py": "hello verified loop"
+      },
+      "limits": { "max_steps": 12, "token_budget": 20000 }
+    }
+  ]
+}

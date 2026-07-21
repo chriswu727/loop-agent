@@ -144,6 +144,10 @@ and residual risks.
 
 ## What is implemented
 
+- One-instruction local-repository handoff: bounded read-only discovery, a typed
+  compiler plus independent critic, a content-addressed contract locked before the
+  first mutation, and an explicit pause when risk, confidence, or authority is not
+  safe to infer.
 - ReAct planning with independent executor/verifier provider selection and fallback.
 - Strict acceptance contracts with required final artifacts, independent check
   snapshots, baseline regression checks, criterion-to-evidence mappings, Receipt
