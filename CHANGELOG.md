@@ -12,6 +12,11 @@ All notable changes are documented here. The project follows Semantic Versioning
   contract provenance in the task UI.
 - Moved manual criteria, checks, artifacts, capabilities, and budgets into an Advanced
   panel while preserving them as immutable overrides when supplied.
+- Hardened real-model contract compilation with schema normalization, minimal-contract
+  prompting, bounded critic-driven repair with no-progress detection, and semantic
+  deduplication of deterministic repository checks.
+- Made discovered Python test gates use `python -m pytest -q` so flat repositories run
+  consistently across virtual environments and pytest entrypoint modes.
 
 ### Security
 
@@ -24,6 +29,8 @@ All notable changes are documented here. The project follows Semantic Versioning
   testable v0.2 iteration gates.
 - Corrected the comparison document to acknowledge the published DeepSeek evaluation
   while retaining its repeated-run and production-isolation limitations.
+- Published the first real-provider one-instruction local-project result, including
+  contract locking, execution verification, Receipt replay, Apply, and Undo evidence.
 
 ## [0.1.0] - 2026-07-15
 

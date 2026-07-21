@@ -1,0 +1,52 @@
+{
+  "label": "deepseek-chat-one-instruction-v0.1.0",
+  "manifest": "evals/one-instruction-project.json",
+  "manifest_sha256": "b718e4d6f518a2a969f58cbf94871965e0deb1fd71d1e01295e3c6beb45fb770",
+  "results": [
+    {
+      "accepted": true,
+      "apply_error": null,
+      "apply_passed": true,
+      "category": "one-instruction-local-project",
+      "checks_passed": true,
+      "contract_covered": true,
+      "contract_hash": "8ab01d54369d661ea0b7465f7e0941e89575fecc5580b8d498805cf4a5a99cab",
+      "contract_issues": [],
+      "contract_locked": true,
+      "duration_seconds": 13.459,
+      "execution_verified": true,
+      "expected_files_present": true,
+      "false_acceptance": false,
+      "id": "repair-greeting",
+      "integrity_valid": true,
+      "isolation": "inline",
+      "model": {
+        "model": "deepseek-chat",
+        "provider": "deepseek"
+      },
+      "replay_passed": true,
+      "solved": true,
+      "status": "completed",
+      "steps_used": 5,
+      "task_id": "3a3ebcce-8852-4ca1-845a-aff214248d2e",
+      "tokens_used": 8610,
+      "undo_error": null,
+      "undo_passed": true
+    }
+  ],
+  "run_at": "2026-07-21T05:08:46.431352+00:00",
+  "schema": "loop.one-instruction-project-eval-report/v1",
+  "summary": {
+    "average_duration_seconds": 13.459,
+    "average_steps": 5.0,
+    "average_tokens": 8610.0,
+    "cases": 1,
+    "false_acceptance_rate": 0.0,
+    "false_acceptances": 0,
+    "solve_rate": 1.0,
+    "solved": 1,
+    "total_duration_seconds": 13.459,
+    "total_steps": 5,
+    "total_tokens": 8610
+  }
+}

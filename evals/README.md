@@ -81,13 +81,15 @@ cd apps/api
 .venv/bin/python scripts/evaluate_one_instruction_project.py \
   --allow-model-spend \
   --project-root "$LOOP_LOCAL_PROJECTS_ROOT" \
-  --label deepseek-chat-one-instruction \
-  --output ../../evals/results/deepseek-chat-one-instruction.json
+  --label deepseek-chat-one-instruction-v0.1.0 \
+  --output ../../evals/results/deepseek-chat-one-instruction-v0.1.0.json
 ```
 
 The project root must be the same filesystem path seen by the API. The evaluator sends
 no criteria, verification commands, artifacts, capability list, or budgets beyond the
 fixture's bounded execution limits; those acceptance details must come from Loop.
+For inline development, start the API through `make dev` or activate `apps/api/.venv`
+first so discovered Python commands use the same environment as the API.
 
 ## Recorded result
 
@@ -97,9 +99,16 @@ acceptances, 30 steps, 42,403 provider-reported tokens, and 65.795 seconds. Ever
 case passed execution verification, contract coverage, artifact presence, Receipt
 integrity, and replay.
 
-The run used a fresh SQLite database, workspace root, and memory root on macOS. Its
-Receipt provenance records `inline` isolation, so it measures the Loop and model
-behavior under the explicitly reduced-isolation development path. It does not
+[`results/deepseek-chat-one-instruction-v0.1.0.json`](./results/deepseek-chat-one-instruction-v0.1.0.json)
+records the flagship local-project fixture with no user-authored criteria, checks,
+artifacts, or capabilities. DeepSeek `deepseek-chat` solved the case in 5 steps,
+8,610 provider-reported tokens, and 13.459 seconds. The generated contract was locked
+before mutation; execution evidence, Receipt integrity, replay, Apply, and Undo all
+passed with zero false acceptance.
+
+Both runs used a fresh SQLite database, workspace root, and memory root on macOS. Their
+Receipt provenance records `inline` isolation, so they measure the Loop and model
+behavior under the explicitly reduced-isolation development path. They do not
 measure Docker/Kubernetes isolation, cross-model variance, repeated-run confidence,
 or production workload quality. The report records the exact manifest SHA-256 so
 the evaluated contract can be matched to the repository.

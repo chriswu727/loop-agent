@@ -56,12 +56,26 @@ class ContractLoopLLM:
         network_check: bool = False,
         risk: str = "low",
         confidence: int = 96,
+        omit_check_kinds: bool = False,
+        critic_rejects_once: bool = False,
+        criteria_as_objects: bool = False,
+        include_discovered_check: bool = False,
+        null_expect_exit: bool = False,
     ) -> None:
         self.critic_accepts = critic_accepts
         self.network_check = network_check
         self.risk = risk
         self.confidence = confidence
+        self.omit_check_kinds = omit_check_kinds
+        self.critic_rejects_once = critic_rejects_once
+        self.criteria_as_objects = criteria_as_objects
+        self.include_discovered_check = include_discovered_check
+        self.null_expect_exit = null_expect_exit
         self.plan_index = 0
+        self.compile_calls = 0
+        self.critic_calls = 0
+        self.critic_prompt = ""
+        self.repair_prompt = ""
 
     async def complete(
         self,
@@ -74,30 +88,64 @@ class ContractLoopLLM:
     ) -> LLMResult:
         del max_tokens, temperature, token_budget
         if "compile one software instruction" in system:
+            self.compile_calls += 1
+            if "Repair the rejected draft" in system:
+                self.repair_prompt = system
             return LLMResult(
                 json.dumps(
                     {
-                        "criteria": [
-                            "app.py prints after instead of before",
-                            "Running app.py exits successfully and reports after",
-                        ],
+                        "criteria": (
+                            [
+                                {
+                                    "id": "criterion-001",
+                                    "description": (
+                                        "criterion-001: app.py prints after instead of before"
+                                    ),
+                                },
+                                {
+                                    "id": "criterion-002",
+                                    "description": (
+                                        "criterion-002: Running app.py exits successfully and "
+                                        "reports after"
+                                    ),
+                                },
+                            ]
+                            if self.criteria_as_objects
+                            else [
+                                "app.py prints after instead of before",
+                                "Running app.py exits successfully and reports after",
+                            ]
+                        ),
                         "checks": [
                             {
-                                "kind": "file_contains",
+                                **({} if self.omit_check_kinds else {"kind": "file_contains"}),
                                 "path": "app.py",
                                 "text": "print('after')",
+                                **({"expect_exit": None} if self.null_expect_exit else {}),
                                 "criterion_ids": ["criterion-001"],
                             },
                             {
-                                "kind": "command",
+                                **({} if self.omit_check_kinds else {"kind": "command"}),
                                 "command": (
                                     "curl https://example.com"
                                     if self.network_check
                                     else "python3 app.py"
                                 ),
                                 "expect_stdout": "after",
+                                **({"expect_exit": None} if self.null_expect_exit else {}),
                                 "criterion_ids": ["criterion-002"],
                             },
+                            *(
+                                [
+                                    {
+                                        "kind": "command",
+                                        "command": "python -m pytest -q",
+                                        "criterion_ids": ["criterion-002"],
+                                    }
+                                ]
+                                if self.include_discovered_check
+                                else []
+                            ),
                         ],
                         "artifacts": ["app.py"],
                         "risk": self.risk,
@@ -111,16 +159,17 @@ class ContractLoopLLM:
                 model="contract-v1",
             )
         if "independent acceptance-contract critic" in system:
+            self.critic_calls += 1
+            self.critic_prompt = user
+            critic_accepts = self.critic_accepts and not (
+                self.critic_rejects_once and self.critic_calls == 1
+            )
             return LLMResult(
                 json.dumps(
                     {
-                        "accepted": self.critic_accepts,
-                        "issues": (
-                            [] if self.critic_accepts else ["The intended word is ambiguous."]
-                        ),
-                        "question": (
-                            None if self.critic_accepts else "Which word should app.py print?"
-                        ),
+                        "accepted": critic_accepts,
+                        "issues": ([] if critic_accepts else ["The intended word is ambiguous."]),
+                        "question": (None if critic_accepts else "Which word should app.py print?"),
                     }
                 ),
                 "fixture-critic",
@@ -182,7 +231,7 @@ def test_repository_discovery_is_bounded_and_read_only(project_settings: Path) -
     assert discovery.manifests == ["pyproject.toml"]
     assert discovery.test_files == ["tests/test_app.py"]
     assert discovery.files_scanned == 3
-    assert discovery.quality_checks[0].command == "pytest -q"
+    assert discovery.quality_checks[0].command == "python -m pytest -q"
     assert _git(project_settings, "status", "--porcelain") == before == ""
 
 
@@ -200,6 +249,117 @@ async def test_compiler_cannot_smuggle_network_authority(project_settings: Path)
     assert compiled.contract_hash is None
     assert compiled.draft.critique.accepted is False
     assert any("denied shell network access" in issue for issue in compiled.draft.critique.issues)
+
+
+async def test_compiler_infers_unambiguous_missing_check_kinds(
+    project_settings: Path,
+) -> None:
+    model = ContractLoopLLM(omit_check_kinds=True)
+    compiled = await compile_project_contract(
+        goal="Update the local greeting",
+        root=project_settings,
+        compiler=model,
+        critic=model,
+        granted_capabilities={Capability.FS_READ, Capability.FS_WRITE, Capability.EXEC},
+        token_budget=10_000,
+    )
+
+    assert compiled.contract_hash
+    assert [check.kind for check in compiled.draft.checks if check.source == "contract"] == [
+        "file_contains",
+        "command",
+        "file_exists",
+    ]
+
+
+async def test_compiler_normalizes_null_check_defaults(project_settings: Path) -> None:
+    model = ContractLoopLLM(null_expect_exit=True)
+    compiled = await compile_project_contract(
+        goal="Update the local greeting",
+        root=project_settings,
+        compiler=model,
+        critic=model,
+        granted_capabilities={Capability.FS_READ, Capability.FS_WRITE, Capability.EXEC},
+        token_budget=10_000,
+    )
+
+    assert compiled.contract_hash
+    assert all(check.expect_exit == 0 for check in compiled.draft.checks)
+
+
+async def test_compiler_normalizes_structured_criteria(project_settings: Path) -> None:
+    model = ContractLoopLLM(criteria_as_objects=True)
+    compiled = await compile_project_contract(
+        goal="Update the local greeting",
+        root=project_settings,
+        compiler=model,
+        critic=model,
+        granted_capabilities={Capability.FS_READ, Capability.FS_WRITE, Capability.EXEC},
+        token_budget=10_000,
+    )
+
+    assert compiled.contract_hash
+    assert compiled.draft.criteria == [
+        "app.py prints after instead of before",
+        "Running app.py exits successfully and reports after",
+    ]
+
+
+async def test_discovered_checks_are_not_duplicated(project_settings: Path) -> None:
+    model = ContractLoopLLM(include_discovered_check=True)
+    compiled = await compile_project_contract(
+        goal="Update the local greeting",
+        root=project_settings,
+        compiler=model,
+        critic=model,
+        granted_capabilities={Capability.FS_READ, Capability.FS_WRITE, Capability.EXEC},
+        token_budget=10_000,
+    )
+
+    assert compiled.contract_hash
+    pytest_checks = [
+        check for check in compiled.draft.checks if check.command == "python -m pytest -q"
+    ]
+    assert len(pytest_checks) == 1
+    assert pytest_checks[0].source == "contract"
+    assert pytest_checks[0].criterion_ids == ["criterion-002"]
+
+
+async def test_critic_reviews_discovered_quality_checks(project_settings: Path) -> None:
+    model = ContractLoopLLM()
+    compiled = await compile_project_contract(
+        goal="Update the local greeting",
+        root=project_settings,
+        compiler=model,
+        critic=model,
+        granted_capabilities={Capability.FS_READ, Capability.FS_WRITE, Capability.EXEC},
+        token_budget=10_000,
+    )
+
+    assert compiled.contract_hash
+    assert '"command": "python -m pytest -q"' in model.critic_prompt
+    assert '"source": "system"' in model.critic_prompt
+
+
+async def test_compiler_runs_one_bounded_repair_after_critic_rejection(
+    project_settings: Path,
+) -> None:
+    model = ContractLoopLLM(critic_rejects_once=True)
+    compiled = await compile_project_contract(
+        goal="Update the local greeting",
+        root=project_settings,
+        compiler=model,
+        critic=model,
+        granted_capabilities={Capability.FS_READ, Capability.FS_WRITE, Capability.EXEC},
+        token_budget=10_000,
+    )
+
+    assert compiled.contract_hash
+    assert compiled.draft.critique.accepted is True
+    assert model.compile_calls == 2
+    assert model.critic_calls == 2
+    assert compiled.tokens_spent == 60
+    assert "remove invented implementation requirements" in model.repair_prompt
 
 
 @pytest.mark.parametrize(
@@ -362,6 +522,8 @@ async def test_rejected_contract_pauses_before_mutation(
     assert task.contract_hash is None
     assert task.pending_question == "Which word should app.py print?"
     assert task.steps_used == 0
+    assert model.compile_calls == 2
+    assert model.critic_calls == 2
     assert Path(task.workspace_path or "", "app.py").read_text() == "print('before')\n"  # noqa: ASYNC240
     assert (project_settings / "app.py").read_text() == "print('before')\n"
 

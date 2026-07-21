@@ -20,7 +20,11 @@ from app.schemas.contract import (
     RepositoryDiscovery,
 )
 from app.services.completion import discover_project_checks
-from app.services.prompts import contract_compile_prompts, contract_critic_prompts
+from app.services.prompts import (
+    contract_compile_prompts,
+    contract_critic_prompts,
+    contract_repair_prompts,
+)
 from app.tools.policy import Verdict, evaluate_command, network_command_reason
 from app.tools.workspace import Workspace
 
@@ -44,6 +48,8 @@ _TAUTOLOGIES = (
     re.compile(r"^works? correctly[.!]?$", re.I),
 )
 _MIN_AUTO_CONFIDENCE = 80
+_MAX_AUTO_CRITERIA = 8
+_MAX_CONTRACT_ATTEMPTS = 3
 
 
 @dataclass(frozen=True)
@@ -173,63 +179,147 @@ async def compile_project_contract(
             critic_result=None,
             tokens_spent=compiler_result.tokens,
         )
-    critic_system, critic_user = contract_critic_prompts(goal, proposal, discovery)
-    remaining = None if token_budget is None else max(0, token_budget - compiler_result.tokens)
-    try:
-        critic_result = await critic.complete(
-            critic_system,
-            critic_user,
-            max_tokens=1_500,
-            temperature=0.1,
-            token_budget=remaining,
+    tokens_spent = compiler_result.tokens
+    critic_result: LLMResult | None = None
+    repair_states: set[str] = set()
+    for attempt in range(_MAX_CONTRACT_ATTEMPTS):
+        effective_proposal = proposal.model_copy(
+            update={"checks": _effective_checks(proposal, discovery)}
         )
-    except LLMError as exc:
-        draft = _draft_from_proposal(
+        critic_system, critic_user = contract_critic_prompts(goal, effective_proposal, discovery)
+        remaining = None if token_budget is None else max(0, token_budget - tokens_spent)
+        try:
+            critic_result = await critic.complete(
+                critic_system,
+                critic_user,
+                max_tokens=1_500,
+                temperature=0.1,
+                token_budget=remaining,
+            )
+        except LLMError as exc:
+            draft = _draft_from_proposal(
+                proposal,
+                discovery,
+                known_clarifications,
+                ContractCritique(
+                    accepted=False,
+                    issues=[f"The independent contract critic could not complete: {exc}"],
+                    question=(
+                        "Loop could not independently validate this contract. What observable "
+                        "behavior or output must be true when the task is finished?"
+                    ),
+                ),
+                compiler_result,
+            )
+            return CompiledContract(
+                draft=draft,
+                contract_hash=None,
+                compiler_result=compiler_result,
+                critic_result=None,
+                tokens_spent=tokens_spent + exc.tokens_spent,
+            )
+        tokens_spent += critic_result.tokens
+        critique = _critique_from_result(critic_result)
+        issues = [
+            *critique.issues,
+            *_deterministic_issues(proposal, discovery, granted_capabilities),
+        ]
+        issues = list(dict.fromkeys(issue.strip() for issue in issues if issue.strip()))[:12]
+        accepted = critique.accepted and not issues
+        question = None if accepted else critique.question or _question_for(issues)
+        final_critique = critique.model_copy(
+            update={"accepted": accepted, "issues": issues, "question": question}
+        )
+        repair_state = json.dumps(
+            {"proposal": proposal.model_dump(mode="json"), "issues": issues},
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        stalled = repair_state in repair_states
+        if accepted or attempt == _MAX_CONTRACT_ATTEMPTS - 1 or stalled:
+            draft = _draft_from_proposal(
+                proposal,
+                discovery,
+                known_clarifications,
+                final_critique,
+                compiler_result,
+            )
+            return CompiledContract(
+                draft=draft,
+                contract_hash=hash_contract(draft) if accepted else None,
+                compiler_result=compiler_result,
+                critic_result=critic_result,
+                tokens_spent=tokens_spent,
+            )
+        repair_states.add(repair_state)
+        repair_system, repair_user = contract_repair_prompts(
+            goal,
             proposal,
             discovery,
-            known_clarifications,
-            ContractCritique(
-                accepted=False,
-                issues=[f"The independent contract critic could not complete: {exc}"],
-                question=(
-                    "Loop could not independently validate this contract. What observable "
-                    "behavior or output must be true when the task is finished?"
-                ),
-            ),
-            compiler_result,
+            issues,
         )
-        return CompiledContract(
-            draft=draft,
-            contract_hash=None,
-            compiler_result=compiler_result,
-            critic_result=None,
-            tokens_spent=compiler_result.tokens + exc.tokens_spent,
-        )
-    critique = _critique_from_result(critic_result)
-    issues = [
-        *critique.issues,
-        *_deterministic_issues(proposal, discovery, granted_capabilities),
-    ]
-    issues = list(dict.fromkeys(issue.strip() for issue in issues if issue.strip()))[:12]
-    accepted = critique.accepted and not issues
-    question = None if accepted else critique.question or _question_for(issues)
-    final_critique = critique.model_copy(
-        update={"accepted": accepted, "issues": issues, "question": question}
-    )
-    draft = _draft_from_proposal(
-        proposal,
-        discovery,
-        known_clarifications,
-        final_critique,
-        compiler_result,
-    )
-    return CompiledContract(
-        draft=draft,
-        contract_hash=hash_contract(draft) if accepted else None,
-        compiler_result=compiler_result,
-        critic_result=critic_result,
-        tokens_spent=compiler_result.tokens + critic_result.tokens,
-    )
+        remaining = None if token_budget is None else max(0, token_budget - tokens_spent)
+        try:
+            repair_result = await compiler.complete(
+                repair_system,
+                repair_user,
+                max_tokens=2_000,
+                temperature=0.1,
+                token_budget=remaining,
+            )
+        except LLMError as exc:
+            repair_critique = final_critique.model_copy(
+                update={
+                    "issues": [
+                        *final_critique.issues,
+                        f"The bounded contract repair could not complete: {exc}",
+                    ][:12]
+                }
+            )
+            draft = _draft_from_proposal(
+                proposal,
+                discovery,
+                known_clarifications,
+                repair_critique,
+                compiler_result,
+            )
+            return CompiledContract(
+                draft=draft,
+                contract_hash=None,
+                compiler_result=compiler_result,
+                critic_result=critic_result,
+                tokens_spent=tokens_spent + exc.tokens_spent,
+            )
+        tokens_spent += repair_result.tokens
+        try:
+            proposal = _proposal_from_result(repair_result.content)
+            proposal = _merge_required_checks(proposal, required_checks or [])
+        except (TypeError, ValueError) as exc:
+            repair_critique = final_critique.model_copy(
+                update={
+                    "issues": [
+                        *final_critique.issues,
+                        f"The bounded contract repair was invalid: {exc}",
+                    ][:12]
+                }
+            )
+            draft = _draft_from_proposal(
+                proposal,
+                discovery,
+                known_clarifications,
+                repair_critique,
+                compiler_result,
+            )
+            return CompiledContract(
+                draft=draft,
+                contract_hash=None,
+                compiler_result=compiler_result,
+                critic_result=critic_result,
+                tokens_spent=tokens_spent,
+            )
+        compiler_result = repair_result
+    raise AssertionError("bounded contract compilation exhausted without a verdict")
 
 
 def failed_contract_draft(
@@ -288,7 +378,7 @@ def _draft_from_proposal(
 ) -> ContractDraft:
     return ContractDraft(
         **proposal.model_dump(exclude={"checks"}),
-        checks=[*proposal.checks, *discovery.quality_checks],
+        checks=_effective_checks(proposal, discovery),
         compiler=_compiler_identity(compiler_result),
         discovery=discovery,
         clarifications=clarifications,
@@ -324,9 +414,9 @@ def _proposal_from_result(content: str) -> ContractProposal:
     raw_criteria = parsed.get("criteria")
     criteria = list(
         dict.fromkeys(
-            str(item).strip()
+            text
             for item in (raw_criteria if isinstance(raw_criteria, list) else [])
-            if str(item).strip()
+            if (text := _criterion_text(item))
         )
     )[:12]
     parsed["criteria"] = criteria
@@ -339,6 +429,18 @@ def _proposal_from_result(content: str) -> ContractProposal:
         if not isinstance(raw, dict):
             continue
         check = dict(raw)
+        if check.get("expect_exit") is None:
+            check.pop("expect_exit", None)
+        if not check.get("kind"):
+            command = str(check.get("command") or "").strip()
+            path = check.get("path")
+            text = str(check.get("text") or "").strip()
+            if command and not path and not text:
+                check["kind"] = "command"
+            elif path and text and not command:
+                check["kind"] = "file_contains"
+            elif path and not command and not text:
+                check["kind"] = "file_exists"
         check["id"] = f"contract-{index:03d}"
         check["source"] = "contract"
         raw_ids = check.get("criterion_ids")
@@ -389,13 +491,72 @@ def _proposal_from_result(content: str) -> ContractProposal:
             authority_requests.append(Capability(str(value)))
         except ValueError:
             continue
-    return ContractProposal.model_validate(
+    proposal = ContractProposal.model_validate(
         {
             **parsed,
             "checks": normalized_checks,
             "authority_requests": list(dict.fromkeys(authority_requests)),
         }
     )
+    return proposal.model_copy(update={"checks": _deduplicate_contract_checks(proposal.checks)})
+
+
+def _criterion_text(value: Any) -> str:
+    if isinstance(value, str):
+        return re.sub(r"^criterion-\d{3}\s*:\s*", "", value.strip(), flags=re.I)
+    if isinstance(value, dict):
+        for key in ("description", "text", "criterion", "outcome"):
+            text = value.get(key)
+            if isinstance(text, str) and text.strip():
+                return re.sub(r"^criterion-\d{3}\s*:\s*", "", text.strip(), flags=re.I)
+    return ""
+
+
+def _check_identity(check: ContractCheck) -> tuple[object, ...]:
+    return (
+        check.kind,
+        (check.command or "").strip(),
+        check.path or "",
+        check.text or "",
+        check.expect_exit,
+        check.expect_stdout,
+    )
+
+
+def _check_target(check: ContractCheck) -> tuple[str, str, str]:
+    return (check.kind, (check.command or check.path or "").strip(), check.text or "")
+
+
+def _deduplicate_contract_checks(checks: list[ContractCheck]) -> list[ContractCheck]:
+    deduplicated: list[ContractCheck] = []
+    positions: dict[tuple[object, ...], int] = {}
+    for check in checks:
+        identity = _check_identity(check)
+        position = positions.get(identity)
+        if position is None:
+            positions[identity] = len(deduplicated)
+            deduplicated.append(check)
+            continue
+        existing = deduplicated[position]
+        deduplicated[position] = existing.model_copy(
+            update={"criterion_ids": sorted(set(existing.criterion_ids) | set(check.criterion_ids))}
+        )
+    return deduplicated
+
+
+def _effective_checks(
+    proposal: ContractProposal,
+    discovery: RepositoryDiscovery,
+) -> list[ContractCheck]:
+    checks = list(proposal.checks)
+    targets = {_check_target(check) for check in checks}
+    for check in discovery.quality_checks:
+        target = _check_target(check)
+        if target in targets:
+            continue
+        checks.append(check)
+        targets.add(target)
+    return checks
 
 
 def _merge_required_checks(
@@ -454,6 +615,11 @@ def _deterministic_issues(
         issues.append(
             f"Contract confidence is {proposal.confidence}%; automatic start requires at least "
             f"{_MIN_AUTO_CONFIDENCE}%."
+        )
+    if len(proposal.criteria) > _MAX_AUTO_CRITERIA:
+        issues.append(
+            f"Contract has {len(proposal.criteria)} criteria; automatic start permits at most "
+            f"{_MAX_AUTO_CRITERIA} to prevent over-decomposition."
         )
     for index, criterion in enumerate(proposal.criteria, start=1):
         if any(pattern.fullmatch(criterion.strip()) for pattern in _TAUTOLOGIES):

@@ -27,7 +27,7 @@ def discover_project_checks(root: Path) -> list[dict[str, Any]]:
     pyproject_text = pyproject.read_text(errors="replace") if pyproject.is_file() else ""
     has_python_tests = (root / "tests").is_dir() or any(root.glob("test_*.py"))
     if has_python_tests:
-        checks.append(_command_check("system-python-test", "pytest -q"))
+        checks.append(_command_check("system-python-test", "python -m pytest -q"))
     if "[tool.ruff" in pyproject_text:
         checks.append(_command_check("system-python-lint", "ruff check ."))
     if "[tool.mypy" in pyproject_text:

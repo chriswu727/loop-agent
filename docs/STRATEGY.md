@@ -109,16 +109,17 @@ gate must be verified before the next one expands the product surface.
 
 ### Gate 1 — One-instruction contract compiler
 
-**Implementation status (2026-07-20): core path complete; real-provider evidence
-pending.** The default UI now needs only a repository and instruction. The runtime
+**Implementation status (2026-07-20): gate complete with one real-provider sample.**
+The default UI now needs only a repository and instruction. The runtime
 performs bounded read-only discovery, compiles and independently criticizes a typed
 contract, rejects authority expansion and unsafe verification commands, locks the
 accepted draft by content hash before mutation, and exposes the same contract in the
 task, Receipt, replay, and Apply/Undo path. Deterministic integration coverage proves
 edit → observed failure → repair → independent verification → Apply → Undo, including
-the zero-mutation clarification path. A repeatable real-provider project fixture is
-committed, but no Gate 1 provider result is claimed until that fixture is actually run
-and its report published.
+the zero-mutation clarification path. The committed DeepSeek `deepseek-chat` fixture
+run also completed the whole path from one instruction through Receipt replay, Apply,
+and Undo in 5 steps and 8,610 provider-reported tokens. It is one clean sample rather
+than a repeated-run confidence claim.
 
 - Replace the default form's manual criteria, command, artifact, capability, step, and
   token configuration with a repository picker, instruction, and Run action. Keep the
