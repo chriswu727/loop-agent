@@ -12,7 +12,7 @@ from app.core.config import settings
 
 
 async def test_execute_task_bounds_concurrency(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(settings, "agent_max_concurrent_runs", 2)
+    monkeypatch.setattr(settings, "agent_max_concurrent_runs", 4)
     runner._run_gates.clear()  # fresh gate at the new limit
 
     active = 0
@@ -40,9 +40,46 @@ async def test_execute_task_bounds_concurrency(monkeypatch: pytest.MonkeyPatch) 
     monkeypatch.setattr(runner, "get_sessionmaker", lambda: _NullSession)
     monkeypatch.setattr(runner, "get_llm_client", lambda: None)
 
-    await asyncio.gather(*(runner.execute_task(uuid4()) for _ in range(6)))
+    await asyncio.gather(*(runner.execute_task(uuid4()) for _ in range(20)))
 
-    assert peak == 2  # reached the cap, never exceeded it
+    assert peak == 4  # reached the cap, never exceeded it
+
+
+async def test_duplicate_delivery_claims_one_task_exactly_once(tmp_path) -> None:
+    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
+    import app.db.models as _models  # noqa: F401
+    from app.db.base import Base
+    from app.repositories.task import TaskRepository
+
+    engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'claims.db'}")
+    async with engine.begin() as connection:
+        await connection.run_sync(Base.metadata.create_all)
+    sessions = async_sessionmaker(engine, expire_on_commit=False, autoflush=False)
+    async with sessions() as session:
+        task = await TaskRepository(session).create(
+            goal="claim once",
+            status="pending",
+            rubric=[],
+            max_steps=4,
+            token_budget=10_000,
+            summary=None,
+            verification_score=0,
+            steps_used=0,
+            tokens_used=0,
+            workspace_path=None,
+        )
+        await session.commit()
+
+    async def claim() -> bool:
+        async with sessions() as session:
+            return await TaskRepository(session).claim_pending(task.id) is not None
+
+    try:
+        claims = await asyncio.gather(*(claim() for _ in range(20)))
+        assert sum(claims) == 1
+    finally:
+        await engine.dispose()
 
 
 async def test_worker_run_task_handler_dispatches(monkeypatch: pytest.MonkeyPatch) -> None:

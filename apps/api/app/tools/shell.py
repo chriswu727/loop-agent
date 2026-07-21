@@ -86,6 +86,11 @@ async def collect_output(
 
     try:
         raw = await asyncio.wait_for(drain(), timeout=timeout_seconds)
+    except asyncio.CancelledError:
+        kill_process_group(proc)
+        with contextlib.suppress(Exception):
+            await asyncio.shield(proc.wait())
+        raise
     except TimeoutError:
         kill_process_group(proc)
         with contextlib.suppress(Exception):

@@ -141,6 +141,51 @@ async def test_gateway_rejects_unsigned_requests() -> None:
     assert response.status_code == 401
 
 
+async def test_gateway_requires_operation_id_for_external_write(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    private, public = _keys()
+    app = create_app(
+        ProviderGatewaySettings(
+            authority_public_key=public,
+            browser_enabled=False,
+            smtp_host="smtp.example.com",
+            smtp_user="me@example.com",
+            smtp_password="secret",
+        )
+    )
+    runtime: ProviderGatewayRuntime = app.state.runtime
+    called = False
+
+    async def fake_send(_name: str, _args: dict[str, Any], _token: str | None) -> str:
+        nonlocal called
+        called = True
+        return "sent"
+
+    monkeypatch.setattr(runtime.email, "call", fake_send)
+    capabilities = [Capability.EMAIL_SEND]
+    hosts = ["smtp.example.com"]
+    headers = {
+        "Authorization": f"Bearer {_token(private, capabilities, egress_hosts=hosts)}",
+        "X-Loop-Egress-Token": _token(
+            private,
+            capabilities,
+            audience=EGRESS_PROXY_AUDIENCE,
+            egress_hosts=hosts,
+        ),
+    }
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://gateway") as client:
+        response = await client.post(
+            "/v1/tools/send_email",
+            headers=headers,
+            json={"args": {"to": "recipient@example.com"}},
+        )
+    assert response.status_code == 403
+    assert "operation_id" in response.json()["detail"]
+    assert called is False
+
+
 async def test_browser_gateway_rejects_provider_audience_token() -> None:
     private, public = _keys()
     app = create_app(
@@ -511,6 +556,58 @@ async def test_gateway_client_keeps_denied_call_audit(tmp_path) -> None:
     await gateway.client.aclose()
 
 
+async def test_gateway_client_cancellation_aborts_inflight_request(tmp_path) -> None:
+    started = asyncio.Event()
+    cancelled = asyncio.Event()
+
+    async def handler(_request: httpx.Request) -> httpx.Response:
+        started.set()
+        try:
+            await asyncio.Event().wait()
+        except asyncio.CancelledError:
+            cancelled.set()
+            raise
+        return httpx.Response(200, json={"result": "late"})
+
+    gateway = ProviderGatewayClient(
+        "http://gateway",
+        Workspace(tmp_path / "workspace"),
+        lambda _audience: "token",
+    )
+    await gateway.client.aclose()
+    gateway.client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    running = asyncio.create_task(gateway.call("read_inbox", {}))
+    await started.wait()
+    running.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await running
+    assert cancelled.is_set()
+    await gateway.client.aclose()
+
+
+async def test_gateway_start_cancellation_closes_transport(tmp_path) -> None:
+    started = asyncio.Event()
+
+    async def handler(_request: httpx.Request) -> httpx.Response:
+        started.set()
+        await asyncio.Event().wait()
+        return httpx.Response(200, json={"tools": []})
+
+    gateway = ProviderGatewayClient(
+        "http://gateway",
+        Workspace(tmp_path / "workspace"),
+        lambda _audience: "token",
+    )
+    await gateway.client.aclose()
+    gateway.client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    running = asyncio.create_task(gateway.start())
+    await started.wait()
+    running.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await running
+    assert gateway.client.is_closed
+
+
 async def test_gateway_clients_separate_audiences_and_egress_authority(tmp_path) -> None:
     requested: list[str] = []
 
@@ -866,7 +963,12 @@ async def test_email_provider_reaches_smtp_only_through_enforcing_proxy() -> Non
     try:
         result = await EmailProvider(settings).call(
             "send_email",
-            {"to": "recipient@example.com", "subject": "Proxy proof", "body": "Delivered"},
+            {
+                "to": "recipient@example.com",
+                "subject": "Proxy proof",
+                "body": "Delivered",
+                "operation_id": "1a9ffad3-a357-49ce-a556-94c93dbe17a4",
+            },
             token,
         )
     finally:

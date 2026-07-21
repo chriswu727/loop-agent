@@ -157,6 +157,23 @@ strict verified change set, and Apply/Undo without manually authored criteria.
 
 ### Gate 2 — Cancellation, recovery, and concurrency
 
+**Implementation status (2026-07-20): gate complete.** Every run has a database-backed
+cancellation watcher. Cancellation tears through the active model/tool coroutine and
+its delegated task tree; host process groups, Docker containers, Kubernetes Jobs, and
+gateway requests have explicit cleanup tests. Tool execution uses a durable
+`loop.operation/v1` write-ahead journal: a crash after the possible side effect but
+before the hash-chained Step commit leaves an unknown outcome that recovery refuses to
+replay. This deliberately provides at-most-once mutation, not a false exactly-once
+claim. SMTP Message-ID and CalDAV UID receive stable operation ids, while already
+accepted upstream effects remain non-reversible.
+
+The automated fault matrix covers a failed queue acknowledgement, abandoned Redis
+delivery and Redis restart, Postgres container restart, terminal Receipt write failure,
+20 duplicate claims, 20 isolated workspaces, 20 source-lock contenders, and 20 runs
+through the resource gate. Atomic pending-to-running claims prevent duplicate queue
+delivery from executing a run twice; OS-backed project locks serialize Apply/Undo
+across processes without stale-lock eviction.
+
 - Propagate cancellation into in-flight provider calls, shell process groups, Docker
   containers, Kubernetes Jobs, gateways, and delegated work.
 - Inject crashes around plan persistence, tool completion, verification, queue

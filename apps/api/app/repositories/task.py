@@ -85,6 +85,24 @@ class TaskRepository(BaseRepository[TaskModel]):
         )
         return list((await self.session.scalars(stmt)).all())
 
+    async def list_descendants(self, parent_id: uuid.UUID) -> list[TaskModel]:
+        descendants: list[TaskModel] = []
+        frontier = [parent_id]
+        seen = {parent_id}
+        while frontier:
+            children = list(
+                (
+                    await self.session.scalars(
+                        select(TaskModel).where(TaskModel.parent_id.in_(frontier))
+                    )
+                ).all()
+            )
+            fresh = [child for child in children if child.id not in seen]
+            descendants.extend(fresh)
+            seen.update(child.id for child in fresh)
+            frontier = [child.id for child in fresh]
+        return descendants
+
     async def recent_for_chat(
         self,
         chat_id: str,

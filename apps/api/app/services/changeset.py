@@ -7,16 +7,16 @@ import os
 import shutil
 import subprocess
 import tempfile
-import time
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
+
+from filelock import FileLock, Timeout
 
 from app.core.config import settings
 from app.exceptions import ConflictError, ValidationError
 
 _RECEIPT_PATHS = ("receipt.json", "RECEIPT.md")
-_STALE_LOCK_SECONDS = 600
 
 
 def _git_environment(extra: dict[str, str] | None = None) -> dict[str, str]:
@@ -367,29 +367,23 @@ def _metadata_root() -> Path:
     return root
 
 
-def acquire_source_lock(source_path: str) -> Path:
+def acquire_source_lock(source_path: str) -> FileLock:
     digest = hashlib.sha256(str(Path(source_path).resolve()).encode()).hexdigest()
-    lock = _metadata_root() / f"source-{digest}.lock"
-    for attempt in range(2):
-        try:
-            lock.mkdir()
-            return lock
-        except FileExistsError as exc:
-            try:
-                stale = time.time() - lock.stat().st_mtime > _STALE_LOCK_SECONDS
-            except OSError:
-                stale = False
-            if attempt == 0 and stale:
-                shutil.rmtree(lock, ignore_errors=True)
-                continue
-            raise ConflictError(
-                "Another change-set operation is in progress for this project."
-            ) from exc
-    raise ConflictError("Could not acquire the project change-set lock.")
+    lock = FileLock(
+        _metadata_root() / f"source-{digest}.filelock",
+        thread_local=False,
+    )
+    try:
+        lock.acquire(timeout=0)
+    except Timeout as exc:
+        raise ConflictError(
+            "Another change-set operation is in progress for this project."
+        ) from exc
+    return lock
 
 
-def release_source_lock(lock: Path) -> None:
-    shutil.rmtree(lock, ignore_errors=True)
+def release_source_lock(lock: FileLock) -> None:
+    lock.release()
 
 
 def patch_path(task_id: uuid.UUID) -> Path:

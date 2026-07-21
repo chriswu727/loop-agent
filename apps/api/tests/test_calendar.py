@@ -43,10 +43,18 @@ async def test_create_event(monkeypatch: pytest.MonkeyPatch) -> None:
     tools = CalendarTools()
     fake = _FakeCalendar()
     monkeypatch.setattr(tools, "_calendar", lambda: fake)
-    out = await tools.call("create_event", {"summary": "Dentist", "start": "2026-07-02T15:00:00"})
+    out = await tools.call(
+        "create_event",
+        {
+            "summary": "Dentist",
+            "start": "2026-07-02T15:00:00",
+            "operation_id": "66e20fcc-5887-46f5-b315-9c6b2630fec4",
+        },
+    )
     assert "Event created" in out and "Dentist" in out
     assert len(fake.saved) == 1
     assert "Dentist" in fake.saved[0]  # the iCalendar payload carries the summary
+    assert "66e20fcc-5887-46f5-b315-9c6b2630fec4@loop" in fake.saved[0]
 
 
 async def test_create_event_needs_summary() -> None:
@@ -55,5 +63,19 @@ async def test_create_event_needs_summary() -> None:
 
 
 async def test_create_event_needs_valid_start() -> None:
-    out = await CalendarTools().call("create_event", {"summary": "X", "start": "not-a-date"})
+    out = await CalendarTools().call(
+        "create_event",
+        {
+            "summary": "X",
+            "start": "not-a-date",
+            "operation_id": "c9a37b93-288c-4e7a-ab2f-146634d52639",
+        },
+    )
     assert "ISO 'start'" in out
+
+
+async def test_create_event_requires_operation_id() -> None:
+    out = await CalendarTools().call(
+        "create_event", {"summary": "X", "start": "2026-07-02T15:00:00"}
+    )
+    assert "operation_id" in out

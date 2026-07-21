@@ -305,7 +305,8 @@ def test_kubernetes_acceptance_migrates_runs_task_and_rolls_back() -> None:
     assert "kubectl rollout undo deployment/api" in script
     assert 'task["sandbox"] != "kubernetes"' in script
     assert 'report.get("authentic")' in script
-    assert "0009_contract_draft" in script
+    assert "0010_operation_journal" in script
+    assert "run_cluster_probe after-postgres-restart true" in script
     assert "api web worker" in smoke
     assert 'cluster="${LOOP_ACCEPTANCE_CLUSTER:-la-' in script
     assert 'registry_container="$registry"' in script

@@ -55,10 +55,12 @@ class EmailProvider:
         to = str(args.get("to", "")).strip()
         if not to:
             return "send_email needs a 'to' address."
+        operation_id = str(uuid.UUID(str(args["operation_id"])))
         msg = EmailMessage()
         msg["From"] = self.settings.email_from or self.settings.smtp_user or ""
         msg["To"] = to
         msg["Subject"] = str(args.get("subject", "")).strip()
+        msg["Message-ID"] = f"<{operation_id}@loop>"
         msg.set_content(str(args.get("body", "")))
         with _SMTPThroughRelay(
             self.settings.smtp_host or "",
@@ -161,6 +163,7 @@ class CalendarProvider:
         summary = str(args.get("summary", "")).strip()
         if not summary:
             return "create_event needs a 'summary'."
+        operation_id = str(uuid.UUID(str(args["operation_id"])))
         try:
             start = datetime.fromisoformat(str(args["start"]))
             end = (
@@ -178,7 +181,7 @@ class CalendarProvider:
         event.add("summary", summary)
         event.add("dtstart", start)
         event.add("dtend", end)
-        event.add("uid", f"{uuid.uuid4().hex}@loop")
+        event.add("uid", f"{operation_id}@loop")
         if args.get("description"):
             event.add("description", str(args["description"]))
         obj.add_component(event)

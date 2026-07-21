@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import asyncio
 import subprocess
 import uuid
 from pathlib import Path
 
 import pytest
+from filelock import FileLock
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
@@ -39,6 +41,29 @@ def _repository(root: Path, name: str = "project") -> Path:
     _git(repo, "add", "-A")
     _git(repo, "commit", "--quiet", "-m", "initial")
     return repo
+
+
+async def test_source_lock_admits_one_of_twenty_concurrent_writers(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    workspaces = tmp_path / "workspaces"
+    monkeypatch.setattr(settings, "agent_workspaces_root", str(workspaces))
+    source = tmp_path / "source"
+    source.mkdir()
+
+    async def acquire() -> FileLock | None:
+        try:
+            return await asyncio.to_thread(acquire_source_lock, str(source))
+        except Exception as exc:
+            assert "in progress" in str(exc)
+            return None
+
+    locks = await asyncio.gather(*(acquire() for _ in range(20)))
+    acquired = [lock for lock in locks if lock is not None]
+    assert len(acquired) == 1
+    release_source_lock(acquired[0])
+    reacquired = await asyncio.to_thread(acquire_source_lock, str(source))
+    await asyncio.to_thread(release_source_lock, reacquired)
 
 
 async def _mark_verified(engine: AsyncEngine, task_id: str) -> None:

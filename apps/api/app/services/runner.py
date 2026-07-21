@@ -69,6 +69,16 @@ async def _heartbeat_task(task_id: uuid.UUID, stop: asyncio.Event) -> None:
             await session.commit()
 
 
+async def _task_cancelled(task_id: uuid.UUID) -> bool:
+    from sqlalchemy import select
+
+    from app.db.models.task import TaskModel
+
+    async with get_sessionmaker()() as session:
+        status = await session.scalar(select(TaskModel.status).where(TaskModel.id == task_id))
+    return status == TaskStatus.CANCELLED.value
+
+
 async def reconcile_interrupted_tasks(
     session: AsyncSession, *, stale_seconds: int = 0, requeue: bool = False
 ) -> int:
@@ -153,7 +163,11 @@ async def execute_task(task_id: uuid.UUID) -> None:
             tasks = TaskRepository(session)
             steps = StepRepository(session)
             service = AgentReactService(
-                tasks, steps, get_llm_client(), verifier_llm=get_verifier_client()
+                tasks,
+                steps,
+                get_llm_client(),
+                verifier_llm=get_verifier_client(),
+                cancellation_probe=_task_cancelled,
             )
             stop = asyncio.Event()
             heartbeat = asyncio.create_task(_heartbeat_task(task_id, stop))

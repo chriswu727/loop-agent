@@ -85,8 +85,16 @@ not prompt instructions.
   session backend.
 - Revocation prevents new calls and closes browser/proxy connections, but cannot roll
   back a completed side effect or guarantee interruption of an SMTP/CalDAV operation
-  already executing in an upstream library. API cancellation is observed between
-  agent steps, then the worker publishes the signed revocation at the terminal boundary.
+  already accepted by an upstream service. API cancellation polls durable task state,
+  cancels the in-flight coroutine, tears down sandbox processes/connections, and then
+  publishes signed revocation. Host-only development SMTP/CalDAV adapters use blocking
+  libraries; cancellation stops awaiting them but cannot forcibly stop their worker
+  thread, which is another reason production routes these capabilities through gateways.
+- Before any tool side effect, Loop commits a durable operation id and action. The Step
+  and journal deletion commit atomically after execution. Recovery never blindly replays
+  a journal left in flight; it fails closed because the upstream outcome is unknowable.
+  Email Message-ID and calendar UID carry that operation id, but this is not an
+  exactly-once guarantee.
 
 ## Receipts and provenance
 
@@ -121,5 +129,6 @@ not prompt instructions.
   a dead-letter stream. Task execution uses an atomic pending-to-running claim.
 - CI exercises enforcement against real Redis with AOF, including cross-process live
   tunnel revocation, fail-closed readiness during outage, and state recovery after
-  restart. The post-deploy smoke script separately verifies the cluster egress policy.
+  restart. Kubernetes acceptance kills and recovers Postgres before running another
+  verified task. The post-deploy smoke script separately verifies cluster egress policy.
 - Ingress must terminate TLS and add HSTS. NetworkPolicies default-deny ingress.

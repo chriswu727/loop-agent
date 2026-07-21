@@ -70,6 +70,10 @@ class CalendarTools:
         if not summary:
             return "create_event needs a 'summary'."
         try:
+            operation_id = str(uuid.UUID(str(args["operation_id"])))
+        except (KeyError, ValueError):
+            return "create_event requires a Loop operation_id for duplicate protection."
+        try:
             start = datetime.fromisoformat(str(args["start"]))
             end = (
                 datetime.fromisoformat(str(args["end"]))
@@ -86,7 +90,7 @@ class CalendarTools:
         event.add("summary", summary)
         event.add("dtstart", start)
         event.add("dtend", end)
-        event.add("uid", f"{uuid.uuid4().hex}@loop")
+        event.add("uid", f"{operation_id}@loop")
         if args.get("description"):
             event.add("description", str(args["description"]))
         obj.add_component(event)

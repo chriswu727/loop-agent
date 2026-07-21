@@ -14,6 +14,7 @@ import email
 import imaplib
 import smtplib
 import ssl
+import uuid
 from email.message import EmailMessage
 from typing import Any, ClassVar
 
@@ -37,10 +38,15 @@ class EmailTools:
         to = str(args.get("to", "")).strip()
         if not to:
             return "send_email needs a 'to' address."
+        try:
+            operation_id = str(uuid.UUID(str(args["operation_id"])))
+        except (KeyError, ValueError):
+            return "send_email requires a Loop operation_id for duplicate protection."
         msg = EmailMessage()
         msg["From"] = settings.email_from or settings.smtp_user or ""
         msg["To"] = to
         msg["Subject"] = str(args.get("subject", "")).strip()
+        msg["Message-ID"] = f"<{operation_id}@loop>"
         msg.set_content(str(args.get("body", "")))
         with smtplib.SMTP(settings.smtp_host or "", settings.smtp_port, timeout=30) as server:
             if settings.smtp_starttls:

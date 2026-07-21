@@ -4,7 +4,9 @@ a scripted fake model — no network — so each stop condition is proven.
 
 from __future__ import annotations
 
+import asyncio
 import json
+import os
 from pathlib import Path
 from typing import Any
 
@@ -173,6 +175,155 @@ async def test_goal_achieved_when_verifier_accepts_finish(session: AsyncSession)
     assert task.summary == "wrote result.txt"
     # The file the agent "wrote" really exists in its workspace.
     assert (Path(task.workspace_path) / "result.txt").read_text() == "done"
+    assert task.operation_journal is None
+
+
+async def test_running_shell_is_killed_when_task_is_cancelled(
+    session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    command = (
+        'python3 -c "import pathlib,subprocess,time; '
+        "p=subprocess.Popen(['sleep','30']); "
+        "pathlib.Path('child.pid').write_text(str(p.pid)); time.sleep(30)\""
+    )
+    task = await _make_task(session, max_steps=4, token_budget=1_000_000)
+    requested = False
+
+    async def cancellation_probe(_task_id: object) -> bool:
+        if not requested:
+            return False
+        task.status = TaskStatus.CANCELLED.value
+        await session.commit()
+        return True
+
+    monkeypatch.setattr(settings, "agent_sandbox", "off")
+    monkeypatch.setattr(settings, "agent_cancellation_poll_seconds", 0.05)
+    service = AgentReactService(
+        TaskRepository(session),
+        StepRepository(session),
+        ScriptedLLM([{"thought": "run", "tool": "run_command", "args": {"command": command}}]),
+        cancellation_probe=cancellation_probe,
+    )
+    running = asyncio.create_task(service.run(task.id))
+    pid_file = Path(settings.agent_workspaces_root) / str(task.id) / "child.pid"
+    for _ in range(100):
+        if pid_file.is_file():
+            break
+        await asyncio.sleep(0.02)
+    assert pid_file.is_file()
+    child_pid = int(pid_file.read_text())
+
+    requested = True
+    await asyncio.wait_for(running, timeout=2)
+
+    for _ in range(50):
+        try:
+            os.kill(child_pid, 0)
+        except ProcessLookupError:
+            break
+        await asyncio.sleep(0.02)
+    with pytest.raises(ProcessLookupError):
+        os.kill(child_pid, 0)
+    await session.refresh(task)
+    assert task.status == TaskStatus.CANCELLED.value
+    assert task.stop_reason == StopReason.CANCELLED.value
+    assert (Path(task.workspace_path) / "receipt.json").is_file()
+
+
+async def test_interrupted_mutation_is_not_replayed(
+    session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import app.services.agent_react as agent_module
+
+    task = await _make_task(session, max_steps=4, token_budget=1_000_000)
+    calls = 0
+
+    async def crash_after_mutation(executor: object, _tool: str, _args: dict[str, Any]) -> object:
+        nonlocal calls
+        calls += 1
+        workspace = executor.workspace  # type: ignore[attr-defined]
+        with (workspace.root / "mutation.log").open("a") as output:
+            output.write("mutated\n")
+        raise asyncio.CancelledError
+
+    monkeypatch.setattr(agent_module.ToolExecutor, "execute", crash_after_mutation)
+    plans = [{"thought": "mutate", "tool": "run_command", "args": {"command": "echo x"}}]
+    with pytest.raises(asyncio.CancelledError):
+        await _service(session, ScriptedLLM(plans)).run(task.id)
+
+    await session.refresh(task)
+    assert task.operation_journal is not None
+    task.status = TaskStatus.PENDING.value
+    await session.commit()
+
+    await _service(session, ScriptedLLM(plans)).run(task.id)
+
+    await session.refresh(task)
+    assert calls == 1
+    assert (Path(task.workspace_path) / "mutation.log").read_text() == "mutated\n"
+    assert task.status == TaskStatus.FAILED.value
+    assert "refused to replay" in (task.error or "")
+
+
+async def test_receipt_write_failure_cannot_false_complete(
+    session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import app.services.agent_react as agent_module
+
+    def fail_receipt(*_args: object, **_kwargs: object) -> object:
+        raise OSError("disk unavailable")
+
+    monkeypatch.setattr(agent_module, "build_receipt", fail_receipt)
+    task = await _make_task(session, max_steps=4, token_budget=1_000_000)
+    plans = [{"thought": "done", "tool": "finish", "args": {"summary": "done"}}]
+
+    await _service(session, ScriptedLLM(plans)).run(task.id)
+
+    await session.refresh(task)
+    assert task.status == TaskStatus.FAILED.value
+    assert task.receipt_hash is None
+    assert "disk unavailable" in (task.error or "")
+
+
+async def test_cancelling_parent_cancels_active_descendants(session: AsyncSession) -> None:
+    parent = await _make_task(session, max_steps=4, token_budget=10_000)
+    repo = TaskRepository(session)
+    child = await repo.create(
+        goal="child",
+        status=TaskStatus.RUNNING.value,
+        parent_id=parent.id,
+        depth=1,
+        rubric=[],
+        max_steps=4,
+        token_budget=10_000,
+        summary=None,
+        verification_score=0,
+        steps_used=0,
+        tokens_used=0,
+        workspace_path=None,
+    )
+    grandchild = await repo.create(
+        goal="grandchild",
+        status=TaskStatus.AWAITING_INPUT.value,
+        parent_id=child.id,
+        depth=2,
+        rubric=[],
+        max_steps=4,
+        token_budget=10_000,
+        summary=None,
+        verification_score=0,
+        steps_used=0,
+        tokens_used=0,
+        workspace_path=None,
+    )
+    await session.commit()
+
+    await TaskService(repo, StepRepository(session)).cancel(parent.id)
+    await session.commit()
+
+    for item in (parent, child, grandchild):
+        await session.refresh(item)
+        assert item.status == TaskStatus.CANCELLED.value
 
 
 async def test_agent_scopes_protocol_and_browser_gateway_tokens(

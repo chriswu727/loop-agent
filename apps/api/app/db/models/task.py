@@ -71,6 +71,10 @@ class TaskModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     chat_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     # The action awaiting approval while paused: {"tool": ..., "args": {...}}.
     pending_action: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    # Durable write-ahead record for a tool that may have crossed a side-effect
+    # boundary but whose Step has not committed yet. Recovery fails closed instead
+    # of blindly replaying an operation with an unknown outcome.
+    operation_journal: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
     idempotency_key: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
     attempt: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
 

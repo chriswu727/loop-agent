@@ -312,7 +312,7 @@ migration="$(
   kubectl exec deployment/postgres --namespace "$namespace" -- \
     psql -U app -d app -tAc 'SELECT version_num FROM alembic_version'
 )"
-if [[ "$migration" != "0009_contract_draft" ]]; then
+if [[ "$migration" != "0010_operation_journal" ]]; then
   echo "Unexpected Alembic revision: $migration" >&2
   exit 1
 fi
@@ -333,6 +333,31 @@ kubectl apply -f "$tmp/acceptance.yaml"
 
 bash "$root/scripts/k8s-enforcement-smoke.sh" "$namespace"
 run_cluster_probe before-rollback true
+
+postgres_restarts_before="$(
+  kubectl get pod --namespace "$namespace" -l app.kubernetes.io/name=postgres \
+    -o jsonpath='{.items[0].status.containerStatuses[0].restartCount}'
+)"
+kubectl exec deployment/postgres --namespace "$namespace" -- sh -c 'kill -9 1' || true
+for _ in {1..60}; do
+  postgres_restarts_after="$(
+    kubectl get pod --namespace "$namespace" -l app.kubernetes.io/name=postgres \
+      -o jsonpath='{.items[0].status.containerStatuses[0].restartCount}' 2>/dev/null || true
+  )"
+  if [[ "$postgres_restarts_after" =~ ^[0-9]+$ ]] && \
+    (( postgres_restarts_after > postgres_restarts_before )); then
+    break
+  fi
+  sleep 1
+done
+if [[ ! "$postgres_restarts_after" =~ ^[0-9]+$ ]] || \
+  (( postgres_restarts_after <= postgres_restarts_before )); then
+  echo "Postgres fault injection did not restart the container" >&2
+  exit 1
+fi
+kubectl wait --namespace "$namespace" --for=condition=ready \
+  pod -l app.kubernetes.io/name=postgres --timeout=3m
+run_cluster_probe after-postgres-restart true
 
 stable_image="$(
   kubectl get deployment api --namespace "$namespace" \
@@ -357,5 +382,5 @@ if [[ "$restored_image" != "$stable_image" ]]; then
 fi
 run_cluster_probe after-rollback false
 
-printf '{"migration":"%s","rollback":true,"sandbox_digest":"%s","status":"passed"}\n' \
+printf '{"migration":"%s","postgres_recovery":true,"rollback":true,"sandbox_digest":"%s","status":"passed"}\n' \
   "$migration" "$sandbox_digest"

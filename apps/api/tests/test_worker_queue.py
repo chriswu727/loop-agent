@@ -42,6 +42,16 @@ class FakeRedis:
         return FakePipeline(self.actions)
 
 
+class AckFailurePipeline(FakePipeline):
+    async def execute(self) -> list[object]:
+        raise ConnectionError("Redis disappeared before acknowledgement")
+
+
+class AckFailureRedis(FakeRedis):
+    def pipeline(self, **_kwargs: Any) -> FakePipeline:
+        return AckFailurePipeline(self.actions)
+
+
 async def failing_handler(_payload: dict[str, Any]) -> None:
     raise RuntimeError("transient failure")
 
@@ -105,6 +115,40 @@ async def test_successful_job_is_acknowledged_and_removed(
     )
 
     assert [action[0] for action in redis.actions] == ["xack", "xdel"]
+
+
+async def test_acknowledgement_crash_leaves_job_reclaimable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls = 0
+
+    async def handled(_payload: dict[str, Any]) -> None:
+        nonlocal calls
+        calls += 1
+
+    async def reconciled() -> None:
+        return None
+
+    monkeypatch.setattr(worker, "_reset_stale_tasks", reconciled)
+    monkeypatch.setitem(worker.HANDLERS, "ack-crash", handled)
+    with pytest.raises(ConnectionError, match="before acknowledgement"):
+        await worker._process(
+            AckFailureRedis(),  # type: ignore[arg-type]
+            "3-1",
+            {"type": "ack-crash", "payload": "{}", "attempt": "1"},
+            reclaimed=False,
+        )
+    assert calls == 1
+
+    reclaimed = FakeRedis()
+    await worker._process(
+        reclaimed,  # type: ignore[arg-type]
+        "3-1",
+        {"type": "ack-crash", "payload": "{}", "attempt": "1"},
+        reclaimed=True,
+    )
+    assert calls == 2
+    assert [action[0] for action in reclaimed.actions] == ["xack", "xdel"]
 
 
 async def test_reclaimed_job_reconciles_stale_tasks_before_execution(

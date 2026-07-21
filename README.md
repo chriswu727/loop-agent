@@ -73,6 +73,9 @@ an instruction to an accepted result. It separates **work** from **acceptance**:
   runtime provenance, output hashes, and the head of a hash-chained step ledger.
 - **Proof is portable.** The Receipt can be replayed later through the API, CLI, or bundled
   GitHub Action.
+- **Interruption is a first-class state.** In-flight cancellation tears down the active
+  execution boundary, while a durable operation journal refuses crash recovery that
+  could repeat a mutation with an unknown outcome.
 
 If the evidence fails, the task does not become `completed` merely because the model
 called `finish`. Limit, stuck, cancelled, and error outcomes still receive an
