@@ -38,6 +38,9 @@ class TaskModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     baseline_checks: Mapped[list[dict[str, Any]]] = mapped_column(
         JSON, nullable=False, default=list
     )
+    contract_draft: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    contract_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    contract_status: Mapped[str] = mapped_column(String(20), nullable=False, default="not_required")
     pending_question: Mapped[str | None] = mapped_column(Text, nullable=True)
     authority_schema: Mapped[str] = mapped_column(
         String(40), nullable=False, default="loop.capabilities/v1"

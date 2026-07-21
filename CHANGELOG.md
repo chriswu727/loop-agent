@@ -4,6 +4,15 @@ All notable changes are documented here. The project follows Semantic Versioning
 
 ## [Unreleased]
 
+### Core
+
+- Added the one-instruction local-project path: bounded repository discovery, typed
+  contract compilation, independent criticism, risk/confidence and authority gates,
+  pre-mutation SHA-256 locking, clarification/resume, Receipt binding, and visible
+  contract provenance in the task UI.
+- Moved manual criteria, checks, artifacts, capabilities, and budgets into an Advanced
+  panel while preserving them as immutable overrides when supplied.
+
 ### Security
 
 - Pinned patched `brace-expansion` releases across transitive dependency trees.

@@ -239,6 +239,33 @@ async def test_project_binding_refuses_dirty_and_escaping_sources(
     assert escaping.status_code == 422
 
 
+async def test_project_task_accepts_one_instruction_without_manual_criteria(
+    client: AsyncClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    projects = tmp_path / "projects"
+    projects.mkdir()
+    _repository(projects)
+    monkeypatch.setattr(settings, "loop_local_projects_root", str(projects))
+    monkeypatch.setattr(settings, "agent_workspaces_root", str(tmp_path / "workspaces"))
+
+    response = await client.post(
+        "/api/v1/tasks",
+        json={
+            "goal": "Update the greeting and prove the repository still passes",
+            "project_path": "project",
+            "autostart": False,
+        },
+    )
+
+    assert response.status_code == 201
+    task = response.json()
+    assert task["verification_mode"] == "strict"
+    assert task["rubric"] == []
+    assert task["contract_status"] == "pending"
+    assert task["contract"] is None
+    assert task["authority"]["requested"] == ["exec", "fs.read", "fs.write"]
+
+
 async def test_apply_refuses_a_diff_changed_after_receipt(
     client: AsyncClient,
     engine: AsyncEngine,

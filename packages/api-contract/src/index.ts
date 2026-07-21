@@ -61,6 +61,50 @@ export interface Limits {
   token_budget: number;
 }
 
+export interface ContractCheck {
+  id: string;
+  kind: 'command' | 'file_exists' | 'file_contains';
+  command: string | null;
+  path: string | null;
+  text: string | null;
+  expect_exit: number;
+  expect_stdout: string | null;
+  criterion_ids: string[];
+  source: 'contract' | 'system';
+}
+
+export interface ContractDraft {
+  schema_version: 'loop.contract-draft/v1';
+  compiler: {
+    provider: string;
+    model: string;
+  };
+  criteria: string[];
+  checks: ContractCheck[];
+  artifacts: string[];
+  risk: 'low' | 'medium' | 'high';
+  assumptions: string[];
+  confidence: number;
+  authority_requests: Capability[];
+  discovery: {
+    manifests: string[];
+    scripts: Record<string, string>;
+    test_files: string[];
+    build_outputs: string[];
+    quality_checks: ContractCheck[];
+    files_scanned: number;
+    truncated: boolean;
+  };
+  clarifications: string[];
+  critique: {
+    accepted: boolean;
+    issues: string[];
+    question: string | null;
+    provider: string;
+    model: string;
+  };
+}
+
 export type ChangeSetState = 'pending' | 'applied' | 'discarded' | 'reverted';
 
 export interface ProjectChangeSet {
@@ -97,10 +141,13 @@ export interface Task {
   project_id: string;
   status: TaskStatus;
   rubric: string[];
-  criteria_source: 'user' | 'generated';
+  criteria_source: 'user' | 'generated' | 'compiled';
   verification_mode: 'strict' | 'judgment';
   required_checks: Array<Record<string, unknown>>;
   baseline_checks: Array<Record<string, unknown>>;
+  contract: ContractDraft | null;
+  contract_hash: string | null;
+  contract_status: 'not_required' | 'pending' | 'awaiting_input' | 'locked';
   pending_question: string | null;
   allowed_tools: string[] | null;
   authority: Authority;

@@ -88,10 +88,6 @@ export function PublishForm({
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     if (goal.trim().length < 4 || submitting) return;
-    if (hasProject && criteria.length === 0) {
-      setError('Local project tasks require at least one explicit success criterion.');
-      return;
-    }
     if (needsDestinations && !egressHosts.trim()) {
       setError('Shell and browser network access require at least one destination host.');
       return;
@@ -104,13 +100,9 @@ export function PublishForm({
     setError(null);
     try {
       const limits = { max_steps: maxSteps, token_budget: tokenBudget };
-      const capabilities: Capability[] = [
-        'fs.read',
-        'fs.write',
-        'memory.read',
-        'memory.write',
-        'task.spawn',
-      ];
+      const capabilities: Capability[] = hasProject
+        ? ['fs.read', 'fs.write']
+        : ['fs.read', 'fs.write', 'memory.read', 'memory.write', 'task.spawn'];
       if (!noShell) capabilities.push('exec');
       if (allowNetwork) capabilities.push('net.shell');
       if (useBrowser) capabilities.push('net.browser');
@@ -171,13 +163,14 @@ export function PublishForm({
       className="rounded-2xl border border-black/10 bg-white/60 p-5 shadow-sm dark:border-white/10 dark:bg-white/[0.03]"
     >
       <label htmlFor="goal" className="text-sm font-medium opacity-80">
-        Publish a task
+        What should Loop finish?
       </label>
       <textarea
         id="goal"
+        aria-label="Publish a task"
         value={goal}
         onChange={(e) => setGoal(e.target.value)}
-        placeholder="Describe a goal. The agent will plan it, write files and run commands in its own workspace, check its own work, and keep going until it's done."
+        placeholder="Give Loop one instruction. It will discover the repository, lock a verifiable contract, work until the checks pass, then return the patch and evidence."
         rows={3}
         className="mt-2 w-full resize-y rounded-lg border border-black/10 bg-transparent px-3 py-2 text-sm outline-none focus:border-blue-500/60 dark:border-white/15"
       />
@@ -198,61 +191,10 @@ export function PublishForm({
         ))}
       </div>
 
-      <div className="mt-4 rounded-xl border border-blue-500/20 bg-blue-500/[0.04] p-3">
-        <label
-          htmlFor="success-criteria"
-          className="text-xs font-semibold text-blue-700 dark:text-blue-300"
-        >
-          Acceptance contract {hasProject ? '(required)' : '(optional)'}
-        </label>
-        <textarea
-          id="success-criteria"
-          aria-label="Acceptance contract"
-          value={successCriteria}
-          onChange={(event) => setSuccessCriteria(event.target.value)}
-          required={hasProject}
-          rows={3}
-          placeholder="One concrete success criterion per line"
-          className="mt-2 w-full resize-y rounded-lg border border-black/10 bg-transparent px-3 py-2 text-xs outline-none focus:border-blue-500/60 dark:border-white/15"
-        />
-        <label
-          htmlFor="verification-commands"
-          className="mt-3 block text-xs font-medium opacity-70"
-        >
-          Required verification commands <span className="font-normal opacity-60">(optional)</span>
-        </label>
-        <textarea
-          id="verification-commands"
-          aria-label="Required verification commands"
-          value={verificationCommands}
-          onChange={(event) => setVerificationCommands(event.target.value)}
-          rows={2}
-          placeholder="One command per line, e.g. pnpm test"
-          className="mt-1 w-full resize-y rounded-lg border border-black/10 bg-transparent px-3 py-2 font-mono text-xs outline-none focus:border-blue-500/60 dark:border-white/15"
-        />
-        <label htmlFor="required-artifacts" className="mt-3 block text-xs font-medium opacity-70">
-          Required final artifacts <span className="font-normal opacity-60">(optional)</span>
-        </label>
-        <textarea
-          id="required-artifacts"
-          aria-label="Required final artifacts"
-          value={requiredArtifacts}
-          onChange={(event) => setRequiredArtifacts(event.target.value)}
-          rows={2}
-          placeholder="One workspace-relative path per line, e.g. dist/report.json"
-          className="mt-1 w-full resize-y rounded-lg border border-black/10 bg-transparent px-3 py-2 font-mono text-xs outline-none focus:border-blue-500/60 dark:border-white/15"
-        />
-        <p className="mt-2 text-[11px] opacity-55">
-          In strict mode, every criterion needs passing execution evidence and required artifacts
-          must already exist in the final workspace. Loop also discovers repository quality gates
-          and compares them with the pre-change baseline.
-        </p>
-      </div>
-
       {d.local_projects_enabled && (
-        <div className="mt-3">
+        <div className="mt-4 rounded-xl border border-black/10 p-3 dark:border-white/10">
           <label htmlFor="project-path" className="text-xs font-medium opacity-70">
-            Local Git project <span className="font-normal opacity-60">(optional)</span>
+            Local Git project
           </label>
           {isDesktop ? (
             <div className="mt-1 flex items-center gap-2">
@@ -280,173 +222,235 @@ export function PublishForm({
             />
           )}
           <p className="mt-1 text-[11px] opacity-50">
-            Loop requires a clean repository, works in an isolated clone, and applies only the
-            Receipt-verified patch you approve.
+            Loop uses a clean isolated clone, compiles the instruction into a locked contract, and
+            returns only a Receipt-verified patch for you to apply or discard.
           </p>
         </div>
       )}
 
-      <div className="mt-3 flex flex-wrap items-center gap-3 text-xs">
-        <label className="cursor-pointer rounded-lg border border-black/10 px-3 py-1.5 opacity-80 hover:opacity-100 dark:border-white/15">
-          Attach files
-          <input
-            type="file"
-            multiple
-            className="hidden"
-            onChange={(e) => setFiles(Array.from(e.target.files ?? []))}
-          />
-        </label>
-        {files.map((f) => (
-          <span
-            key={f.name}
-            className="rounded-full bg-blue-500/10 px-2 py-1 text-blue-600 dark:text-blue-400"
-          >
-            {f.name}
-          </span>
-        ))}
-        {files.length > 0 && (
-          <button
-            type="button"
-            onClick={() => setFiles([])}
-            className="opacity-50 hover:opacity-100"
-          >
-            clear
-          </button>
-        )}
-        <label className="ml-auto flex cursor-pointer items-center gap-1.5 opacity-80">
-          <input type="checkbox" checked={noShell} onChange={(e) => setNoShell(e.target.checked)} />
-          No shell (files only)
-        </label>
-        <label className="flex cursor-pointer items-center gap-1.5 opacity-80">
-          <input
-            type="checkbox"
-            checked={allowNetwork}
-            onChange={(e) => setAllowNetwork(e.target.checked)}
-          />
-          Allow network
-        </label>
-        <label className="flex cursor-pointer items-center gap-1.5 opacity-80">
-          <input
-            type="checkbox"
-            checked={requireApproval}
-            onChange={(e) => setRequireApproval(e.target.checked)}
-          />
-          Require approval
-        </label>
-        <label className="flex cursor-pointer items-center gap-1.5 opacity-80">
-          <input
-            type="checkbox"
-            checked={useBrowser}
-            onChange={(e) => setUseBrowser(e.target.checked)}
-          />
-          Use browser
-        </label>
-        <label className="flex cursor-pointer items-center gap-1.5 opacity-80">
-          <input
-            type="checkbox"
-            checked={useEmail}
-            onChange={(e) => setUseEmail(e.target.checked)}
-          />
-          Use email
-        </label>
-        <label className="flex cursor-pointer items-center gap-1.5 opacity-80">
-          <input
-            type="checkbox"
-            checked={useCalendar}
-            onChange={(e) => setUseCalendar(e.target.checked)}
-          />
-          Use calendar
-        </label>
-        <label className="flex cursor-pointer items-center gap-1.5 opacity-80">
-          <input
-            type="checkbox"
-            checked={useVision}
-            onChange={(e) => setUseVision(e.target.checked)}
-          />
-          Use vision
-        </label>
-        {d.sibyl_available && (
-          <label className="flex cursor-pointer items-center gap-1.5 opacity-80">
-            <input
-              type="checkbox"
-              checked={useSibyl}
-              onChange={(e) => setUseSibyl(e.target.checked)}
+      <details className="mt-4 rounded-xl border border-black/10 p-3 dark:border-white/10">
+        <summary className="cursor-pointer text-xs font-medium opacity-65 hover:opacity-100">
+          Advanced controls
+        </summary>
+        <div className="mt-3">
+          <div className="rounded-xl border border-blue-500/20 bg-blue-500/[0.04] p-3">
+            <label
+              htmlFor="success-criteria"
+              className="text-xs font-semibold text-blue-700 dark:text-blue-300"
+            >
+              Acceptance contract override (optional)
+            </label>
+            <textarea
+              id="success-criteria"
+              aria-label="Acceptance contract"
+              value={successCriteria}
+              onChange={(event) => setSuccessCriteria(event.target.value)}
+              rows={3}
+              placeholder="One concrete success criterion per line"
+              className="mt-2 w-full resize-y rounded-lg border border-black/10 bg-transparent px-3 py-2 text-xs outline-none focus:border-blue-500/60 dark:border-white/15"
             />
-            Use Sibyl research
-          </label>
-        )}
-        {d.argus_available && (
-          <label className="flex cursor-pointer items-center gap-1.5 opacity-80">
-            <input
-              type="checkbox"
-              checked={useArgus}
-              onChange={(e) => setUseArgus(e.target.checked)}
+            <label
+              htmlFor="verification-commands"
+              className="mt-3 block text-xs font-medium opacity-70"
+            >
+              Required verification commands{' '}
+              <span className="font-normal opacity-60">(optional)</span>
+            </label>
+            <textarea
+              id="verification-commands"
+              aria-label="Required verification commands"
+              value={verificationCommands}
+              onChange={(event) => setVerificationCommands(event.target.value)}
+              rows={2}
+              placeholder="One command per line, e.g. pnpm test"
+              className="mt-1 w-full resize-y rounded-lg border border-black/10 bg-transparent px-3 py-2 font-mono text-xs outline-none focus:border-blue-500/60 dark:border-white/15"
             />
-            Use Argus QA
-          </label>
-        )}
-        {skills.length > 0 && (
-          <select
-            value={skill}
-            onChange={(e) => setSkill(e.target.value)}
-            className="rounded-lg border border-black/10 bg-transparent px-2 py-1 dark:border-white/15"
-          >
-            <option value="">No skill</option>
-            {skills.map((s) => (
-              <option key={s.name} value={s.name}>
-                Skill: {s.name}
-              </option>
+            <label
+              htmlFor="required-artifacts"
+              className="mt-3 block text-xs font-medium opacity-70"
+            >
+              Required final artifacts <span className="font-normal opacity-60">(optional)</span>
+            </label>
+            <textarea
+              id="required-artifacts"
+              aria-label="Required final artifacts"
+              value={requiredArtifacts}
+              onChange={(event) => setRequiredArtifacts(event.target.value)}
+              rows={2}
+              placeholder="One workspace-relative path per line, e.g. dist/report.json"
+              className="mt-1 w-full resize-y rounded-lg border border-black/10 bg-transparent px-3 py-2 font-mono text-xs outline-none focus:border-blue-500/60 dark:border-white/15"
+            />
+            <p className="mt-2 text-[11px] opacity-55">
+              In strict mode, every criterion needs passing execution evidence and required
+              artifacts must already exist in the final workspace. Loop also discovers repository
+              quality gates and compares them with the pre-change baseline.
+            </p>
+          </div>
+
+          <div className="mt-3 flex flex-wrap items-center gap-3 text-xs">
+            <label className="cursor-pointer rounded-lg border border-black/10 px-3 py-1.5 opacity-80 hover:opacity-100 dark:border-white/15">
+              Attach files
+              <input
+                type="file"
+                multiple
+                className="hidden"
+                onChange={(e) => setFiles(Array.from(e.target.files ?? []))}
+              />
+            </label>
+            {files.map((f) => (
+              <span
+                key={f.name}
+                className="rounded-full bg-blue-500/10 px-2 py-1 text-blue-600 dark:text-blue-400"
+              >
+                {f.name}
+              </span>
             ))}
-          </select>
-        )}
-      </div>
+            {files.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setFiles([])}
+                className="opacity-50 hover:opacity-100"
+              >
+                clear
+              </button>
+            )}
+            <label className="ml-auto flex cursor-pointer items-center gap-1.5 opacity-80">
+              <input
+                type="checkbox"
+                checked={noShell}
+                onChange={(e) => setNoShell(e.target.checked)}
+              />
+              No shell (files only)
+            </label>
+            <label className="flex cursor-pointer items-center gap-1.5 opacity-80">
+              <input
+                type="checkbox"
+                checked={allowNetwork}
+                onChange={(e) => setAllowNetwork(e.target.checked)}
+              />
+              Allow network
+            </label>
+            <label className="flex cursor-pointer items-center gap-1.5 opacity-80">
+              <input
+                type="checkbox"
+                checked={requireApproval}
+                onChange={(e) => setRequireApproval(e.target.checked)}
+              />
+              Require approval
+            </label>
+            <label className="flex cursor-pointer items-center gap-1.5 opacity-80">
+              <input
+                type="checkbox"
+                checked={useBrowser}
+                onChange={(e) => setUseBrowser(e.target.checked)}
+              />
+              Use browser
+            </label>
+            <label className="flex cursor-pointer items-center gap-1.5 opacity-80">
+              <input
+                type="checkbox"
+                checked={useEmail}
+                onChange={(e) => setUseEmail(e.target.checked)}
+              />
+              Use email
+            </label>
+            <label className="flex cursor-pointer items-center gap-1.5 opacity-80">
+              <input
+                type="checkbox"
+                checked={useCalendar}
+                onChange={(e) => setUseCalendar(e.target.checked)}
+              />
+              Use calendar
+            </label>
+            <label className="flex cursor-pointer items-center gap-1.5 opacity-80">
+              <input
+                type="checkbox"
+                checked={useVision}
+                onChange={(e) => setUseVision(e.target.checked)}
+              />
+              Use vision
+            </label>
+            {d.sibyl_available && (
+              <label className="flex cursor-pointer items-center gap-1.5 opacity-80">
+                <input
+                  type="checkbox"
+                  checked={useSibyl}
+                  onChange={(e) => setUseSibyl(e.target.checked)}
+                />
+                Use Sibyl research
+              </label>
+            )}
+            {d.argus_available && (
+              <label className="flex cursor-pointer items-center gap-1.5 opacity-80">
+                <input
+                  type="checkbox"
+                  checked={useArgus}
+                  onChange={(e) => setUseArgus(e.target.checked)}
+                />
+                Use Argus QA
+              </label>
+            )}
+            {skills.length > 0 && (
+              <select
+                value={skill}
+                onChange={(e) => setSkill(e.target.value)}
+                className="rounded-lg border border-black/10 bg-transparent px-2 py-1 dark:border-white/15"
+              >
+                <option value="">No skill</option>
+                {skills.map((s) => (
+                  <option key={s.name} value={s.name}>
+                    Skill: {s.name}
+                  </option>
+                ))}
+              </select>
+            )}
+          </div>
 
-      {needsDestinations && (
-        <input
-          type="text"
-          aria-label="Allowed destination hosts"
-          value={egressHosts}
-          onChange={(e) => setEgressHosts(e.target.value)}
-          required
-          placeholder="Required destinations (comma-separated, e.g. api.github.com, pypi.org)"
-          className="mt-3 w-full rounded-lg border border-black/10 bg-transparent px-3 py-1.5 text-xs outline-none focus:border-blue-500/60 dark:border-white/15"
-        />
-      )}
+          {needsDestinations && (
+            <input
+              type="text"
+              aria-label="Allowed destination hosts"
+              value={egressHosts}
+              onChange={(e) => setEgressHosts(e.target.value)}
+              required
+              placeholder="Required destinations (comma-separated, e.g. api.github.com, pypi.org)"
+              className="mt-3 w-full rounded-lg border border-black/10 bg-transparent px-3 py-1.5 text-xs outline-none focus:border-blue-500/60 dark:border-white/15"
+            />
+          )}
 
-      <div className="mt-5 grid gap-5 sm:grid-cols-2">
-        <Slider
-          label="Max steps"
-          value={maxSteps}
-          min={1}
-          max={d.max_steps_cap}
-          step={1}
-          onChange={setMaxSteps}
-          display={(v) => `${v}`}
-        />
-        <Slider
-          label="Token budget"
-          value={tokenBudget}
-          min={5000}
-          max={d.token_budget_cap}
-          step={5000}
-          onChange={setTokenBudget}
-          display={(v) => `${Math.round(v / 1000)}k`}
-        />
-      </div>
+          <div className="mt-5 grid gap-5 sm:grid-cols-2">
+            <Slider
+              label="Max steps"
+              value={maxSteps}
+              min={1}
+              max={d.max_steps_cap}
+              step={1}
+              onChange={setMaxSteps}
+              display={(v) => `${v}`}
+            />
+            <Slider
+              label="Token budget"
+              value={tokenBudget}
+              min={5000}
+              max={d.token_budget_cap}
+              step={5000}
+              onChange={setTokenBudget}
+              display={(v) => `${Math.round(v / 1000)}k`}
+            />
+          </div>
+        </div>
+      </details>
 
       {error && <p className="mt-4 text-sm text-red-600 dark:text-red-400">{error}</p>}
 
       <div className="mt-5 flex items-center justify-between">
         <p className="text-xs opacity-50">
-          The agent stops when the goal is verified, or it runs out of steps or budget.
+          Loop stops when the locked contract is verified, or a hard limit prevents completion.
         </p>
         <button
           type="submit"
           disabled={
-            goal.trim().length < 4 ||
-            submitting ||
-            (hasProject && criteria.length === 0) ||
-            (needsDestinations && !egressHosts.trim())
+            goal.trim().length < 4 || submitting || (needsDestinations && !egressHosts.trim())
           }
           className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-40"
         >

@@ -65,9 +65,9 @@ export default async function Home() {
           </nav>
         </div>
         <p className="mt-1 text-sm opacity-60">
-          Publish a goal. The agent plans it, writes files and runs commands in its own sandboxed
-          workspace, checks its own work, and keeps going until the goal is done — stopping the
-          moment it hits a limit you set.
+          Select a Git project and give Loop one instruction. It discovers the repository, locks a
+          verifiable acceptance contract, works inside an isolated clone, and returns only when the
+          patch is proven or a hard boundary needs you.
         </p>
       </header>
 

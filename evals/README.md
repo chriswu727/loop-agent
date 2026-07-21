@@ -28,6 +28,10 @@ not a false acceptance.
   the scorer; there are no hidden file gates. Cases that ask the agent to write its
   own tests also include visible external behavior assertions, and an empty test
   suite is a deterministic failure even when the runner exits zero.
+- `one-instruction-project.json` is the v0.2 flagship fixture. Its evaluator creates a
+  clean local Git repository, publishes only the repository path and one instruction,
+  requires a criticized and hash-locked generated contract, replays the Receipt, applies
+  the verified patch to the source, and proves Undo restores the exact clean repository.
 
 ## Zero-cost smoke
 
@@ -68,6 +72,22 @@ isolation, and replay status.
 Real-provider reports are intentionally not fabricated or inferred from offline
 tests. Publish one only after running the command and paying the corresponding
 provider cost.
+
+To measure the one-instruction local-project path, start the API with a real provider
+and `LOOP_LOCAL_PROJECTS_ROOT` pointing at a disposable directory, then run:
+
+```bash
+cd apps/api
+.venv/bin/python scripts/evaluate_one_instruction_project.py \
+  --allow-model-spend \
+  --project-root "$LOOP_LOCAL_PROJECTS_ROOT" \
+  --label deepseek-chat-one-instruction \
+  --output ../../evals/results/deepseek-chat-one-instruction.json
+```
+
+The project root must be the same filesystem path seen by the API. The evaluator sends
+no criteria, verification commands, artifacts, capability list, or budgets beyond the
+fixture's bounded execution limits; those acceptance details must come from Loop.
 
 ## Recorded result
 

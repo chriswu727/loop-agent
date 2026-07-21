@@ -112,6 +112,11 @@ def build_receipt(
     )
     required_checks = task.required_checks if isinstance(task.required_checks, list) else []
     baseline_checks = task.baseline_checks if isinstance(task.baseline_checks, list) else []
+    contract_status = (
+        task.contract_status if isinstance(task.contract_status, str) else "not_required"
+    )
+    contract_hash = task.contract_hash if isinstance(task.contract_hash, str) else None
+    contract_draft = task.contract_draft if isinstance(task.contract_draft, dict) else None
     executor_models = task.executor_models if isinstance(task.executor_models, list) else []
     verifier_model = task.verifier_model if isinstance(task.verifier_model, dict) else None
     criteria = [
@@ -161,6 +166,9 @@ def build_receipt(
             "criteria_source": criteria_source,
             "verification_mode": verification_mode,
             "required_checks": required_checks,
+            "status": contract_status,
+            "hash": contract_hash,
+            "draft": contract_draft,
         },
         "verified_by": verified_by,  # "execution" | "judgment"
         "isolation": task.sandbox or "inline",  # "container" | "inline"

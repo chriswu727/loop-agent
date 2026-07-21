@@ -9,7 +9,14 @@ loop. The product contract is in the README; the deployment boundary is in
 The same `AgentReactService.run` is driven by inline and Redis worker execution:
 
 ```text
-confirm persisted contract
+verify any signed skill and resolve the authority envelope
+for a local project without a user-authored contract:
+  discover repository structure and quality gates without mutation
+  compile a typed contract and challenge it with the independent critic
+  reject unsafe checks or authority expansion
+  pause on material ambiguity, risk, or low confidence
+  persist and hash-lock the accepted contract
+confirm the persisted contract hash on every resume
 discover project checks and record the pre-change baseline
 repeat:
   plan exactly one action
@@ -33,9 +40,20 @@ the answer and re-triggers a resume-aware run from persisted steps.
 ## Contract and verification
 
 User criteria become stable ids (`criterion-001`, ...). User verification commands and
-required final artifacts become immutable `contract` checks. Repository
-lint/type/test/build scripts become `system` checks and run once before editing to
-establish a baseline.
+required final artifacts become immutable `contract` checks. When a local-project task
+starts with only an instruction, Loop first inspects a bounded list of manifests,
+scripts, tests, and build outputs without mutation. A compiler proposes observable
+criteria, checks, artifacts, assumptions, risk, confidence, and authority requests; an
+independent critic challenges that proposal. Deterministic policy additionally rejects
+tautologies, uncovered criteria, unsafe or ungranted commands, authority expansion,
+non-low risk, and confidence below the automatic-start threshold.
+
+An accepted `loop.contract-draft/v1` is serialized canonically and SHA-256 locked before
+the executor receives a mutable tool. Every resume verifies that hash. A rejected draft
+persists its issues, asks one material clarification, and returns without consuming an
+executor step or changing the clone. User-authored Advanced overrides remain supported
+and are locked through the same path. Repository lint/type/test/build scripts become
+`system` checks and run once before editing to establish a baseline.
 
 At finish, Loop merges contract, system, and agent-proposed checks, then re-runs each
 through the normal tool policy and sandbox on an independent copy of the final
@@ -128,9 +146,11 @@ future work. Repeating an equivalent MCP query is covered by the progress guard.
 
 ## Local project transactions
 
-A project task requires a clean source repository under the configured root and a
-user-confirmed contract. Loop clones committed content into an isolated workspace,
-removes the source remote, and never exposes the absolute source path through the API.
+A project task requires a clean source repository under the configured root. It may
+start from a user-authored Advanced contract or from one instruction that Loop compiles,
+criticizes, and locks before mutation. Loop clones committed content into an isolated
+workspace, removes the source remote, and never exposes the absolute source path through
+the API.
 
 The resulting patch is bound into the Receipt. Apply re-checks completion, Receipt
 integrity, base commit, clean source state, and patch hash. Discard leaves the source
