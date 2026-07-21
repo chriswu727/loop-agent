@@ -338,7 +338,8 @@ postgres_restarts_before="$(
   kubectl get pod --namespace "$namespace" -l app.kubernetes.io/name=postgres \
     -o jsonpath='{.items[0].status.containerStatuses[0].restartCount}'
 )"
-kubectl exec deployment/postgres --namespace "$namespace" -- sh -c 'kill -9 1' || true
+kubectl exec deployment/postgres --namespace "$namespace" -- \
+  gosu postgres pg_ctl -D /var/lib/postgresql/data -m immediate stop || true
 for _ in {1..60}; do
   postgres_restarts_after="$(
     kubectl get pod --namespace "$namespace" -l app.kubernetes.io/name=postgres \

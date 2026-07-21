@@ -307,6 +307,8 @@ def test_kubernetes_acceptance_migrates_runs_task_and_rolls_back() -> None:
     assert 'report.get("authentic")' in script
     assert "0010_operation_journal" in script
     assert "run_cluster_probe after-postgres-restart true" in script
+    assert "gosu postgres pg_ctl -D /var/lib/postgresql/data -m immediate stop" in script
+    assert "kill -9 1" not in script
     assert "api web worker" in smoke
     assert 'cluster="${LOOP_ACCEPTANCE_CLUSTER:-la-' in script
     assert 'registry_container="$registry"' in script
