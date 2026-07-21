@@ -4,6 +4,10 @@ All notable changes are documented here. The project follows Semantic Versioning
 
 ## [Unreleased]
 
+### Security
+
+- Pinned patched `brace-expansion` releases across transitive dependency trees.
+
 ### Documentation
 
 - Defined Loop as the controlled execution layer for loop engineering, mapped the
