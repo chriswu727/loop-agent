@@ -58,6 +58,8 @@ All notable changes are documented here. The project follows Semantic Versioning
 ### Security
 
 - Pinned patched `brace-expansion` releases across transitive dependency trees.
+- Pinned `sharp` 0.35.3 to eliminate inherited libvips vulnerabilities and moved the
+  workspace off the broken pnpm 11.13.0 release.
 
 ### Documentation
 
