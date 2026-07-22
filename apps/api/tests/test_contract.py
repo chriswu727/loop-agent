@@ -812,6 +812,43 @@ async def test_compiler_preserves_explicit_advanced_checks(project_settings: Pat
     assert any(check.path == "user-required.txt" for check in compiled.draft.checks)
 
 
+async def test_revision_contract_preserves_required_feedback_and_prior_gate(
+    project_settings: Path,
+) -> None:
+    model = ContractLoopLLM()
+    required = [
+        "The previous verified acceptance contract remains satisfied without regression.",
+        "Regression requirement: the greeting must remain configurable.",
+    ]
+    compiled = await compile_project_contract(
+        goal="Continue the prior delivery and make the greeting configurable",
+        root=project_settings,
+        compiler=model,
+        critic=model,
+        granted_capabilities={Capability.FS_READ, Capability.FS_WRITE, Capability.EXEC},
+        required_criteria=required,
+        required_checks=[
+            {
+                "id": "prior-suite",
+                "kind": "command",
+                "command": "python3 -m pytest -q",
+                "criterion_ids": ["criterion-001"],
+                "source": "contract",
+            }
+        ],
+        token_budget=10_000,
+    )
+
+    assert compiled.contract_hash
+    assert compiled.draft.criteria[:2] == required
+    feedback_checks = [
+        check
+        for check in compiled.draft.checks
+        if "criterion-002" in check.criterion_ids and check.id != "contract-user-001"
+    ]
+    assert feedback_checks
+
+
 def test_user_contract_supports_full_advanced_input_bounds(project_settings: Path) -> None:
     required_checks = [
         {

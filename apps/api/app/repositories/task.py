@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import uuid
 
-from sqlalchemy import case, func, select, update
+from sqlalchemy import case, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql.elements import ColumnElement
 
@@ -24,7 +24,10 @@ class TaskRepository(BaseRepository[TaskModel]):
     ) -> list[TaskModel]:
         """Top-level tasks only — spawned sub-agents (parent_id set) are excluded
         so they don't pollute the task list; they show under their parent."""
-        conditions: list[ColumnElement[bool]] = [TaskModel.parent_id.is_(None)]
+        conditions: list[ColumnElement[bool]] = [
+            TaskModel.parent_id.is_(None),
+            or_(TaskModel.product_session_id.is_(None), TaskModel.superseded_by_id.is_(None)),
+        ]
         if owner_id is not None:
             conditions.append(TaskModel.owner_id == owner_id)
         stmt = (
@@ -78,7 +81,10 @@ class TaskRepository(BaseRepository[TaskModel]):
         return task
 
     async def count_roots(self, *, owner_id: str | None = None) -> int:
-        conditions: list[ColumnElement[bool]] = [TaskModel.parent_id.is_(None)]
+        conditions: list[ColumnElement[bool]] = [
+            TaskModel.parent_id.is_(None),
+            or_(TaskModel.product_session_id.is_(None), TaskModel.superseded_by_id.is_(None)),
+        ]
         if owner_id is not None:
             conditions.append(TaskModel.owner_id == owner_id)
         stmt = select(func.count()).select_from(TaskModel).where(*conditions)
@@ -103,6 +109,14 @@ class TaskRepository(BaseRepository[TaskModel]):
             select(TaskModel)
             .where(TaskModel.parent_id == parent_id)
             .order_by(TaskModel.created_at.asc())
+        )
+        return list((await self.session.scalars(stmt)).all())
+
+    async def list_revisions(self, session_id: uuid.UUID) -> list[TaskModel]:
+        stmt = (
+            select(TaskModel)
+            .where(TaskModel.product_session_id == session_id)
+            .order_by(TaskModel.product_revision.asc())
         )
         return list((await self.session.scalars(stmt)).all())
 

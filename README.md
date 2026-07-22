@@ -79,6 +79,10 @@ an instruction to an accepted result. It separates **work** from **acceptance**:
 - **The loop is an explicit state machine.** Phase, transition reason, and sequence are
   persisted rather than inferred from logs; recovery, the API, and the task UI therefore
   share the same semantics.
+- **Delivery can become the next loop.** Local-project tasks form a Product Session. A
+  verified v1 can accept a bug correction or changed product decision as an immutable
+  feedback delta, seed v2 from v1's exact verified patch, and retain both contracts,
+  Receipts, specifications, and change sets.
 
 If the evidence fails, the task does not become `completed` merely because the model
 called `finish`. Limit, stuck, cancelled, and error outcomes still receive an
@@ -213,6 +217,9 @@ and residual risks.
   bounded retries, dead-letter handling, and compare-and-update task claims.
 - Transactional local Git project edits through isolated clones and verified
   Apply/Discard/Undo change sets.
+- Product Sessions with content-addressed specifications, explicit implementation-fix
+  versus product-decision feedback, cumulative isolated revisions, latest-only Apply,
+  and a version navigator in the task UI.
 - File upload/download and `.xlsx`, `.docx`, `.csv`, image/vision workflows.
 - Signed capability-scoped skills, project/owner-scoped memory, and bounded
   Receipt-producing sub-agents.
@@ -266,7 +273,7 @@ make k8s-deployment-acceptance   # disposable production-mode cluster
 Current CI also audits locked Python/JavaScript dependencies, builds all runtime
 images, validates Compose/Kustomize boundaries, and packages/startup-smokes the
 desktop shell on macOS, Windows, and Ubuntu. Backend tests enforce a branch-aware
-70% coverage floor; the current full suite reports 72%.
+70% coverage floor; the current full suite reports 75%.
 
 ## Repository map
 

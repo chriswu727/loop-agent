@@ -47,6 +47,7 @@ const baseTask: Task = {
   skill: null,
   parent_id: null,
   depth: 0,
+  product_revision: null,
   idempotency_key: 'publish-1',
   attempt: 1,
   limits: { max_steps: 20, token_budget: 20_000 },

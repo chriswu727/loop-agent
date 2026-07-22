@@ -13,6 +13,7 @@ import { ReceiptPanel } from '@/components/receipt-panel';
 import { StepItem } from '@/components/step-item';
 import { StatusPill, stopReasonLabel } from '@/components/status-pill';
 import { LoopState } from '@/components/loop-state';
+import { ProductSessionPanel } from '@/components/product-session-panel';
 import { WorkspaceFiles } from '@/components/workspace-files';
 import { ApiError, tasksApi } from '@/lib/api-client';
 import { apiBaseUrl } from '@/lib/env';
@@ -221,6 +222,8 @@ export default function TaskDetail() {
       <AuthorityPanel task={task} />
 
       <ContractPanel task={task} />
+
+      <ProductSessionPanel task={task} />
 
       {/* The agent's final account of what it did. */}
       {task.summary && (

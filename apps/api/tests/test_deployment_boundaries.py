@@ -305,7 +305,7 @@ def test_kubernetes_acceptance_migrates_runs_task_and_rolls_back() -> None:
     assert "kubectl rollout undo deployment/api" in script
     assert 'task["sandbox"] != "kubernetes"' in script
     assert 'report.get("authentic")' in script
-    assert "0011_loop_state_machine" in script
+    assert "0012_product_sessions" in script
     assert "run_cluster_probe after-postgres-restart true" in script
     assert "gosu postgres pg_ctl -D /var/lib/postgresql/data -m immediate stop" in script
     assert "kill -9 1" not in script

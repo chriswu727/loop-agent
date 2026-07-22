@@ -7,6 +7,7 @@ web_port="${LOOP_DEMO_WEB_PORT:-3000}"
 demo_dir="$root/.demo"
 api_log="$demo_dir/api.log"
 web_log="$demo_dir/web.log"
+demo_db=""
 next_env="$root/apps/web/next-env.d.ts"
 next_env_backup="$demo_dir/next-env.d.ts"
 api_pid=""
@@ -24,6 +25,7 @@ cleanup() {
   [[ -n "$api_pid" ]] && kill "$api_pid" 2>/dev/null || true
   [[ -n "$web_pid" ]] && wait "$web_pid" 2>/dev/null || true
   [[ -n "$api_pid" ]] && wait "$api_pid" 2>/dev/null || true
+  [[ -n "$demo_db" && -f "$demo_db" ]] && rm -f "$demo_db"
   if [[ -f "$next_env_backup" ]]; then
     cp "$next_env_backup" "$next_env"
     rm -f "$next_env_backup"
@@ -89,12 +91,18 @@ port_available "$api_port" || fail "API port $api_port is already in use (set LO
 port_available "$web_port" || fail "Web port $web_port is already in use (set LOOP_DEMO_WEB_PORT)."
 
 mkdir -p "$demo_dir/workspaces" "$demo_dir/memory"
+demo_db="$(mktemp "$demo_dir/loop.XXXXXX.db")"
 cp "$next_env" "$next_env_backup"
 : >"$api_log"
 : >"$web_log"
 demo_token="$(apps/api/.venv/bin/python -c 'import secrets; print(secrets.token_urlsafe(32))')"
 printf '%s' "$demo_token" >"$demo_dir/token"
 chmod 600 "$demo_dir/token"
+
+(
+  cd apps/api
+  DATABASE_URL="sqlite+aiosqlite:///$demo_db" .venv/bin/alembic upgrade head
+) >>"$api_log" 2>&1
 
 (
   cd apps/api
@@ -105,7 +113,7 @@ chmod 600 "$demo_dir/token"
   EXECUTION_MODE=inline \
   CACHE_BACKEND=memory \
   AGENT_SANDBOX=inline \
-  DATABASE_URL="sqlite+aiosqlite:///$demo_dir/loop.db" \
+  DATABASE_URL="sqlite+aiosqlite:///$demo_db" \
   AGENT_WORKSPACES_ROOT="$demo_dir/workspaces" \
   AGENT_MEMORY_ROOT="$demo_dir/memory" \
   .venv/bin/uvicorn app.main:app --host 127.0.0.1 --port "$api_port"

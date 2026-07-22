@@ -178,6 +178,27 @@ def clone_project(binding: ProjectBinding, destination: Path) -> None:
         raise ConflictError(f"Could not create the isolated Git checkout: {exc}") from exc
 
 
+def clone_project_revision(
+    binding: ProjectBinding,
+    destination: Path,
+    verified_patch: bytes,
+) -> None:
+    """Create a detached clone and seed it with the prior verified delivery."""
+    clone_project(binding, destination)
+    try:
+        _git(destination, "apply", "--binary", "--check", input_data=verified_patch)
+        _git(destination, "apply", "--binary", input_data=verified_patch)
+        seeded = inspect_changes(destination, binding.base_commit)
+        expected = hashlib.sha256(verified_patch).hexdigest()
+        if seeded.patch_sha256 != expected:
+            raise ConflictError("The revision workspace did not reproduce the verified patch.")
+    except (ConflictError, GitCommandError, OSError) as exc:
+        shutil.rmtree(destination, ignore_errors=True)
+        if isinstance(exc, ConflictError):
+            raise
+        raise ConflictError(f"Could not seed the product revision workspace: {exc}") from exc
+
+
 def _temporary_index(
     repo: Path, base_commit: str
 ) -> tuple[dict[str, str], tempfile.TemporaryDirectory[str]]:

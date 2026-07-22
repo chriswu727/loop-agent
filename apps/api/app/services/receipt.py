@@ -15,6 +15,7 @@ import hashlib
 import json
 import platform
 import sys
+import uuid
 from datetime import UTC, datetime
 from typing import Any
 
@@ -236,6 +237,26 @@ def build_receipt(
     }
     if change_set is not None:
         body["change_set"] = change_set
+    product_session_id = (
+        task.product_session_id if isinstance(task.product_session_id, uuid.UUID) else None
+    )
+    product_revision = task.product_revision if isinstance(task.product_revision, int) else None
+    if product_session_id and product_revision and isinstance(task.product_specification, dict):
+        body["product_revision"] = {
+            "session_id": str(product_session_id),
+            "revision": product_revision,
+            "previous_task_id": (
+                str(task.previous_revision_id)
+                if isinstance(task.previous_revision_id, uuid.UUID)
+                else None
+            ),
+            "feedback_kind": task.feedback_kind if isinstance(task.feedback_kind, str) else None,
+            "feedback_delta": task.feedback_delta if isinstance(task.feedback_delta, str) else None,
+            "specification": task.product_specification,
+            "specification_hash": (
+                task.specification_hash if isinstance(task.specification_hash, str) else None
+            ),
+        }
     signer = _signing_key()
     if signer is not None:
         body["signature_key_id"] = _signing_key_id(signer)

@@ -255,6 +255,23 @@ includes median/tail steps, tokens, time, questions, and stop reasons.
 
 ### Gate 5 — Developer-feedback loop
 
+**Implementation status (2026-07-22): first end-to-end revision slice complete; visual
+version delta and real-provider evidence remain open.** Every new local-project task now
+starts a Product Session. After an execution-verified delivery, the UI can record either
+an implementation correction or a changed product decision and create the next immutable
+revision. Revision creation verifies the prior Receipt and locked contract, seeds a fresh
+isolated checkout with the exact prior patch, content-addresses the new specification,
+and carries the prior contract gate into implementation corrections. Only the latest
+revision can Apply; source and database locks plus a unique revision index admit one
+concurrent successor. The v1 task, contract, Receipt, workspace, and rollback evidence
+remain addressable through the version navigator.
+
+The deterministic integration path now proves v1 feedback → spec v2 → cumulative verified
+change set v2 → Apply → Undo while v1 stays integrity-valid. Gate 5 is not yet marked
+complete because the UI shows each cumulative change set but does not yet render a direct
+v1-to-v2 visual/output delta, and the whole two-delivery journey still needs a recorded
+real-provider run.
+
 - Group successive deliveries into a Product Session with versioned specifications,
   feedback deltas, change sets, and Receipts.
 - Show evidence and visual/output differences between versions.
