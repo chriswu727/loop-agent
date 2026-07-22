@@ -40,10 +40,10 @@
     "@types/node": "^26.1.0",
     "electron": "43.1.0",
     "electron-squirrel-startup": "1.0.1",
-    "eslint": "9.39.4",
+    "eslint": "10.7.0",
     "lodash": "4.18.1",
     "tsup": "8.5.1",
-    "typescript": "5.9.3",
+    "typescript": "7.0.2",
     "vitest": "4.1.10"
   }
 }
