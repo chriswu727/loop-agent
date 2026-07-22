@@ -11,6 +11,7 @@ from app.services.loop import (
     DecisionParser,
     DelegationPolicy,
     DispatchKind,
+    HistoryWindow,
     InvalidLoopTransitionError,
     LoopEvent,
     LoopState,
@@ -258,6 +259,10 @@ def test_context_budget_preserves_verification_reserve() -> None:
     assert budget.remaining == 1_100
     assert budget.planning == 300
     assert budget.verification_after(300) == 800
+
+
+def test_history_window_compacts_after_four_recent_steps() -> None:
+    assert HistoryWindow().recent_steps == 4
 
 
 def test_dispatch_policy_routes_invalid_blocked_approval_and_execute() -> None:

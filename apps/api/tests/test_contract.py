@@ -13,15 +13,23 @@ from app.domain.capability import Capability
 from app.domain.task import StopReason, TaskStatus
 from app.repositories.step import StepRepository
 from app.repositories.task import TaskRepository
+from app.schemas.contract import ContractProposal
 from app.schemas.task import TaskCreate
 from app.services.agent_react import AgentReactService
 from app.services.contract import (
+    _deterministic_issues,
+    _effective_checks,
+    _inline_python_syntax_issue,
+    _test_previews_cover_contract,
     compile_project_contract,
     discover_repository,
     lock_user_project_contract,
     verify_contract_hash,
 )
+from app.services.prompts import contract_repair_prompts
 from app.services.task import TaskService
+
+ROOT = Path(__file__).parents[3]
 
 
 def _git(repo: Path, *args: str) -> str:
@@ -61,6 +69,9 @@ class ContractLoopLLM:
         criteria_as_objects: bool = False,
         include_discovered_check: bool = False,
         null_expect_exit: bool = False,
+        critic_question: str | None = "Which word should app.py print?",
+        critic_issues: list[str] | None = None,
+        assumptions_as_string: bool = False,
     ) -> None:
         self.critic_accepts = critic_accepts
         self.network_check = network_check
@@ -71,10 +82,16 @@ class ContractLoopLLM:
         self.criteria_as_objects = criteria_as_objects
         self.include_discovered_check = include_discovered_check
         self.null_expect_exit = null_expect_exit
+        self.critic_question = critic_question
+        self.critic_issues = critic_issues or ["The intended word is ambiguous."]
+        self.assumptions_as_string = assumptions_as_string
         self.plan_index = 0
         self.compile_calls = 0
         self.critic_calls = 0
         self.critic_prompt = ""
+        self.critic_system = ""
+        self.compile_prompt = ""
+        self.compile_system = ""
         self.repair_prompt = ""
 
     async def complete(
@@ -89,6 +106,8 @@ class ContractLoopLLM:
         del max_tokens, temperature, token_budget
         if "compile one software instruction" in system:
             self.compile_calls += 1
+            self.compile_system = system
+            self.compile_prompt = user
             if "Repair the rejected draft" in system:
                 self.repair_prompt = system
             return LLMResult(
@@ -139,7 +158,7 @@ class ContractLoopLLM:
                                 [
                                     {
                                         "kind": "command",
-                                        "command": "python -m pytest -q",
+                                        "command": "python3 -m pytest -q",
                                         "criterion_ids": ["criterion-002"],
                                     }
                                 ]
@@ -149,7 +168,11 @@ class ContractLoopLLM:
                         ],
                         "artifacts": ["app.py"],
                         "risk": self.risk,
-                        "assumptions": ["The printed word is the requested behavior."],
+                        "assumptions": (
+                            "The printed word is the requested behavior."
+                            if self.assumptions_as_string
+                            else ["The printed word is the requested behavior."]
+                        ),
                         "confidence": self.confidence,
                         "authority_requests": [],
                     }
@@ -160,6 +183,7 @@ class ContractLoopLLM:
             )
         if "independent acceptance-contract critic" in system:
             self.critic_calls += 1
+            self.critic_system = system
             self.critic_prompt = user
             critic_accepts = self.critic_accepts and not (
                 self.critic_rejects_once and self.critic_calls == 1
@@ -168,8 +192,8 @@ class ContractLoopLLM:
                 json.dumps(
                     {
                         "accepted": critic_accepts,
-                        "issues": ([] if critic_accepts else ["The intended word is ambiguous."]),
-                        "question": (None if critic_accepts else "Which word should app.py print?"),
+                        "issues": ([] if critic_accepts else self.critic_issues),
+                        "question": (None if critic_accepts else self.critic_question),
                     }
                 ),
                 "fixture-critic",
@@ -231,8 +255,22 @@ def test_repository_discovery_is_bounded_and_read_only(project_settings: Path) -
     assert discovery.manifests == ["pyproject.toml"]
     assert discovery.test_files == ["tests/test_app.py"]
     assert discovery.files_scanned == 3
-    assert discovery.quality_checks[0].command == "python -m pytest -q"
+    assert discovery.quality_checks[0].command == "python3 -m pytest -q"
+    assert "print('before')" in discovery.file_previews["app.py"]
+    assert "test_placeholder" in discovery.file_previews["tests/test_app.py"]
     assert _git(project_settings, "status", "--porcelain") == before == ""
+
+
+def test_repository_discovery_does_not_preview_secret_named_files(
+    project_settings: Path,
+) -> None:
+    (project_settings / ".env").write_text("DEEPSEEK_API_KEY=not-a-real-key\n")
+    (project_settings / "private-credentials.json").write_text('{"token":"hidden"}\n')
+
+    discovery = discover_repository(project_settings)
+
+    assert ".env" not in discovery.file_previews
+    assert "private-credentials.json" not in discovery.file_previews
 
 
 async def test_compiler_cannot_smuggle_network_authority(project_settings: Path) -> None:
@@ -318,11 +356,13 @@ async def test_discovered_checks_are_not_duplicated(project_settings: Path) -> N
 
     assert compiled.contract_hash
     pytest_checks = [
-        check for check in compiled.draft.checks if check.command == "python -m pytest -q"
+        check for check in compiled.draft.checks if check.command == "python3 -m pytest -q"
     ]
     assert len(pytest_checks) == 1
     assert pytest_checks[0].source == "contract"
-    assert pytest_checks[0].criterion_ids == ["criterion-002"]
+    assert pytest_checks[0].criterion_ids == ["criterion-001", "criterion-002"]
+    assert all(check.kind != "file_contains" for check in compiled.draft.checks)
+    assert all(check.kind != "file_exists" for check in compiled.draft.checks)
 
 
 async def test_critic_reviews_discovered_quality_checks(project_settings: Path) -> None:
@@ -337,8 +377,262 @@ async def test_critic_reviews_discovered_quality_checks(project_settings: Path) 
     )
 
     assert compiled.contract_hash
-    assert '"command": "python -m pytest -q"' in model.critic_prompt
+    assert '"command": "python3 -m pytest -q"' in model.critic_prompt
     assert '"source": "system"' in model.critic_prompt
+    assert "post-change acceptance checks" in model.critic_system
+    assert "direct behavioral evidence" in model.critic_system
+    assert "typed field, key suffix" in model.critic_system
+    assert "ordinary strings accepted in other fields" in model.compile_system
+    repair_system, _ = contract_repair_prompts(
+        "Update the local greeting",
+        ContractProposal.model_validate(
+            {
+                "criteria": ["app.py prints after"],
+                "checks": [],
+                "artifacts": ["app.py"],
+                "risk": "low",
+                "assumptions": [],
+                "confidence": 95,
+                "authority_requests": [],
+            }
+        ),
+        discover_repository(project_settings),
+        ["An unrequested existing behavior is not covered."],
+    )
+    assert "remove the invented criterion" in repair_system
+    assert "'nonzero'" in model.compile_prompt
+
+
+async def test_deterministic_contract_adjudicates_non_actionable_critic_noise(
+    project_settings: Path,
+) -> None:
+    model = ContractLoopLLM(
+        critic_accepts=False,
+        critic_question="Should Loop simplify the contract and remove the redundant checks?",
+        critic_issues=["The file check is redundant with the repository test suite."],
+        include_discovered_check=True,
+    )
+    compiled = await compile_project_contract(
+        goal="Update the local greeting",
+        root=project_settings,
+        compiler=model,
+        critic=model,
+        granted_capabilities={Capability.FS_READ, Capability.FS_WRITE, Capability.EXEC},
+        token_budget=10_000,
+    )
+
+    assert compiled.contract_hash
+    assert compiled.draft.critique.accepted is True
+    assert compiled.draft.critique.adjudicated is True
+    assert compiled.draft.critique.adjudication_reason
+    assert compiled.draft.critique.issues == [
+        "The file check is redundant with the repository test suite."
+    ]
+
+
+async def test_deterministic_contract_does_not_overrule_a_coverage_warning(
+    project_settings: Path,
+) -> None:
+    model = ContractLoopLLM(
+        critic_accepts=False,
+        critic_question=None,
+        critic_issues=["The tests do not cover invalid input behavior."],
+        include_discovered_check=True,
+    )
+    compiled = await compile_project_contract(
+        goal="Update the local greeting",
+        root=project_settings,
+        compiler=model,
+        critic=model,
+        granted_capabilities={Capability.FS_READ, Capability.FS_WRITE, Capability.EXEC},
+        token_budget=10_000,
+    )
+
+    assert compiled.contract_hash is None
+    assert compiled.draft.critique.accepted is False
+    assert compiled.draft.critique.adjudicated is False
+
+
+async def test_deterministic_contract_uses_test_preview_to_refute_check_isolation_noise(
+    project_settings: Path,
+) -> None:
+    (project_settings / "tests" / "test_app.py").write_text(
+        "def test_error():\n"
+        "    result = type('Result', (), {'stderr': 'format error'})()\n"
+        "    assert 'format' in result.stderr\n"
+    )
+    model = ContractLoopLLM(
+        critic_accepts=False,
+        critic_question=(
+            "The acceptance contract is not yet verifiable. What observable behavior must be true?"
+        ),
+        critic_issues=[
+            "The direct check does not require stderr to contain 'format', even though the "
+            "criterion requires a 'format' error."
+        ],
+        include_discovered_check=True,
+    )
+    compiled = await compile_project_contract(
+        goal="Update the local greeting",
+        root=project_settings,
+        compiler=model,
+        critic=model,
+        granted_capabilities={Capability.FS_READ, Capability.FS_WRITE, Capability.EXEC},
+        token_budget=10_000,
+    )
+
+    assert compiled.contract_hash
+    assert compiled.draft.critique.adjudicated is True
+
+
+async def test_deterministic_contract_refutes_test_runner_speculation(
+    project_settings: Path,
+) -> None:
+    model = ContractLoopLLM(
+        critic_accepts=False,
+        critic_question=(
+            "The acceptance contract is not yet verifiable. What observable behavior must be true?"
+        ),
+        critic_issues=[
+            "The tests use unittest and the check runs pytest. The command does not specify "
+            "the test file path, so the working directory may prevent the intended tests from "
+            "running."
+        ],
+        include_discovered_check=True,
+    )
+    compiled = await compile_project_contract(
+        goal="Update the local greeting",
+        root=project_settings,
+        compiler=model,
+        critic=model,
+        granted_capabilities={Capability.FS_READ, Capability.FS_WRITE, Capability.EXEC},
+        token_budget=10_000,
+    )
+
+    assert compiled.contract_hash
+    assert compiled.draft.critique.adjudicated is True
+
+
+def test_inline_python_contract_check_syntax_is_validated() -> None:
+    invalid = 'python3 -c "value = 1; try: print(value); except ValueError: print(0)"'
+    valid = 'python3 -c "value = 1\ntry:\n print(value)\nexcept ValueError:\n print(0)"'
+
+    assert "syntax error" in (_inline_python_syntax_issue(invalid) or "")
+    assert _inline_python_syntax_issue(valid) is None
+
+
+def test_deterministic_contract_rejects_unforwarded_and_unasserted_output(
+    project_settings: Path,
+) -> None:
+    proposal = ContractProposal.model_validate(
+        {
+            "criteria": [
+                "The command prints JSON to stdout.",
+                "Invalid format prints an error containing 'format' to stderr.",
+            ],
+            "checks": [
+                {
+                    "id": "contract-001",
+                    "kind": "command",
+                    "command": (
+                        "node -e \"const {spawnSync}=require('child_process'); "
+                        "const r=spawnSync('node',['app.js']); process.exit(r.status);\""
+                    ),
+                    "expect_stdout": "[]",
+                    "criterion_ids": ["criterion-001"],
+                    "source": "contract",
+                },
+                {
+                    "id": "contract-002",
+                    "kind": "command",
+                    "command": "node app.js --format yaml",
+                    "expect_exit": "nonzero",
+                    "criterion_ids": ["criterion-002"],
+                    "source": "contract",
+                },
+            ],
+            "artifacts": ["app.js"],
+            "risk": "low",
+            "assumptions": [],
+            "confidence": 95,
+            "authority_requests": [],
+        }
+    )
+
+    issues = _deterministic_issues(
+        proposal,
+        discover_repository(project_settings),
+        {Capability.FS_READ, Capability.FS_WRITE, Capability.EXEC},
+    )
+
+    assert any("never forwards it" in issue for issue in issues)
+    assert any("stderr content" in issue for issue in issues)
+
+
+def test_test_previews_canonicalize_redundant_cli_wrappers() -> None:
+    discovery = discover_repository(ROOT / "evals" / "repositories" / "extend-task-cli")
+    criteria = [
+        "`list --status open --format json` exits 0 and prints a JSON array of open tasks.",
+        "`list` still prints the tab-separated text format for all tasks.",
+        "`list --format yaml` exits non-zero and prints an error containing 'format' to stderr.",
+        "`list --status` exits non-zero and prints an error containing 'status' to stderr.",
+    ]
+    proposal = ContractProposal.model_validate(
+        {
+            "criteria": criteria,
+            "checks": [
+                {
+                    "id": "contract-001",
+                    "kind": "command",
+                    "command": "node src/cli.mjs list --status open --format json",
+                    "expect_stdout": "[]",
+                    "criterion_ids": ["criterion-001"],
+                    "source": "contract",
+                },
+                {
+                    "id": "contract-002",
+                    "kind": "file_exists",
+                    "path": "src/cli.mjs",
+                    "criterion_ids": [],
+                    "source": "contract",
+                },
+            ],
+            "artifacts": ["src/cli.mjs"],
+            "risk": "low",
+            "assumptions": [],
+            "confidence": 95,
+            "authority_requests": [],
+        }
+    )
+
+    assert _test_previews_cover_contract(proposal, discovery) is True
+    checks = _effective_checks(proposal, discovery)
+
+    assert len(checks) == 1
+    assert checks[0].command == "npm run test"
+    assert checks[0].source == "contract"
+    assert checks[0].criterion_ids == [
+        "criterion-001",
+        "criterion-002",
+        "criterion-003",
+        "criterion-004",
+    ]
+
+
+async def test_contract_compiler_normalizes_a_single_assumption_string(
+    project_settings: Path,
+) -> None:
+    compiled = await compile_project_contract(
+        goal="Update the local greeting",
+        root=project_settings,
+        compiler=ContractLoopLLM(assumptions_as_string=True),
+        critic=ContractLoopLLM(),
+        granted_capabilities={Capability.FS_READ, Capability.FS_WRITE, Capability.EXEC},
+        token_budget=10_000,
+    )
+
+    assert compiled.contract_hash
+    assert compiled.draft.assumptions == ["The printed word is the requested behavior."]
 
 
 async def test_compiler_runs_one_bounded_repair_after_critic_rejection(

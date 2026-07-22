@@ -4,7 +4,7 @@
   "private": true,
   "description": "Loop \u2014 a verifiable, least-authority autonomous agent runtime. Next.js + FastAPI, deployable on Kubernetes.",
   "license": "MIT",
-  "packageManager": "pnpm@11.13.0",
+  "packageManager": "pnpm@11.15.1",
   "engines": {
     "node": ">=22.13",
     "pnpm": ">=11"

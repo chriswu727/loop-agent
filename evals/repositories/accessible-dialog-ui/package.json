@@ -1,0 +1,6 @@
+{
+  "name": "accessible-dialog-fixture",
+  "private": true,
+  "type": "module",
+  "scripts": {"test": "node --test"}
+}

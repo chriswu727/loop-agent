@@ -56,6 +56,8 @@ class FallbackLLMClient:
         last_error: LLMError | None = None
         spent = 0
         input_bound = _token_estimate(system, user)
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + settings.llm_total_timeout_seconds
 
         for index, provider in enumerate(chain):
             adapter = PROVIDERS[provider].adapter
@@ -72,6 +74,9 @@ class FallbackLLMClient:
             # Retry this provider on a transient error before cascading, so one
             # blip (timeout/5xx/empty) doesn't fail the task on a single-provider setup.
             for attempt in range(settings.llm_max_retries + 1):
+                remaining_seconds = deadline - loop.time()
+                if remaining_seconds <= 0:
+                    raise _total_deadline_error(spent)
                 remaining = None if token_budget is None else token_budget - spent
                 if remaining is not None and remaining <= input_bound:
                     raise LLMError(
@@ -83,14 +88,15 @@ class FallbackLLMClient:
                 if remaining is not None:
                     attempt_max = min(max_tokens, remaining - input_bound)
                 try:
-                    content, tokens = await adapter(
-                        self._client,
-                        api_key,
-                        system,
-                        user,
-                        max_tokens=attempt_max,
-                        temperature=temperature,
-                    )
+                    async with asyncio.timeout(remaining_seconds):
+                        content, tokens = await adapter(
+                            self._client,
+                            api_key,
+                            system,
+                            user,
+                            max_tokens=attempt_max,
+                            temperature=temperature,
+                        )
                     if not content.strip():
                         raise LLMError(f"{provider} returned empty content", retryable=True)
                     if tokens:
@@ -107,6 +113,9 @@ class FallbackLLMClient:
                         fallbacks=fallbacks,
                         model=provider_model(provider),
                     )
+                except TimeoutError:
+                    spent += input_bound + attempt_max
+                    raise _total_deadline_error(spent) from None
                 except LLMError as exc:
                     last_error = exc
                 except Exception as exc:  # unexpected shape -> normalise, maybe cascade
@@ -123,7 +132,11 @@ class FallbackLLMClient:
                     ) from last_error
                 if attempt < settings.llm_max_retries:
                     log.info("llm.retry", provider=provider, attempt=attempt + 1)
-                    await asyncio.sleep(settings.llm_retry_backoff_seconds * (attempt + 1))
+                    backoff = settings.llm_retry_backoff_seconds * (attempt + 1)
+                    remaining_seconds = deadline - loop.time()
+                    if remaining_seconds <= 0:
+                        raise _total_deadline_error(spent)
+                    await asyncio.sleep(min(backoff, remaining_seconds))
 
         assert last_error is not None
         last_error.tokens_spent += spent
@@ -153,6 +166,14 @@ def _failed_attempt_charge(error: LLMError, input_bound: int, output_bound: int)
         for marker in ("connection", "empty content", "network", "parse", "timeout", "timed out")
     )
     return input_bound + (output_bound if output_may_have_been_generated else 0)
+
+
+def _total_deadline_error(tokens_spent: int) -> LLMError:
+    return LLMError(
+        "LLM call exceeded its total timeout across retries and provider fallbacks",
+        retryable=True,
+        tokens_spent=tokens_spent,
+    )
 
 
 def get_llm_client() -> FallbackLLMClient:

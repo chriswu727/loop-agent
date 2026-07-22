@@ -35,7 +35,7 @@ class ContextBudget:
 
 @dataclass(frozen=True, slots=True)
 class HistoryWindow:
-    recent_steps: int = 6
+    recent_steps: int = 4
 
     def render(self, entries: list[HistoryEntry]) -> str:
         if len(entries) <= self.recent_steps:

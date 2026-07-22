@@ -7,7 +7,7 @@ clean copy, not just that the agent said so. Checks run through the same command
 policy as the agent, so verification can't do anything the agent couldn't.
 
 Supported checks:
-  {"kind": "command", "command": "...", "expect_exit": 0, "expect_stdout": "..."}
+  {"kind": "command", "command": "...", "expect_exit": 0 | "nonzero", "expect_stdout": "..."}
   {"kind": "file_exists", "path": "relative/path"}
   {"kind": "file_contains", "path": "relative/path", "text": "..."}
 """
@@ -170,12 +170,15 @@ async def _run_one(
         expect_stdout = check.get("expect_stdout")
         tool_result = await executor.execute("run_command", {"command": command})
         out = tool_result.observation
-        try:
-            want_exit = int(expect_exit)
-        except (TypeError, ValueError):
-            want_exit = 0
         code = _leading_exit_code(out)  # exact code, so "exit code 1" != "exit code 10"
-        exit_ok = code == want_exit
+        if expect_exit == "nonzero":
+            exit_ok = code is not None and code != 0
+        else:
+            try:
+                want_exit = int(expect_exit)
+            except (TypeError, ValueError):
+                want_exit = 0
+            exit_ok = code == want_exit
         stdout_ok = (expect_stdout is None) or (str(expect_stdout) in out)
         empty_suite = empty_test_suite_reason(command, out)
         passed = bool(

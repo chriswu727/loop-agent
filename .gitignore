@@ -14,6 +14,8 @@ apps/web/test-results/
 /evals/results/*
 !/evals/results/demo-smoke.json
 !/evals/results/deepseek-chat-v0.1.0.json
+!/evals/results/deepseek-chat-repository-matrix-v0.2.0.json
+!/evals/results/deepseek-chat-full-loop-v0.2.12.json
 
 # ---------- Python ----------
 __pycache__/

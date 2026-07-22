@@ -209,6 +209,27 @@ verified benchmark does not regress.
 
 ### Gate 4 — Repository-level evidence and error analysis
 
+**Implementation status (2026-07-21): inline evidence threshold complete; production
+isolation subgate remains open.** The current eight-repository matrix covers every
+listed task family and runs three repeats per case. The frozen DeepSeek `deepseek-chat`
+full-Loop report completed all 24 cells, solved 20/21 deliverable attempts (95.24%),
+safely deferred all three contradictory specifications, and recorded zero false
+acceptances. Median/p95/max were 4/7/9 steps, 10,386/19,736/25,656 tokens, and
+16.011/22.589/27.213 seconds. The one failure remains published as an unnecessary,
+fail-closed UI clarification caused by an invalid empty contract draft.
+
+The archived v0.1 same-model comparison records one-shot, ungated tool loop, and full
+Loop on a versioned manifest. It exposed three one-shot false acceptances and the full
+Loop's earlier contract/convergence failures, which became regression tests and runtime
+changes. The current evaluator now protects test hashes, runs external oracles twice,
+requires Receipt replay plus Apply/Undo, checkpoints atomically, rejects runtime or
+fixture drift, and waits through API publication throttling.
+
+This gate is not marked fully complete because both published repository runs used the
+reduced-isolation `inline` backend. The same current matrix still needs a clean
+Docker/Kubernetes run, and the empty-contract failure remains the next error-analysis
+target.
+
 - Add realistic fixture repositories covering bug repair, feature work, multi-file
   refactoring, CLI/API/UI changes, regressions, and incomplete specifications.
 - Run every case repeatedly and publish distributions rather than a selected best run.
