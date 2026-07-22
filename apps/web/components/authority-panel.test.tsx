@@ -143,6 +143,7 @@ describe('ContractPanel', () => {
           contract_hash: '0123456789abcdef',
           contract: {
             schema_version: 'loop.contract-draft/v1',
+            criteria_recovery: 'explicit_user_goal',
             compiler: { provider: 'fixture', model: 'contract-v1' },
             criteria: ['The greeting is updated'],
             checks: [
@@ -186,6 +187,7 @@ describe('ContractPanel', () => {
     );
 
     expect(screen.getByText('Loop compiled')).toBeInTheDocument();
+    expect(screen.getByText('criterion recovered from instruction')).toBeInTheDocument();
     expect(screen.getByText('locked 0123456789ab')).toBeInTheDocument();
     expect(screen.getByText('The greeting is updated')).toBeInTheDocument();
     expect(screen.getByText(/12 files discovered/)).toBeInTheDocument();

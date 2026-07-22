@@ -218,6 +218,13 @@ acceptances. Median/p95/max were 4/7/9 steps, 10,386/19,736/25,656 tokens, and
 16.011/22.589/27.213 seconds. The one failure remains published as an unnecessary,
 fail-closed UI clarification caused by an invalid empty contract draft.
 
+The empty-contract failure is now a deterministic regression. If a compiler returns no
+usable criteria, Loop may preserve the bounded explicit user instruction as the criterion,
+but it still runs the independent critic and refuses to lock unless safe execution evidence
+substantantiates it. The accessible-dialog fixture proves the discovered test-gate recovery;
+an unrelated no-evidence goal proves the same path remains fail-closed. The frozen report is
+not retroactively rescored; a new real-provider matrix must confirm the improvement.
+
 The archived v0.1 same-model comparison records one-shot, ungated tool loop, and full
 Loop on a versioned manifest. It exposed three one-shot false acceptances and the full
 Loop's earlier contract/convergence failures, which became regression tests and runtime
@@ -227,8 +234,7 @@ fixture drift, and waits through API publication throttling.
 
 This gate is not marked fully complete because both published repository runs used the
 reduced-isolation `inline` backend. The same current matrix still needs a clean
-Docker/Kubernetes run, and the empty-contract failure remains the next error-analysis
-target.
+Docker/Kubernetes run, and the empty-contract regression still needs real-provider repeats.
 
 - Add realistic fixture repositories covering bug repair, feature work, multi-file
   refactoring, CLI/API/UI changes, regressions, and incomplete specifications.

@@ -25,6 +25,11 @@ export function ContractPanel({ task }: { task: Task }) {
         <span className="rounded bg-black/5 px-1.5 py-0.5 text-[10px] opacity-60 dark:bg-white/10">
           {task.verification_mode}
         </span>
+        {draft?.criteria_recovery === 'explicit_user_goal' && (
+          <span className="rounded bg-amber-500/10 px-1.5 py-0.5 text-[10px] text-amber-700 dark:text-amber-300">
+            criterion recovered from instruction
+          </span>
+        )}
         {task.contract_status === 'locked' && task.contract_hash && (
           <span className="font-mono text-[10px] text-green-700 dark:text-green-400">
             locked {task.contract_hash.slice(0, 12)}

@@ -1159,7 +1159,12 @@ class AgentReactService:
         task.criteria_source = "compiled"
         task.pending_question = None
         self._apply_locked_contract(task, compiled.draft)
-        self._transition(task, LoopEvent.CONTRACT_READY, "contract_locked")
+        transition_reason = (
+            "contract_locked_after_empty_criteria_recovery"
+            if compiled.draft.criteria_recovery == "explicit_user_goal"
+            else "contract_locked"
+        )
+        self._transition(task, LoopEvent.CONTRACT_READY, transition_reason)
         await self._commit()
         return True
 

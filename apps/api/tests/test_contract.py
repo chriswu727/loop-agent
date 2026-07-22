@@ -236,6 +236,52 @@ class ContractLoopLLM:
         return LLMResult(json.dumps(decision), "fixture", 10, model="executor-v1")
 
 
+class EmptyCriteriaContractLLM:
+    def __init__(self) -> None:
+        self.compile_calls = 0
+        self.critic_calls = 0
+        self.critic_prompt = ""
+
+    async def complete(
+        self,
+        system: str,
+        user: str,
+        *,
+        max_tokens: int = 4096,
+        temperature: float = 0.7,
+        token_budget: int | None = None,
+    ) -> LLMResult:
+        del max_tokens, temperature, token_budget
+        if "compile one software instruction" in system:
+            self.compile_calls += 1
+            return LLMResult(
+                json.dumps(
+                    {
+                        "criteria": [],
+                        "checks": [],
+                        "artifacts": [],
+                        "risk": "low",
+                        "assumptions": [],
+                        "confidence": 95,
+                        "authority_requests": [],
+                    }
+                ),
+                "fixture",
+                20,
+                model="contract-v1",
+            )
+        if "independent acceptance-contract critic" in system:
+            self.critic_calls += 1
+            self.critic_prompt = user
+            return LLMResult(
+                json.dumps({"accepted": True, "issues": [], "question": None}),
+                "fixture-critic",
+                10,
+                model="critic-v1",
+            )
+        raise AssertionError("unexpected model role")
+
+
 @pytest.fixture
 def project_settings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     projects = tmp_path / "projects"
@@ -341,6 +387,68 @@ async def test_compiler_normalizes_structured_criteria(project_settings: Path) -
         "app.py prints after instead of before",
         "Running app.py exits successfully and reports after",
     ]
+
+
+async def test_compiler_recovers_empty_criteria_from_goal_and_test_evidence() -> None:
+    root = ROOT / "evals" / "repositories" / "accessible-dialog-ui"
+    goal = (
+        "Finish the dependency-free modal dialog. The HTML needs an accessible dialog labelled "
+        "by its title. openDialog must show it, remember the previously focused element and "
+        "focus the close button; closeDialog must hide it and restore focus. Escape closes an "
+        "open dialog. Keep the exported JavaScript API and make all tests pass."
+    )
+    before = {
+        path.relative_to(root): path.read_bytes() for path in root.rglob("*") if path.is_file()
+    }
+    model = EmptyCriteriaContractLLM()
+
+    compiled = await compile_project_contract(
+        goal=goal,
+        root=root,
+        compiler=model,
+        critic=model,
+        granted_capabilities={Capability.FS_READ, Capability.FS_WRITE, Capability.EXEC},
+        token_budget=10_000,
+    )
+
+    assert compiled.contract_hash
+    assert compiled.draft.criteria_recovery == "explicit_user_goal"
+    assert compiled.draft.criteria == [goal]
+    assert compiled.draft.critique.accepted is True
+    without_recovery = compiled.draft.model_copy(update={"criteria_recovery": None})
+    assert not verify_contract_hash(without_recovery, compiled.contract_hash)
+    assert model.compile_calls == 1
+    assert model.critic_calls == 1
+    assert goal in model.critic_prompt
+    contract_checks = [check for check in compiled.draft.checks if check.source == "contract"]
+    assert [check.command for check in contract_checks] == ["npm run test"]
+    assert contract_checks[0].criterion_ids == ["criterion-001"]
+    assert {
+        path.relative_to(root): path.read_bytes() for path in root.rglob("*") if path.is_file()
+    } == before
+
+
+async def test_empty_criteria_recovery_still_fails_without_grounding(
+    project_settings: Path,
+) -> None:
+    model = EmptyCriteriaContractLLM()
+
+    compiled = await compile_project_contract(
+        goal="Replace an unavailable remote billing service",
+        root=project_settings,
+        compiler=model,
+        critic=model,
+        granted_capabilities={Capability.FS_READ, Capability.FS_WRITE, Capability.EXEC},
+        token_budget=10_000,
+    )
+
+    assert compiled.contract_hash is None
+    assert compiled.draft.criteria_recovery == "explicit_user_goal"
+    assert compiled.draft.critique.accepted is False
+    assert any(
+        "No execution check substantiates: criterion-001" in issue
+        for issue in compiled.draft.critique.issues
+    )
 
 
 async def test_discovered_checks_are_not_duplicated(project_settings: Path) -> None:
@@ -733,6 +841,20 @@ def test_user_contract_supports_full_advanced_input_bounds(project_settings: Pat
     assert len(draft.artifacts) == 32
     assert len(draft.checks) == 41
     assert verify_contract_hash(draft, contract_hash)
+
+
+def test_contract_hash_accepts_legacy_draft_without_recovery_field(
+    project_settings: Path,
+) -> None:
+    draft, contract_hash = lock_user_project_contract(
+        root=project_settings,
+        criteria=["The requested output exists and is validated."],
+        required_checks=[],
+    )
+    legacy = draft.model_dump(mode="json")
+    assert legacy.pop("criteria_recovery") is None
+
+    assert verify_contract_hash(legacy, contract_hash)
 
 
 async def test_one_instruction_compiles_repairs_verifies_and_applies(

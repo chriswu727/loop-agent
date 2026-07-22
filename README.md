@@ -145,6 +145,12 @@ Median/p95/max were 4/7/9 steps, 10,386/19,736/25,656 provider-reported tokens, 
 16.011/22.589/27.213 seconds. The one unsolved attempt was an unnecessary UI
 clarification after the contract compiler returned an invalid empty criteria list; Loop
 failed closed before mutation rather than accepting unverified work.
+That failure remains in the frozen report. The current runtime now treats the bounded
+user instruction as the fallback criterion, but only locks it after independent criticism
+and deterministic criterion-to-check coverage; a focused regression reproduces both the
+recovered UI path and the no-evidence fail-closed path. Recovery provenance is included in
+the hashed contract and Receipt and shown in the task UI. A future real-provider matrix,
+not the regression alone, will determine the new score.
 
 An [archived same-model comparison](./evals/results/deepseek-chat-repository-matrix-v0.2.0.json)
 also records one-shot, ungated tool loop, and full Loop on the versioned v0.1 matrix.
