@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -130,6 +131,20 @@ class RespondIn(BaseModel):
     answer: str = Field(min_length=1, max_length=4_000)
 
 
+class ProductRevisionCreate(BaseModel):
+    feedback: str = Field(min_length=4, max_length=4_000)
+    kind: Literal["implementation_fix", "product_decision"] = "implementation_fix"
+    autostart: bool = True
+
+    @field_validator("feedback")
+    @classmethod
+    def normalize_feedback(cls, value: str) -> str:
+        normalized = value.strip()
+        if len(normalized) < 4:
+            raise ValueError("feedback must contain at least 4 non-whitespace characters")
+        return normalized
+
+
 class LimitsRead(BaseModel):
     max_steps: int
     token_budget: int
@@ -191,6 +206,38 @@ class LoopStateRead(BaseModel):
     sequence: int
 
 
+class ProductFeedbackRead(BaseModel):
+    revision: int = Field(ge=2)
+    kind: Literal["implementation_fix", "product_decision"]
+    feedback: str
+    previous_task_id: uuid.UUID
+
+
+class ProductSpecificationRead(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    schema_version: Literal["loop.product-specification/v1"] = Field(
+        alias="schema", serialization_alias="schema"
+    )
+    original_goal: str
+    required_acceptance_criteria: list[str]
+    feedback_history: list[ProductFeedbackRead]
+    previous_contract_hash: str | None
+    previous_receipt_hash: str | None
+
+
+class ProductRevisionRead(BaseModel):
+    session_id: uuid.UUID
+    revision: int
+    previous_task_id: uuid.UUID | None
+    superseded_by_task_id: uuid.UUID | None
+    feedback_kind: Literal["implementation_fix", "product_decision"] | None
+    feedback_delta: str | None
+    specification: ProductSpecificationRead
+    specification_hash: str
+    is_latest: bool
+
+
 class TaskRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -221,6 +268,7 @@ class TaskRead(BaseModel):
     skill: str | None
     parent_id: uuid.UUID | None
     depth: int
+    product_revision: ProductRevisionRead | None
     idempotency_key: str | None
     attempt: int
     limits: LimitsRead
@@ -302,6 +350,24 @@ class TaskRead(BaseModel):
             skill=m.skill,  # type: ignore[attr-defined]
             parent_id=m.parent_id,  # type: ignore[attr-defined]
             depth=m.depth,  # type: ignore[attr-defined]
+            product_revision=(
+                ProductRevisionRead(
+                    session_id=m.product_session_id,  # type: ignore[attr-defined]
+                    revision=m.product_revision,  # type: ignore[attr-defined]
+                    previous_task_id=m.previous_revision_id,  # type: ignore[attr-defined]
+                    superseded_by_task_id=m.superseded_by_id,  # type: ignore[attr-defined]
+                    feedback_kind=m.feedback_kind,  # type: ignore[attr-defined]
+                    feedback_delta=m.feedback_delta,  # type: ignore[attr-defined]
+                    specification=m.product_specification,  # type: ignore[attr-defined]
+                    specification_hash=m.specification_hash,  # type: ignore[attr-defined]
+                    is_latest=m.superseded_by_id is None,  # type: ignore[attr-defined]
+                )
+                if m.product_session_id  # type: ignore[attr-defined]
+                and m.product_revision  # type: ignore[attr-defined]
+                and m.product_specification  # type: ignore[attr-defined]
+                and m.specification_hash  # type: ignore[attr-defined]
+                else None
+            ),
             idempotency_key=m.idempotency_key,  # type: ignore[attr-defined]
             attempt=m.attempt,  # type: ignore[attr-defined]
             limits=LimitsRead(

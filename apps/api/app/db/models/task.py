@@ -10,7 +10,7 @@ from __future__ import annotations
 import uuid
 from typing import Any
 
-from sqlalchemy import JSON, Boolean, Integer, String, Text, UniqueConstraint, Uuid
+from sqlalchemy import JSON, Boolean, Index, Integer, String, Text, UniqueConstraint, Uuid
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
@@ -20,7 +20,15 @@ from app.domain.task import TaskStatus
 
 class TaskModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "tasks"
-    __table_args__ = (UniqueConstraint("owner_id", "idempotency_key"),)
+    __table_args__ = (
+        UniqueConstraint("owner_id", "idempotency_key"),
+        Index(
+            "uq_tasks_product_session_id_product_revision",
+            "product_session_id",
+            "product_revision",
+            unique=True,
+        ),
+    )
 
     goal: Mapped[str] = mapped_column(Text, nullable=False)
     owner_id: Mapped[str] = mapped_column(String(255), nullable=False, default="local", index=True)
@@ -73,6 +81,16 @@ class TaskModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     # Sub-agent delegation: a spawned task points at its parent and tracks depth.
     parent_id: Mapped[uuid.UUID | None] = mapped_column(Uuid(), nullable=True, index=True)
     depth: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    # Product revision lineage is separate from parent_id, which exclusively
+    # represents the sub-agent execution tree.
+    product_session_id: Mapped[uuid.UUID | None] = mapped_column(Uuid(), nullable=True, index=True)
+    product_revision: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    previous_revision_id: Mapped[uuid.UUID | None] = mapped_column(Uuid(), nullable=True)
+    superseded_by_id: Mapped[uuid.UUID | None] = mapped_column(Uuid(), nullable=True)
+    feedback_kind: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    feedback_delta: Mapped[str | None] = mapped_column(Text, nullable=True)
+    product_specification: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    specification_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     # Chat origin: the channel/chat this task came from, so replies route back.
     chat_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     # The action awaiting approval while paused: {"tool": ..., "args": {...}}.

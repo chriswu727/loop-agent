@@ -36,6 +36,7 @@ from app.schemas.step import LedgerStatus, StepRead
 from app.schemas.task import (
     ChangeSetRead,
     LimitDefaults,
+    ProductRevisionCreate,
     RespondIn,
     TaskCreate,
     TaskRead,
@@ -141,6 +142,34 @@ async def retry_task(
 ) -> TaskRead:
     task = await service.retry(task_id)
     background.add_task(trigger_task, task.id)
+    return TaskRead.from_model(task)
+
+
+@router.get(
+    "/{task_id}/revisions",
+    response_model=list[TaskRead],
+    summary="List every immutable delivery in a Product Session",
+)
+async def product_revisions(task_id: uuid.UUID, service: TaskServiceDep) -> list[TaskRead]:
+    return [TaskRead.from_model(task) for task in await service.list_revisions(task_id)]
+
+
+@router.post(
+    "/{task_id}/revisions",
+    response_model=TaskRead,
+    status_code=status.HTTP_201_CREATED,
+    summary="Turn verified-delivery feedback into the next Product Session revision",
+    dependencies=[rate_limit(limit=10, window_seconds=60)],
+)
+async def create_product_revision(
+    task_id: uuid.UUID,
+    payload: ProductRevisionCreate,
+    service: TaskServiceDep,
+    background: BackgroundTasks,
+) -> TaskRead:
+    task = await service.create_revision(task_id, payload)
+    if payload.autostart:
+        background.add_task(trigger_task, task.id)
     return TaskRead.from_model(task)
 
 

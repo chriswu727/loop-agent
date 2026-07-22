@@ -154,6 +154,20 @@ export const tasksApi = {
     apiFetch<Task>('/api/v1/tasks', { method: 'POST', body: JSON.stringify(body) }),
   cancel: (id: string) => apiFetch<Task>(`/api/v1/tasks/${id}/cancel`, { method: 'POST' }),
   retry: (id: string) => apiFetch<Task>(`/api/v1/tasks/${id}/retry`, { method: 'POST' }),
+  revisions: (id: string) => apiFetch<Task[]>(`/api/v1/tasks/${id}/revisions`),
+  createRevision: (
+    id: string,
+    body: {
+      feedback: string;
+      kind: 'implementation_fix' | 'product_decision';
+      autostart?: boolean;
+    },
+  ) =>
+    apiFetch<Task>(`/api/v1/tasks/${id}/revisions`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+      timeoutMs: 30_000,
+    }),
   upload: uploadFile,
   start: (id: string) => apiFetch<Task>(`/api/v1/tasks/${id}/start`, { method: 'POST' }),
   respond: (id: string, answer: string) =>

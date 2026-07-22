@@ -7,13 +7,14 @@ from pathlib import Path
 
 import pytest
 from filelock import FileLock
-from httpx import AsyncClient
+from httpx import AsyncClient, Response
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
 from app.core.config import settings
 from app.db.models.task import TaskModel
 from app.domain.task import StopReason, TaskStatus
 from app.services.changeset import acquire_source_lock, release_source_lock
+from app.services.contract import lock_user_project_contract
 from app.services.receipt import RECEIPT_SCHEMA, build_receipt
 from app.services.verification import CheckResult
 from app.tools.workspace import Workspace
@@ -76,6 +77,32 @@ async def _mark_verified(engine: AsyncEngine, task_id: str) -> None:
         task.verified_by = "execution"
         task.verification_score = 100
         task.summary = "Updated and checked the project."
+        criteria = list(task.rubric or [])
+        if task.product_revision and task.product_revision > 1:
+            specification = task.product_specification or {}
+            criteria = list(specification.get("required_acceptance_criteria", []))
+        criterion_ids = tuple(f"criterion-{index:03d}" for index in range(1, len(criteria) + 1))
+        contract_check = {
+            "id": "contract-test",
+            "kind": "command",
+            "command": "true",
+            "expect_exit": 0,
+            "criterion_ids": list(criterion_ids),
+            "source": "contract",
+        }
+        draft, contract_hash = lock_user_project_contract(
+            root=Path(task.workspace_path),
+            criteria=criteria,
+            required_checks=[contract_check],
+        )
+        task.rubric = criteria
+        task.criteria_source = "user"
+        task.required_checks = [
+            check.model_dump(mode="json", exclude_none=True) for check in draft.checks
+        ]
+        task.contract_draft = draft.model_dump(mode="json")
+        task.contract_hash = contract_hash
+        task.contract_status = "locked"
         receipt_hash, _ = build_receipt(
             task,
             [
@@ -85,8 +112,8 @@ async def _mark_verified(engine: AsyncEngine, task_id: str) -> None:
                     True,
                     "exit code 0",
                     check_id="check-001",
-                    criterion_ids=("criterion-001",),
-                    definition={"kind": "command", "command": "true", "expect_exit": 0},
+                    criterion_ids=criterion_ids,
+                    definition=contract_check,
                 )
             ],
             score=100,
@@ -322,3 +349,202 @@ async def test_apply_refuses_a_diff_changed_after_receipt(
     response = await client.post(f"/api/v1/tasks/{created['id']}/changes/apply")
     assert response.status_code == 409
     assert "Receipt" in response.json()["detail"]
+
+
+async def test_product_session_revision_preserves_verified_history_and_applies_cumulative_patch(
+    client: AsyncClient,
+    engine: AsyncEngine,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    projects = tmp_path / "projects"
+    projects.mkdir()
+    source = _repository(projects)
+    monkeypatch.setattr(settings, "loop_local_projects_root", str(projects))
+    monkeypatch.setattr(settings, "agent_workspaces_root", str(tmp_path / "workspaces"))
+
+    created = await client.post(
+        "/api/v1/tasks",
+        json={
+            "goal": "Change the greeting without breaking the project",
+            "success_criteria": ["The greeting reflects the requested product behavior."],
+            "project_path": "project",
+            "autostart": False,
+        },
+    )
+    assert created.status_code == 201
+    first = created.json()
+    assert first["product_revision"]["revision"] == 1
+    first_workspace = await _workspace_path(engine, first["id"])
+    (first_workspace / "app.py").write_text("print('v1')\n")
+    (first_workspace / "asset.bin").write_bytes(b"\x00v1")
+    (first_workspace / "delete.txt").unlink()
+    (first_workspace / "rename-me.txt").rename(first_workspace / "renamed.txt")
+    (first_workspace / "new.txt").write_text("v1 output\n")
+    await _mark_verified(engine, first["id"])
+
+    revised = await client.post(
+        f"/api/v1/tasks/{first['id']}/revisions",
+        json={
+            "feedback": "The greeting must say v2 and a regression test must protect it.",
+            "kind": "implementation_fix",
+            "autostart": False,
+        },
+    )
+    assert revised.status_code == 201
+    second = revised.json()
+    product_revision = second["product_revision"]
+    assert product_revision["revision"] == 2
+    assert product_revision["previous_task_id"] == first["id"]
+    assert product_revision["is_latest"] is True
+    assert product_revision["feedback_kind"] == "implementation_fix"
+    assert product_revision["specification"]["previous_receipt_hash"]
+    assert product_revision["specification"]["previous_contract_hash"]
+    assert product_revision["specification"]["required_acceptance_criteria"][1].startswith(
+        "Regression requirement:"
+    )
+    assert all(
+        check.get("criterion_ids") == ["criterion-001"] for check in second["required_checks"]
+    )
+
+    second_workspace = await _workspace_path(engine, second["id"])
+    assert (second_workspace / "app.py").read_text() == "print('v1')\n"
+    assert (second_workspace / "asset.bin").read_bytes() == b"\x00v1"
+    assert not (second_workspace / "delete.txt").exists()
+    assert not (second_workspace / "rename-me.txt").exists()
+    assert (second_workspace / "renamed.txt").read_text() == "rename me\n"
+    assert (second_workspace / "new.txt").read_text() == "v1 output\n"
+    assert (source / "app.py").read_text() == "print('before')\n"
+    (second_workspace / "app.py").write_text("print('v2')\n")
+
+    history = await client.get(f"/api/v1/tasks/{second['id']}/revisions")
+    assert history.status_code == 200
+    assert [item["product_revision"]["revision"] for item in history.json()] == [1, 2]
+    page = (await client.get("/api/v1/tasks")).json()
+    assert page["total"] == 1
+    assert page["items"][0]["id"] == second["id"]
+
+    stale = await client.get(f"/api/v1/tasks/{first['id']}/changes")
+    assert stale.status_code == 200
+    assert stale.json()["can_apply"] is False
+    assert "supersedes" in stale.json()["blocked_reason"]
+    stale_apply = await client.post(f"/api/v1/tasks/{first['id']}/changes/apply")
+    assert stale_apply.status_code == 409
+    first_receipt = await client.get(f"/api/v1/tasks/{first['id']}/receipt")
+    assert first_receipt.json()["valid"] is True
+    assert first_receipt.json()["receipt"]["product_revision"]["revision"] == 1
+
+    await _mark_verified(engine, second["id"])
+    applied = await client.post(f"/api/v1/tasks/{second['id']}/changes/apply")
+    assert applied.status_code == 200
+    assert (source / "app.py").read_text() == "print('v2')\n"
+    assert (source / "asset.bin").read_bytes() == b"\x00v1"
+    assert not (source / "delete.txt").exists()
+    assert not (source / "rename-me.txt").exists()
+    assert (source / "renamed.txt").read_text() == "rename me\n"
+    assert (source / "new.txt").read_text() == "v1 output\n"
+    second_receipt = await client.get(f"/api/v1/tasks/{second['id']}/receipt")
+    assert second_receipt.json()["receipt"]["product_revision"]["previous_task_id"] == first["id"]
+    undone = await client.post(f"/api/v1/tasks/{second['id']}/changes/undo")
+    assert undone.status_code == 200
+    assert (source / "app.py").read_text() == "print('before')\n"
+    assert (source / "asset.bin").read_bytes() == b"\x00before"
+    assert (source / "delete.txt").read_text() == "remove me\n"
+    assert (source / "rename-me.txt").read_text() == "rename me\n"
+    assert not (source / "renamed.txt").exists()
+    assert not (source / "new.txt").exists()
+
+
+async def test_product_revision_rejects_unverified_and_applied_deliveries(
+    client: AsyncClient,
+    engine: AsyncEngine,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    projects = tmp_path / "projects"
+    projects.mkdir()
+    _repository(projects)
+    monkeypatch.setattr(settings, "loop_local_projects_root", str(projects))
+    monkeypatch.setattr(settings, "agent_workspaces_root", str(tmp_path / "workspaces"))
+    created = (
+        await client.post(
+            "/api/v1/tasks",
+            json={
+                "goal": "Make the verified change",
+                "success_criteria": ["The verified behavior is present."],
+                "project_path": "project",
+                "autostart": False,
+            },
+        )
+    ).json()
+
+    unverified = await client.post(
+        f"/api/v1/tasks/{created['id']}/revisions",
+        json={"feedback": "Fix the remaining bug.", "autostart": False},
+    )
+    assert unverified.status_code == 409
+
+    workspace = await _workspace_path(engine, created["id"])
+    (workspace / "app.py").write_text("print('verified')\n")
+    await _mark_verified(engine, created["id"])
+    applied = await client.post(f"/api/v1/tasks/{created['id']}/changes/apply")
+    assert applied.status_code == 200
+    refused = await client.post(
+        f"/api/v1/tasks/{created['id']}/revisions",
+        json={"feedback": "Fix the remaining bug.", "autostart": False},
+    )
+    assert refused.status_code == 409
+    assert "Undo" in refused.json()["detail"]
+    undone = await client.post(f"/api/v1/tasks/{created['id']}/changes/undo")
+    assert undone.status_code == 200
+    accepted = await client.post(
+        f"/api/v1/tasks/{created['id']}/revisions",
+        json={
+            "feedback": "Adopt the corrected product behavior.",
+            "kind": "product_decision",
+            "autostart": False,
+        },
+    )
+    assert accepted.status_code == 201
+    assert accepted.json()["product_revision"]["feedback_kind"] == "product_decision"
+
+
+async def test_product_revision_allows_only_one_concurrent_successor(
+    client: AsyncClient,
+    engine: AsyncEngine,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    projects = tmp_path / "projects"
+    projects.mkdir()
+    _repository(projects)
+    monkeypatch.setattr(settings, "loop_local_projects_root", str(projects))
+    monkeypatch.setattr(settings, "agent_workspaces_root", str(tmp_path / "workspaces"))
+    created = (
+        await client.post(
+            "/api/v1/tasks",
+            json={
+                "goal": "Prepare one verified revision base",
+                "success_criteria": ["The revision base is ready."],
+                "project_path": "project",
+                "autostart": False,
+            },
+        )
+    ).json()
+    workspace = await _workspace_path(engine, created["id"])
+    (workspace / "app.py").write_text("print('revision base')\n")
+    await _mark_verified(engine, created["id"])
+
+    async def revise(feedback: str) -> Response:
+        return await client.post(
+            f"/api/v1/tasks/{created['id']}/revisions",
+            json={"feedback": feedback, "autostart": False},
+        )
+
+    responses = await asyncio.gather(
+        revise("First concurrent correction."),
+        revise("Second concurrent correction."),
+    )
+    assert sorted(response.status_code for response in responses) == [201, 409]
+    history = await client.get(f"/api/v1/tasks/{created['id']}/revisions")
+    assert len(history.json()) == 2

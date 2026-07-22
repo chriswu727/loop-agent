@@ -181,6 +181,7 @@ async def compile_project_contract(
     critic: LLMClient,
     granted_capabilities: set[Capability],
     required_checks: list[dict[str, Any]] | None = None,
+    required_criteria: list[str] | None = None,
     clarifications: list[str] | None = None,
     token_budget: int | None = None,
 ) -> CompiledContract:
@@ -200,6 +201,7 @@ async def compile_project_contract(
             compiler_result.content,
             fallback_criteria=[goal],
         )
+        proposal = _merge_required_criteria(proposal, required_criteria or [])
         proposal = _merge_required_checks(proposal, required_checks or [])
     except (TypeError, ValueError) as exc:
         draft = _failed_draft(
@@ -351,6 +353,7 @@ async def compile_project_contract(
                 fallback_criteria=[goal],
             )
             criteria_recovered = criteria_recovered or repair_recovered
+            proposal = _merge_required_criteria(proposal, required_criteria or [])
             proposal = _merge_required_checks(proposal, required_checks or [])
         except (TypeError, ValueError) as exc:
             repair_critique = final_critique.model_copy(
@@ -789,6 +792,37 @@ def _merge_required_checks(
         if check.kind == "file_exists" and check.path and check.path not in artifacts:
             artifacts.append(check.path)
     return proposal.model_copy(update={"checks": checks, "artifacts": artifacts})
+
+
+def _merge_required_criteria(
+    proposal: ContractProposal,
+    required_criteria: list[str],
+) -> ContractProposal:
+    required = list(dict.fromkeys(item.strip() for item in required_criteria if item.strip()))[:12]
+    if not required:
+        return proposal
+    prior = list(proposal.criteria)
+    extras = [criterion for criterion in prior if criterion not in required]
+    criteria = [*required, *extras[: max(0, _MAX_AUTO_CRITERIA - len(required))]]
+    positions = {criterion: index for index, criterion in enumerate(criteria, start=1)}
+    revision_criterion_id = f"criterion-{len(required):03d}"
+    remapped: list[ContractCheck] = []
+    for check in proposal.checks:
+        mapped: set[str] = set()
+        for identifier in check.criterion_ids:
+            suffix = identifier.removeprefix("criterion-")
+            if not identifier.startswith("criterion-") or not suffix.isdigit():
+                continue
+            prior_index = int(suffix) - 1
+            if not 0 <= prior_index < len(prior):
+                continue
+            position = positions.get(prior[prior_index])
+            if position is not None:
+                mapped.add(f"criterion-{position:03d}")
+        if check.criterion_ids:
+            mapped.add(revision_criterion_id)
+        remapped.append(check.model_copy(update={"criterion_ids": sorted(mapped)}))
+    return proposal.model_copy(update={"criteria": criteria, "checks": remapped})
 
 
 def _critique_from_result(result: LLMResult) -> ContractCritique:

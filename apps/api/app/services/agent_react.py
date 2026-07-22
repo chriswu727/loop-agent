@@ -84,6 +84,7 @@ from app.services.loop import (
     extract_json,
 )
 from app.services.memory import MemoryStore, scoped_memory_root
+from app.services.product_session import required_revision_criteria
 from app.services.progress import HistoryEntry, ProgressGuard
 from app.services.prompts import plan_prompts, understand_prompts, verify_prompts
 from app.services.receipt import RECEIPT_SCHEMA, build_receipt, refresh_receipt_authority
@@ -1126,6 +1127,7 @@ class AgentReactService:
                 critic=self.verifier_llm,
                 granted_capabilities=granted_capabilities,
                 required_checks=list(task.required_checks or []),
+                required_criteria=required_revision_criteria(task),
                 clarifications=clarifications,
                 token_budget=compilation_budget,
             )

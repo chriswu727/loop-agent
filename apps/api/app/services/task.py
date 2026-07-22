@@ -23,14 +23,22 @@ from app.domain.capability import Capability, sorted_capabilities
 from app.domain.task import StopReason, TaskStatus
 from app.exceptions import ConflictError, NotFoundError
 from app.observability.metrics import RECEIPT_REPLAYS
+from app.repositories.product_session import ProductSessionRepository
 from app.repositories.step import StepRepository
 from app.repositories.task import TaskRepository
-from app.schemas.task import ChangeSetFileRead, ChangeSetRead, LimitsIn, TaskCreate
+from app.schemas.task import (
+    ChangeSetFileRead,
+    ChangeSetRead,
+    LimitsIn,
+    ProductRevisionCreate,
+    TaskCreate,
+)
 from app.services.changeset import (
     ProjectBinding,
     acquire_source_lock,
     apply_patch,
     clone_project,
+    clone_project_revision,
     delete_patch,
     inspect_changes,
     load_patch,
@@ -40,6 +48,12 @@ from app.services.changeset import (
 )
 from app.services.ledger import genesis_hash, step_hash, verify_chain
 from app.services.loop import LoopEvent, LoopTransitionPolicy
+from app.services.product_session import (
+    initial_specification,
+    revised_specification,
+    revision_goal,
+    specification_hash,
+)
 from app.tools.base import ToolError
 from app.tools.workspace import Workspace
 
@@ -76,6 +90,7 @@ class TaskService:
     ) -> None:
         self.tasks = tasks
         self.steps = steps
+        self.product_sessions = ProductSessionRepository(tasks.session)
         self.subject = subject
         self._transition_policy = LoopTransitionPolicy()
 
@@ -134,6 +149,14 @@ class TaskService:
                 else None
             )
         )
+        product_session = (
+            await self.product_sessions.create(owner_id=self.subject, project_id=payload.project_id)
+            if binding is not None
+            else None
+        )
+        product_specification = (
+            initial_specification(payload.goal, criteria) if product_session is not None else None
+        )
         task = await self.tasks.create(
             goal=payload.goal.strip(),
             owner_id=self.subject,
@@ -176,6 +199,16 @@ class TaskService:
             project_base_branch=binding.branch if binding else None,
             change_state="pending" if binding else None,
             applied_patch_sha256=None,
+            product_session_id=product_session.id if product_session else None,
+            product_revision=1 if product_session else None,
+            previous_revision_id=None,
+            superseded_by_id=None,
+            feedback_kind=None,
+            feedback_delta=None,
+            product_specification=product_specification,
+            specification_hash=(
+                specification_hash(product_specification) if product_specification else None
+            ),
         )
         if binding is not None:
             try:
@@ -212,8 +245,9 @@ class TaskService:
             await self.tasks.session.flush()
             await asyncio.to_thread(clone_project, binding, destination)
             task.workspace_path = str(destination.resolve())
-            await self.tasks.session.commit()
+            await self.tasks.session.flush()
             await self.tasks.session.refresh(task)
+            await self.tasks.session.commit()
         except Exception:
             await self.tasks.session.rollback()
             await asyncio.to_thread(shutil.rmtree, destination, ignore_errors=True)
@@ -292,6 +326,174 @@ class TaskService:
         else:
             await self.tasks.session.commit()
         return task
+
+    async def create_revision(
+        self,
+        task_id: uuid.UUID,
+        payload: ProductRevisionCreate,
+    ) -> TaskModel:
+        original = await self.get(task_id)
+        if not original.product_session_id or not original.product_revision:
+            raise ConflictError("Only local-project Product Session tasks can be revised.")
+        if original.parent_id is not None:
+            raise ConflictError("A sub-agent task cannot become a product revision.")
+        if not original.project_source_path or not original.project_relative_path:
+            raise ConflictError("This Product Session has no local project binding.")
+
+        source_lock = await asyncio.to_thread(acquire_source_lock, original.project_source_path)
+        destination: Path | None = None
+        try:
+            product_session = await self.product_sessions.get_for_update(
+                original.product_session_id
+            )
+            await self.tasks.session.refresh(original)
+            if product_session is None or product_session.owner_id != self.subject:
+                raise NotFoundError("This Product Session does not exist.")
+            if original.superseded_by_id is not None:
+                raise ConflictError("Only the latest Product Session revision can be revised.")
+            if (
+                original.status != TaskStatus.COMPLETED.value
+                or original.stop_reason != StopReason.GOAL_ACHIEVED.value
+                or original.verified_by != "execution"
+                or original.verification_score < settings.agent_acceptance_score
+            ):
+                raise ConflictError(
+                    "Feedback can create a revision only after execution-verified delivery."
+                )
+            if original.contract_status != "locked" or not original.contract_hash:
+                raise ConflictError("The prior delivery has no locked acceptance contract.")
+            if original.change_state not in {"pending", "reverted"}:
+                raise ConflictError(
+                    "Create the next revision before Apply, or Undo the applied change set first."
+                )
+            preview = await self.inspect_change_set(original.id)
+            if not preview.can_apply:
+                raise ConflictError(
+                    preview.blocked_reason or "The prior delivery cannot seed a safe revision."
+                )
+            receipt_report = await self.get_receipt_report(original.id)
+            if not receipt_report or not receipt_report.get("valid"):
+                raise ConflictError("The prior Receipt failed integrity verification.")
+            if not original.project_base_commit:
+                raise ConflictError("The prior delivery has no immutable base commit.")
+
+            binding = await asyncio.to_thread(prepare_project, original.project_relative_path)
+            if binding.base_commit != original.project_base_commit:
+                raise ConflictError(
+                    "The source project moved to another commit; the revision was refused."
+                )
+            prior_snapshot = await asyncio.to_thread(
+                inspect_changes,
+                Path(original.workspace_path or ""),
+                original.project_base_commit,
+            )
+            specification = revised_specification(
+                original,
+                feedback=payload.feedback,
+                kind=payload.kind,
+            )
+            next_revision = original.product_revision + 1
+            required_checks: list[dict[str, Any]] = []
+            for raw_check in original.required_checks or []:
+                check = dict(raw_check)
+                if payload.kind == "implementation_fix" and check.get("source") == "contract":
+                    check["criterion_ids"] = ["criterion-001"]
+                    required_checks.append(check)
+
+            max_steps, token_budget = self._resolve_limits(
+                LimitsIn(max_steps=original.max_steps, token_budget=original.token_budget)
+            )
+            task = await self.tasks.create(
+                goal=revision_goal(
+                    specification,
+                    feedback=payload.feedback,
+                    kind=payload.kind,
+                ),
+                owner_id=self.subject,
+                project_id=original.project_id,
+                status=TaskStatus.PENDING.value,
+                rubric=[],
+                criteria_source="generated",
+                verification_mode="strict",
+                required_checks=required_checks,
+                baseline_checks=[],
+                contract_draft=None,
+                contract_hash=None,
+                contract_status="pending",
+                requested_capabilities=original.requested_capabilities,
+                resolved_capabilities=[],
+                allowed_tools=original.allowed_tools,
+                allow_egress=original.allow_egress,
+                egress_hosts=original.egress_hosts,
+                require_approval=original.require_approval,
+                use_browser=original.use_browser,
+                use_email=original.use_email,
+                use_calendar=original.use_calendar,
+                use_vision=original.use_vision,
+                chat_id=original.chat_id,
+                skill=original.skill,
+                idempotency_key=None,
+                attempt=1,
+                max_steps=max_steps,
+                token_budget=token_budget,
+                summary=None,
+                verification_score=0,
+                executor_models=[],
+                verifier_model=None,
+                authority_audit=[],
+                steps_used=0,
+                tokens_used=0,
+                workspace_path=None,
+                project_source_path=str(binding.source),
+                project_relative_path=binding.relative_path,
+                project_base_commit=binding.base_commit,
+                project_base_branch=binding.branch,
+                change_state="pending",
+                applied_patch_sha256=None,
+                product_session_id=product_session.id,
+                product_revision=next_revision,
+                previous_revision_id=original.id,
+                superseded_by_id=None,
+                feedback_kind=payload.kind,
+                feedback_delta=payload.feedback,
+                product_specification=specification,
+                specification_hash=specification_hash(specification),
+            )
+            destination = Path(settings.agent_workspaces_root) / str(task.id)
+            await asyncio.to_thread(
+                clone_project_revision,
+                binding,
+                destination,
+                prior_snapshot.patch,
+            )
+            task.workspace_path = str(destination.resolve())
+            original.superseded_by_id = task.id
+            await self.tasks.session.flush()
+            await self.tasks.session.refresh(task)
+            await self.tasks.session.commit()
+            return task
+        except IntegrityError as exc:
+            await self.tasks.session.rollback()
+            if destination is not None:
+                await asyncio.to_thread(shutil.rmtree, destination, ignore_errors=True)
+            raise ConflictError("Another Product Session revision won the race.") from exc
+        except Exception:
+            await self.tasks.session.rollback()
+            if destination is not None:
+                await asyncio.to_thread(shutil.rmtree, destination, ignore_errors=True)
+            raise
+        finally:
+            await asyncio.to_thread(release_source_lock, source_lock)
+
+    async def list_revisions(self, task_id: uuid.UUID) -> list[TaskModel]:
+        task = await self.get(task_id)
+        if not task.product_session_id:
+            raise NotFoundError("This task is not part of a Product Session.")
+        return [
+            revision
+            for revision in await self.tasks.list_revisions(task.product_session_id)
+            if revision.owner_id == self.subject
+        ]
 
     async def list_tasks(
         self, *, limit: int, offset: int, root_only: bool = True
@@ -403,7 +605,9 @@ class TaskService:
         snapshot = await asyncio.to_thread(inspect_changes, Path(task.workspace_path), base_commit)
         state = task.change_state or "pending"
         blocked_reason: str | None = None
-        if not snapshot.files:
+        if task.superseded_by_id is not None:
+            blocked_reason = "A newer Product Session revision supersedes this change set."
+        elif not snapshot.files:
             blocked_reason = "The isolated checkout has no project changes."
         elif task.status != TaskStatus.COMPLETED.value or task.stop_reason != (
             StopReason.GOAL_ACHIEVED.value

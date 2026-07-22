@@ -135,6 +135,30 @@ export interface ChangeSet extends ProjectChangeSet {
   blocked_reason: string | null;
 }
 
+export interface ProductRevision {
+  session_id: string;
+  revision: number;
+  previous_task_id: string | null;
+  superseded_by_task_id: string | null;
+  feedback_kind: 'implementation_fix' | 'product_decision' | null;
+  feedback_delta: string | null;
+  specification: {
+    schema: 'loop.product-specification/v1';
+    original_goal: string;
+    required_acceptance_criteria: string[];
+    feedback_history: Array<{
+      revision: number;
+      kind: 'implementation_fix' | 'product_decision';
+      feedback: string;
+      previous_task_id: string;
+    }>;
+    previous_contract_hash: string | null;
+    previous_receipt_hash: string | null;
+  };
+  specification_hash: string;
+  is_latest: boolean;
+}
+
 export interface Task {
   id: string;
   goal: string;
@@ -179,6 +203,7 @@ export interface Task {
   skill: string | null;
   parent_id: string | null;
   depth: number;
+  product_revision: ProductRevision | null;
   idempotency_key: string | null;
   attempt: number;
   limits: Limits;
