@@ -129,6 +129,36 @@ own contract, changed the implementation and tests, completed in 5 steps using 8
 provider-reported tokens and 13.459 seconds, then passed Receipt replay, Apply, and
 Undo. This is one clean Gate 1 sample, not a repeated-run reliability estimate.
 
+## Repository-level evidence
+
+The current [repository matrix](./evals/repository-suite.json) exercises eight small
+repositories across bug repair, feature work, multi-file refactoring, CLI, API, UI,
+regression preservation, and a materially contradictory specification. Each case runs
+three times. Protected tests are hash-checked, external oracles run twice on independent
+copies, accepted patches must survive Receipt replay and Apply/Undo, and a successful
+report requires at least an 85% verified solve rate with zero false acceptances.
+
+The frozen [DeepSeek `deepseek-chat` full-Loop report](./evals/results/deepseek-chat-full-loop-v0.2.12.json)
+completed all 24 attempts. Loop solved 20/21 deliverable attempts (**95.24%**), safely
+deferred all 3 contradictory-spec attempts, and recorded **0 false acceptances**.
+Median/p95/max were 4/7/9 steps, 10,386/19,736/25,656 provider-reported tokens, and
+16.011/22.589/27.213 seconds. The one unsolved attempt was an unnecessary UI
+clarification after the contract compiler returned an invalid empty criteria list; Loop
+failed closed before mutation rather than accepting unverified work.
+
+An [archived same-model comparison](./evals/results/deepseek-chat-repository-matrix-v0.2.0.json)
+also records one-shot, ungated tool loop, and full Loop on the versioned v0.1 matrix.
+One-shot was cheap but produced 3 false acceptances; the ungated loop solved 20/21
+without a false acceptance; the earlier full Loop solved 17/21 with none. That report
+guided the contract, context, and convergence changes above. It is not presented as a
+direct before/after score because the ambiguous configuration fixture was corrected and
+versioned before the final run.
+
+Both repository reports used macOS `inline` execution, visibly reduced isolation, and
+one model. They establish repeated repository-level evidence for the control loop, not
+cross-model confidence or Docker/Kubernetes sandbox quality. See the
+[evaluation protocol](./evals/README.md) for reproduction and limitations.
+
 ## The trust boundary
 
 Loop treats the model as a planner, not an authority source.
@@ -252,8 +282,9 @@ docs/              ADRs, operational guides, product/system rationale
 ## Status
 
 `v0.1.0` is a serious portfolio/research release, not a claim of production mileage
-or broad adoption. The narrow verified coding path is automated end-to-end; provider
-quality still depends on the selected model and should be evaluated with the published
-suite before trusting a workload.
+or broad adoption. The one-instruction repository path now clears its repeated inline
+evidence threshold, while one fail-closed contract-compilation miss and the production
+isolation rerun remain explicit work. Provider quality still depends on the selected
+model and should be evaluated with the published suite before trusting a workload.
 
 MIT licensed.

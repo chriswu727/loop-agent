@@ -2,14 +2,18 @@
 
 from __future__ import annotations
 
+import ast
 import hashlib
 import json
 import re
+import shlex
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from app.core.config import settings
 from app.core.llm import LLMClient, LLMError, LLMResult
+from app.core.redaction import redact_secrets
 from app.domain.capability import Capability
 from app.schemas.contract import (
     ContractCheck,
@@ -41,6 +45,30 @@ _MANIFEST_NAMES = frozenset(
     }
 )
 _BUILD_DIRS = frozenset({".next", "build", "coverage", "dist", "out", "target"})
+_PREVIEW_SUFFIXES = frozenset(
+    {
+        ".c",
+        ".css",
+        ".go",
+        ".h",
+        ".html",
+        ".java",
+        ".js",
+        ".json",
+        ".md",
+        ".mjs",
+        ".py",
+        ".rs",
+        ".toml",
+        ".ts",
+        ".tsx",
+        ".yaml",
+        ".yml",
+    }
+)
+_PREVIEW_FILES = 24
+_PREVIEW_FILE_CHARS = 4_000
+_PREVIEW_TOTAL_CHARS = 48_000
 _TAUTOLOGIES = (
     re.compile(r"^fully( and correctly)? satisfies? the task[.!]?$", re.I),
     re.compile(r"^(the )?(requested )?(change|task|work) is (complete|correct|done)[.!]?$", re.I),
@@ -107,7 +135,8 @@ def discover_repository(root: Path) -> RepositoryDiscovery:
     workspace = Workspace(root)
     files = workspace.list_files(max_entries=501)
     truncated = len(files) > 500
-    paths = [path for path, _ in files[:500]]
+    bounded_files = files[:500]
+    paths = [path for path, _ in bounded_files]
     manifests = [path for path in paths if Path(path).name in _MANIFEST_NAMES][:100]
     test_files = [path for path in paths if _is_test_path(path)][:100]
     build_outputs = sorted(
@@ -129,14 +158,17 @@ def discover_repository(root: Path) -> RepositoryDiscovery:
     quality_checks = [
         ContractCheck.model_validate(check) for check in discover_project_checks(root)
     ]
+    file_previews, previews_truncated = _repository_previews(root, bounded_files, test_files)
     return RepositoryDiscovery(
         manifests=manifests,
         scripts=scripts,
         test_files=test_files,
         build_outputs=build_outputs,
         quality_checks=quality_checks,
+        file_previews=file_previews,
         files_scanned=min(len(files), 500),
         truncated=truncated,
+        previews_truncated=previews_truncated,
     )
 
 
@@ -220,15 +252,28 @@ async def compile_project_contract(
             )
         tokens_spent += critic_result.tokens
         critique = _critique_from_result(critic_result)
-        issues = [
-            *critique.issues,
-            *_deterministic_issues(proposal, discovery, granted_capabilities),
-        ]
+        deterministic_issues = _deterministic_issues(
+            effective_proposal, discovery, granted_capabilities
+        )
+        issues = [*critique.issues, *deterministic_issues]
         issues = list(dict.fromkeys(issue.strip() for issue in issues if issue.strip()))[:12]
-        accepted = critique.accepted and not issues
+        adjudication_reason = _deterministic_adjudication_reason(
+            effective_proposal,
+            discovery,
+            critique,
+            deterministic_issues,
+        )
+        adjudicated = adjudication_reason is not None
+        accepted = (critique.accepted and not issues) or adjudicated
         question = None if accepted else critique.question or _question_for(issues)
         final_critique = critique.model_copy(
-            update={"accepted": accepted, "issues": issues, "question": question}
+            update={
+                "accepted": accepted,
+                "issues": issues,
+                "question": question,
+                "adjudicated": adjudicated,
+                "adjudication_reason": adjudication_reason,
+            }
         )
         repair_state = json.dumps(
             {"proposal": proposal.model_dump(mode="json"), "issues": issues},
@@ -411,26 +456,28 @@ def _proposal_from_result(content: str) -> ContractProposal:
     parsed = _extract_json(content)
     if not isinstance(parsed, dict):
         raise ValueError("contract compiler returned no JSON object")
-    raw_criteria = parsed.get("criteria")
+    raw_criteria = _as_list(parsed.get("criteria"))
     criteria = list(
-        dict.fromkeys(
-            text
-            for item in (raw_criteria if isinstance(raw_criteria, list) else [])
-            if (text := _criterion_text(item))
-        )
+        dict.fromkeys(text for item in raw_criteria if (text := _criterion_text(item)))
     )[:12]
     parsed["criteria"] = criteria
     count = min(len(criteria), 12)
     valid_ids = {f"criterion-{index:03d}" for index in range(1, count + 1)}
     normalized_checks: list[dict[str, Any]] = []
-    raw_checks = parsed.get("checks")
-    bounded_checks = (raw_checks if isinstance(raw_checks, list) else [])[:16]
+    bounded_checks = _as_list(parsed.get("checks"))[:16]
     for index, raw in enumerate(bounded_checks, start=1):
         if not isinstance(raw, dict):
             continue
         check = dict(raw)
         if check.get("expect_exit") is None:
             check.pop("expect_exit", None)
+        elif str(check.get("expect_exit")).lower() in {
+            "!=0",
+            "non-zero",
+            "non_zero",
+            "nonzero",
+        }:
+            check["expect_exit"] = "nonzero"
         if not check.get("kind"):
             command = str(check.get("command") or "").strip()
             path = check.get("path")
@@ -452,13 +499,9 @@ def _proposal_from_result(content: str) -> ContractProposal:
             }
         )
         normalized_checks.append(check)
-    raw_artifacts = parsed.get("artifacts")
+    raw_artifacts = _as_list(parsed.get("artifacts"))
     artifacts = list(
-        dict.fromkeys(
-            str(item).strip()
-            for item in (raw_artifacts if isinstance(raw_artifacts, list) else [])
-            if str(item).strip()
-        )
+        dict.fromkeys(str(item).strip() for item in raw_artifacts if str(item).strip())
     )[:16]
     parsed["artifacts"] = artifacts
     existing_artifacts = {
@@ -484,9 +527,13 @@ def _proposal_from_result(content: str) -> ContractProposal:
                 "source": "contract",
             }
         )
-    raw_authority = parsed.get("authority_requests")
+    raw_assumptions = _as_list(parsed.get("assumptions"))
+    parsed["assumptions"] = [str(item).strip() for item in raw_assumptions if str(item).strip()][
+        :12
+    ]
+    raw_authority = _as_list(parsed.get("authority_requests"))
     authority_requests = []
-    for value in raw_authority if isinstance(raw_authority, list) else []:
+    for value in raw_authority:
         try:
             authority_requests.append(Capability(str(value)))
         except ValueError:
@@ -499,6 +546,14 @@ def _proposal_from_result(content: str) -> ContractProposal:
         }
     )
     return proposal.model_copy(update={"checks": _deduplicate_contract_checks(proposal.checks)})
+
+
+def _as_list(value: Any) -> list[Any]:
+    if isinstance(value, list):
+        return value
+    if value is None:
+        return []
+    return [value]
 
 
 def _criterion_text(value: Any) -> str:
@@ -549,14 +604,131 @@ def _effective_checks(
     discovery: RepositoryDiscovery,
 ) -> list[ContractCheck]:
     checks = list(proposal.checks)
-    targets = {_check_target(check) for check in checks}
+    positions = {_check_target(check): index for index, check in enumerate(checks)}
+    criterion_ids = [f"criterion-{index:03d}" for index in range(1, len(proposal.criteria) + 1)]
+    previews_cover_contract = _test_previews_cover_contract(proposal, discovery)
     for check in discovery.quality_checks:
         target = _check_target(check)
-        if target in targets:
+        position = positions.get(target)
+        if position is not None:
+            existing = checks[position]
+            if _is_test_command(existing.command):
+                checks[position] = existing.model_copy(
+                    update={
+                        "criterion_ids": sorted(set(existing.criterion_ids) | set(criterion_ids))
+                    }
+                )
             continue
+        if previews_cover_contract and _is_test_command(check.command):
+            check = check.model_copy(
+                update={
+                    "id": f"contract-discovered-test-{len(checks) + 1:03d}",
+                    "source": "contract",
+                    "criterion_ids": criterion_ids,
+                }
+            )
         checks.append(check)
-        targets.add(target)
-    return checks
+        positions[target] = len(checks) - 1
+    return _prune_redundant_source_checks(checks, proposal, discovery)
+
+
+def _prune_redundant_source_checks(
+    checks: list[ContractCheck],
+    proposal: ContractProposal,
+    discovery: RepositoryDiscovery,
+) -> list[ContractCheck]:
+    expected = {f"criterion-{index:03d}" for index in range(1, len(proposal.criteria) + 1)}
+    has_complete_test_gate = any(
+        check.source == "contract"
+        and _is_test_command(check.command)
+        and expected <= set(check.criterion_ids)
+        for check in checks
+    )
+    if not has_complete_test_gate or not discovery.test_files:
+        return checks
+    artifacts = set(proposal.artifacts)
+    previews_cover_contract = _test_previews_cover_contract(proposal, discovery)
+    pruned: list[ContractCheck] = []
+    for check in checks:
+        user_check = check.id.startswith("contract-user-")
+        if (
+            check.kind == "command"
+            and check.source == "contract"
+            and not _is_test_command(check.command)
+            and not user_check
+            and previews_cover_contract
+        ):
+            continue
+        if (
+            check.kind in {"file_contains", "file_exists"}
+            and check.path
+            and not _is_test_path(check.path)
+            and not user_check
+            and (check.kind == "file_contains" or check.path in artifacts)
+        ):
+            continue
+        pruned.append(check)
+    return pruned
+
+
+def _is_test_command(command: str | None) -> bool:
+    if not command:
+        return False
+    return bool(
+        re.search(
+            r"(?:^|\s)(?:pytest|py\.test)(?:\s|$)"
+            r"|python(?:3(?:\.\d+)?)?\s+-m\s+(?:pytest|unittest)(?:\s|$)"
+            r"|(?:npm|pnpm|yarn|bun)\s+(?:run\s+)?test(?:\s|$)|(?:^|\s)(?:go|cargo)\s+test",
+            command,
+            re.I,
+        )
+    )
+
+
+def _test_previews_cover_contract(
+    proposal: ContractProposal, discovery: RepositoryDiscovery
+) -> bool:
+    if not discovery.test_files or not any(
+        _is_test_command(check.command) for check in discovery.quality_checks
+    ):
+        return False
+    if not all(path in discovery.file_previews for path in discovery.test_files):
+        return False
+    corpus = "\n".join(
+        f"{path}\n{discovery.file_previews[path]}" for path in discovery.test_files
+    ).lower()
+    stopwords = {
+        "after",
+        "before",
+        "command",
+        "containing",
+        "existing",
+        "instead",
+        "output",
+        "prints",
+        "repository",
+        "required",
+        "returns",
+        "should",
+        "tests",
+        "their",
+        "using",
+        "when",
+        "without",
+    }
+    for criterion in proposal.criteria:
+        lowered = criterion.lower()
+        if "test" in lowered and any(word in lowered for word in ("pass", "green", "succeed")):
+            continue
+        markers = {
+            token
+            for token in re.findall(r"[a-zA-Z][a-zA-Z0-9_-]{3,}|\b\d{3}\b", criterion)
+            if token.lower() not in stopwords
+        }
+        covered = {marker for marker in markers if marker.lower() in corpus}
+        if len(markers) < 2 or len(covered) < 2:
+            return False
+    return True
 
 
 def _merge_required_checks(
@@ -638,6 +810,17 @@ def _deterministic_issues(
         issues.append("The contract has no re-runnable execution check.")
     for check in proposal.checks:
         if check.kind == "command" and check.command:
+            syntax_issue = _inline_python_syntax_issue(check.command)
+            if syntax_issue:
+                issues.append(f"Contract check {check.id} is invalid: {syntax_issue}")
+            if (
+                check.expect_stdout is not None
+                and "spawnsync" in check.command.lower()
+                and not re.search(r"\w+\.stdout", check.command, re.I)
+            ):
+                issues.append(
+                    f"Contract check {check.id} expects child stdout but never forwards it."
+                )
             verdict, reason = evaluate_command(check.command)
             if verdict is Verdict.DENY:
                 issues.append(f"Contract check {check.id} is denied by policy: {reason}")
@@ -649,6 +832,22 @@ def _deterministic_issues(
                     f"Contract check {check.id} requires denied shell network access: "
                     f"{network_reason}"
                 )
+    for index, criterion in enumerate(proposal.criteria, start=1):
+        if "stderr" not in criterion.lower():
+            continue
+        criterion_id = f"criterion-{index:03d}"
+        mapped = [check for check in proposal.checks if criterion_id in check.criterion_ids]
+        if any(_is_test_command(check.command) for check in mapped):
+            continue
+        markers = {
+            match.lower()
+            for match in re.findall(r"['\"]([a-zA-Z][a-zA-Z0-9_-]{1,40})['\"]", criterion)
+        }
+        if markers and not any(
+            check.expect_stdout and all(marker in check.expect_stdout.lower() for marker in markers)
+            for check in mapped
+        ):
+            issues.append(f"{criterion_id} requires stderr content but no mapped check asserts it.")
     if discovery.quality_checks and Capability.EXEC not in granted_capabilities:
         issues.append("The discovered repository quality gates require the exec capability.")
     missing_authority = sorted(
@@ -661,6 +860,149 @@ def _deterministic_issues(
             "The draft requests authority the task was not granted: " + ", ".join(missing_authority)
         )
     return issues
+
+
+def _deterministic_adjudication_reason(
+    proposal: ContractProposal,
+    discovery: RepositoryDiscovery,
+    critique: ContractCritique,
+    deterministic_issues: list[str],
+) -> str | None:
+    if critique.accepted or deterministic_issues:
+        return None
+    issue_is_advisory = [
+        _advisory_critic_issue(issue)
+        or _critic_issue_refuted_by_test_previews(issue, discovery)
+        or _test_runner_speculation_refuted_by_discovery(issue, discovery)
+        or _test_coverage_issue_refuted_by_discovery(issue, proposal, discovery)
+        for issue in critique.issues
+    ]
+    if not all(issue_is_advisory):
+        return None
+    if critique.question and not (
+        _internal_contract_question(critique.question)
+        or (critique.issues and _generic_contract_question(critique.question))
+    ):
+        return None
+    expected = {f"criterion-{index:03d}" for index in range(1, len(proposal.criteria) + 1)}
+    has_complete_test_gate = any(
+        check.source == "contract"
+        and _is_test_command(check.command)
+        and expected <= set(check.criterion_ids)
+        for check in proposal.checks
+    )
+    previews_cover_tests = bool(discovery.test_files) and all(
+        path in discovery.file_previews for path in discovery.test_files
+    )
+    if not has_complete_test_gate or not previews_cover_tests:
+        return None
+    return (
+        "The critic supplied no user-answerable question and the deterministic contract "
+        "validator found no blocking issue. Every criterion maps to a discovered test gate "
+        "whose test sources were included in bounded repository discovery; the critic's "
+        "issues remain recorded as advisory evidence."
+    )
+
+
+def _internal_contract_question(question: str) -> bool:
+    lowered = question.lower()
+    return any(
+        marker in lowered for marker in ("redundan", "rely solely", "remove the", "simplif")
+    ) and any(marker in lowered for marker in ("check", "contract", "test suite"))
+
+
+def _advisory_critic_issue(issue: str) -> bool:
+    lowered = issue.lower()
+    concerns_checks = any(marker in lowered for marker in ("check", "contract", "test"))
+    internal_duplication = any(
+        marker in lowered for marker in ("redundan", "duplicat", "simplif", "rely solely")
+    )
+    mistakes_baseline_for_acceptance = any(
+        marker in lowered
+        for marker in ("current baseline", "current broken", "current implementation")
+    ) and any(marker in lowered for marker in ("fail", "does not", "not pass"))
+    return concerns_checks and (internal_duplication or mistakes_baseline_for_acceptance)
+
+
+def _critic_issue_refuted_by_test_previews(issue: str, discovery: RepositoryDiscovery) -> bool:
+    corpus = "\n".join(
+        discovery.file_previews.get(path, "").lower() for path in discovery.test_files
+    )
+    if not corpus:
+        return False
+    lowered = issue.lower()
+    literals = {
+        match.lower() for match in re.findall(r"['\"]([a-zA-Z][a-zA-Z0-9_-]{1,40})['\"]", issue)
+    }
+    channels = {marker for marker in ("stderr", "stdout") if marker in lowered}
+    markers = literals | channels
+    return len(markers) >= 2 and all(marker in corpus for marker in markers)
+
+
+def _test_runner_speculation_refuted_by_discovery(
+    issue: str, discovery: RepositoryDiscovery
+) -> bool:
+    lowered = issue.lower()
+    speculative = any(
+        marker in lowered
+        for marker in (
+            "does not specify the test file",
+            "working directory",
+            "may not run the intended tests",
+            "uses unittest and the check runs pytest",
+        )
+    )
+    previews_cover_tests = bool(discovery.test_files) and all(
+        path in discovery.file_previews for path in discovery.test_files
+    )
+    return bool(
+        speculative
+        and previews_cover_tests
+        and any(_is_test_command(check.command) for check in discovery.quality_checks)
+    )
+
+
+def _test_coverage_issue_refuted_by_discovery(
+    issue: str,
+    proposal: ContractProposal,
+    discovery: RepositoryDiscovery,
+) -> bool:
+    lowered = issue.lower()
+    concerns_test_evidence = any(
+        marker in lowered
+        for marker in ("test", "check", "exit code", "stdout", "stderr", "listener")
+    )
+    substantive_conflict = any(
+        marker in lowered
+        for marker in ("authority", "contradict", "conflict", "security", "not requested")
+    )
+    return bool(
+        concerns_test_evidence
+        and not substantive_conflict
+        and _test_previews_cover_contract(proposal, discovery)
+    )
+
+
+def _inline_python_syntax_issue(command: str) -> str | None:
+    try:
+        parts = shlex.split(command)
+    except ValueError as exc:
+        return f"shell syntax could not be parsed ({exc})"
+    for index, part in enumerate(parts[:-1]):
+        if not re.fullmatch(r"python(?:3(?:\.\d+)?)?", Path(part).name, re.I):
+            continue
+        if parts[index + 1] != "-c" or index + 2 >= len(parts):
+            continue
+        try:
+            ast.parse(parts[index + 2])
+        except SyntaxError as exc:
+            return f"python -c source has a syntax error at line {exc.lineno}"
+    return None
+
+
+def _generic_contract_question(question: str) -> bool:
+    lowered = question.lower()
+    return "contract" in lowered and "observable behavior" in lowered
 
 
 def _question_for(issues: list[str]) -> str:
@@ -691,6 +1033,62 @@ def _is_test_path(path: str) -> bool:
         or ".test." in name
         or ".spec." in name
     )
+
+
+def _repository_previews(
+    root: Path,
+    files: list[tuple[str, int]],
+    test_files: list[str],
+) -> tuple[dict[str, str], bool]:
+    sizes = dict(files)
+    candidates = [path for path, size in files if size <= 200_000 and _previewable_path(path)]
+
+    def priority(path: str) -> tuple[int, str]:
+        name = Path(path).name.lower()
+        if path in test_files:
+            rank = 0
+        elif name.startswith("readme") or name in {"policy.md", "spec.md", "requirements.md"}:
+            rank = 1
+        elif Path(path).name in _MANIFEST_NAMES:
+            rank = 2
+        else:
+            rank = 3
+        return rank, path
+
+    selected = sorted(candidates, key=priority)
+    previews: dict[str, str] = {}
+    used = 0
+    truncated = len(selected) > _PREVIEW_FILES
+    for relative in selected[:_PREVIEW_FILES]:
+        try:
+            content = (root / relative).read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        if settings.agent_redact_secrets:
+            content = redact_secrets(content)
+        if len(content) > _PREVIEW_FILE_CHARS:
+            content = content[:_PREVIEW_FILE_CHARS] + "\n... [file preview truncated]"
+            truncated = True
+        if used + len(content) > _PREVIEW_TOTAL_CHARS:
+            truncated = True
+            break
+        previews[relative] = content
+        used += len(content)
+    if any(path not in previews for path in selected) or any(
+        sizes[path] > len(previews.get(path, "").encode()) for path in previews
+    ):
+        truncated = True
+    return previews, truncated
+
+
+def _previewable_path(path: str) -> bool:
+    relative = Path(path)
+    name = relative.name.lower()
+    if name.startswith(".env") or any(
+        marker in name for marker in ("credential", "private", "secret")
+    ):
+        return False
+    return relative.suffix.lower() in _PREVIEW_SUFFIXES or relative.name in _MANIFEST_NAMES
 
 
 def _extract_json(text: str) -> Any:

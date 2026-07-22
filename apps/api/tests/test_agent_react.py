@@ -49,7 +49,10 @@ def test_prompts_inject_the_current_date() -> None:
     # guesses its stale training date or, with shell off, has to ask the user).
     from app.services.prompts import plan_prompts, verify_prompts
 
-    _, plan_user = plan_prompts("g", ["c"], "tree", "hist", 5, 1000, today="2026-07-05")
+    plan_system, plan_user = plan_prompts("g", ["c"], "tree", "hist", 5, 1000, today="2026-07-05")
+    assert "under 80 words" in plan_system
+    assert plan_system.index('"tool"') < plan_system.index('"thought"')
+    assert "Infer value type from repository field/key/schema conventions" in plan_system
     assert "Today's date is 2026-07-05." in plan_user
     _, verify_user = verify_prompts("g", ["c"], "sum", "tree", "checks", today="2026-07-05")
     assert "Today's date is 2026-07-05." in verify_user
@@ -1816,7 +1819,7 @@ def test_evidence_tool_history_keeps_useful_context_but_stays_bounded() -> None:
     ).render()
 
     assert 1_600 <= research.count("x") < 1_700
-    assert 600 <= local.count("x") < 700
+    assert 1_600 <= local.count("x") < 1_700
     assert "truncated" in research and "truncated" in local
 
 
@@ -1862,6 +1865,80 @@ def test_progress_guard_blocks_duplicate_sibyl_query_immediately() -> None:
 
     assert reason is not None
     assert "already ran 1 times" in reason
+
+
+def test_progress_guard_blocks_reinspection_of_a_just_written_file() -> None:
+    guard = ProgressGuard([])
+    guard.observe(
+        "write_file",
+        {"path": "result.py", "content": "value = 1\n"},
+        "written",
+        ToolStatus.OK,
+        workspace_changed=True,
+    )
+
+    read_reason = guard.preflight("read_file", {"path": "result.py"})
+    shell_reason = guard.preflight("run_command", {"command": "cat result.py"})
+
+    assert read_reason is not None
+    assert shell_reason is not None
+    assert "already ran 1 times" in read_reason
+
+
+def test_failed_check_allows_one_diagnostic_reread_of_changed_file() -> None:
+    guard = ProgressGuard([])
+    path = {"path": "result.py", "content": "value = 1\n"}
+    guard.observe(
+        "write_file",
+        path,
+        "written",
+        ToolStatus.OK,
+        workspace_changed=True,
+    )
+    guard.observe(
+        "run_command",
+        {"command": "python3 -m pytest -q"},
+        "one assertion failed",
+        ToolStatus.ERROR,
+    )
+
+    assert guard.preflight("read_file", {"path": "result.py"}) is None
+    guard.observe(
+        "read_file",
+        {"path": "result.py"},
+        "value = 1",
+        ToolStatus.OK,
+    )
+    assert guard.preflight("read_file", {"path": "result.py"}) is not None
+
+
+def test_new_failed_check_output_is_progress_but_repeating_it_is_not() -> None:
+    guard = ProgressGuard([])
+    args = {"command": "python3 -m pytest -q"}
+
+    assert guard.observe("run_command", args, "first assertion failed", ToolStatus.ERROR) is True
+    assert guard.no_progress == 0
+    assert guard.observe("run_command", args, "first assertion failed", ToolStatus.ERROR) is False
+    assert guard.no_progress == 1
+
+
+def test_failed_exact_edit_allows_one_diagnostic_reread() -> None:
+    guard = ProgressGuard([])
+    guard.observe(
+        "write_file",
+        {"path": "result.py", "content": "value = 1\n"},
+        "written",
+        ToolStatus.OK,
+        workspace_changed=True,
+    )
+    guard.observe(
+        "edit_file",
+        {"path": "result.py", "old": "missing", "new": "value = 2"},
+        "text not found",
+        ToolStatus.ERROR,
+    )
+
+    assert guard.preflight("read_file", {"path": "result.py"}) is None
 
 
 def test_workspace_change_resets_the_exploration_phase() -> None:
@@ -1928,6 +2005,7 @@ async def test_planning_cannot_spend_verification_reserve(session: AsyncSession)
         def __init__(self) -> None:
             super().__init__([{"tool": "finish", "args": {"summary": "done"}}])
             self.budgets: list[tuple[str, int | None]] = []
+            self.temperatures: dict[str, float | None] = {}
 
         async def complete(self, system: str, user: str, **kwargs: Any) -> LLMResult:
             if '"met"' in user:
@@ -1937,6 +2015,7 @@ async def test_planning_cannot_spend_verification_reserve(session: AsyncSession)
             else:
                 phase = "plan"
             self.budgets.append((phase, kwargs.get("token_budget")))
+            self.temperatures[phase] = kwargs.get("temperature")
             return await super().complete(system, user, **kwargs)
 
     llm = _BudgetLLM()
@@ -1947,3 +2026,4 @@ async def test_planning_cannot_spend_verification_reserve(session: AsyncSession)
     assert budgets["understand"] == 8_000
     assert budgets["plan"] == 7_990
     assert budgets["verify"] == 9_890
+    assert llm.temperatures["plan"] == 0.1

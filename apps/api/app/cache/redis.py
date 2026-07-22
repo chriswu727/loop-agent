@@ -82,9 +82,17 @@ class InMemoryCache:
         self._store.pop(key, None)
 
     async def incr(self, key: str, *, ttl_seconds: int | None = None) -> int:
-        current = 0 if self._expired(key) else int(self._store[key][0])
+        expired = self._expired(key)
+        current = 0 if expired else int(self._store[key][0])
         current += 1
-        await self.set(key, str(current), ttl_seconds=ttl_seconds)
+        expires_at = (
+            time.monotonic() + ttl_seconds
+            if expired and ttl_seconds
+            else None
+            if expired
+            else self._store[key][1]
+        )
+        self._store[key] = (str(current), expires_at)
         return current
 
     async def close(self) -> None:

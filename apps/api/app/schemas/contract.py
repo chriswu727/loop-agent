@@ -15,7 +15,7 @@ class ContractCheck(BaseModel):
     command: str | None = Field(default=None, max_length=1_000)
     path: str | None = Field(default=None, max_length=500)
     text: str | None = Field(default=None, max_length=2_000)
-    expect_exit: int = 0
+    expect_exit: int | Literal["nonzero"] = 0
     expect_stdout: str | None = Field(default=None, max_length=2_000)
     criterion_ids: list[str] = Field(default_factory=list, max_length=12)
     source: Literal["contract", "system"] = "contract"
@@ -48,14 +48,18 @@ class RepositoryDiscovery(BaseModel):
     test_files: list[str] = Field(default_factory=list, max_length=100)
     build_outputs: list[str] = Field(default_factory=list, max_length=50)
     quality_checks: list[ContractCheck] = Field(default_factory=list, max_length=16)
+    file_previews: dict[str, str] = Field(default_factory=dict, max_length=24)
     files_scanned: int = Field(default=0, ge=0)
     truncated: bool = False
+    previews_truncated: bool = False
 
 
 class ContractCritique(BaseModel):
     accepted: bool
     issues: list[str] = Field(default_factory=list, max_length=12)
     question: str | None = Field(default=None, max_length=1_000)
+    adjudicated: bool = False
+    adjudication_reason: str | None = Field(default=None, max_length=1_000)
     provider: str = Field(default="unknown", max_length=80)
     model: str = Field(default="unknown", max_length=160)
 

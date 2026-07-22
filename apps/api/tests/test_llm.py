@@ -3,7 +3,9 @@ mock HTTP transport (no real API calls, no keys needed)."""
 
 from __future__ import annotations
 
+import asyncio
 import json
+import time
 
 import httpx
 import pytest
@@ -12,7 +14,7 @@ from app.core.config import settings
 from app.core.llm.base import LLMError
 from app.core.llm.client import FallbackLLMClient, _token_estimate
 from app.core.llm.providers import call_anthropic, call_deepseek, call_ollama
-from app.core.llm.registry import PROVIDERS, configured_providers
+from app.core.llm.registry import PROVIDERS, ProviderSpec, configured_providers
 
 
 def _client(handler) -> httpx.AsyncClient:
@@ -247,3 +249,32 @@ async def test_retry_attempts_are_charged_and_cannot_cross_call_budget(
     assert caught.value.budget_exhausted is True
     assert caught.value.tokens_spent == 132
     assert caught.value.tokens_spent <= 150
+
+
+async def test_total_deadline_bounds_slow_provider_retries(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "deepseek_api_key", "d")
+    for attr in ("anthropic_api_key", "gemini_api_key", "glm_api_key"):
+        monkeypatch.setattr(settings, attr, None)
+    monkeypatch.setattr(settings, "llm_max_retries", 4)
+    monkeypatch.setattr(settings, "llm_total_timeout_seconds", 0.02)
+
+    async def slow_adapter(*args, **kwargs):
+        del args, kwargs
+        await asyncio.sleep(60)
+        return "never", 0
+
+    monkeypatch.setitem(
+        PROVIDERS,
+        "deepseek",
+        ProviderSpec(slow_adapter, "deepseek_api_key"),
+    )
+    started = time.monotonic()
+
+    with pytest.raises(LLMError, match="total timeout") as caught:
+        client = _client(lambda request: httpx.Response(200, request=request))
+        await FallbackLLMClient(primary="deepseek", client=client).complete("s", "u")
+
+    assert time.monotonic() - started < 0.5
+    assert caught.value.tokens_spent > 0

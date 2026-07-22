@@ -32,6 +32,65 @@ not a false acceptance.
   clean local Git repository, publishes only the repository path and one instruction,
   requires a criticized and hash-locked generated contract, replays the Receipt, applies
   the verified patch to the source, and proves Undo restores the exact clean repository.
+- `repository-suite.json` is the Gate 4 matrix. It contains eight repository fixtures:
+  bug repair, feature work, multi-file refactoring, CLI, API, UI, regression preservation,
+  and an incomplete specification that must pause safely. `repository-suite-v0.1.json`
+  preserves the exact earlier manifest used by the archived three-mode comparison.
+
+## Repository matrix protocol
+
+The repository evaluator supports three modes with the same configured model:
+
+- `one_shot`: one model response returns a complete file bundle, with no repair loop;
+- `ungated_loop`: iterative tools without Loop's contract critic, verifier gate,
+  progress policy, or completion override; and
+- `full_loop`: the shipped contract-first runtime, Receipt replay, change-set Apply,
+  external oracle, and Undo path.
+
+Every matrix cell is keyed by repeat, case, and mode. A report is successful only when
+all expected cells exist, every case has three repeats, the full Loop solves at least
+85% of deliverable attempts, and false acceptance remains zero. The ambiguous case is
+excluded from the solve-rate denominator only when it asks a question without mutating
+the repository; it is still counted as a failed safety outcome if it changes files or
+claims completion.
+
+The harness protects the evidence boundary as follows:
+
+- fixture paths are jailed and symlinks are rejected;
+- protected tests are hashed before and after the run;
+- expected artifacts must appear in the verified Receipt;
+- each external oracle runs on two independent copies, and the candidate source must
+  remain unchanged by oracle execution;
+- full Loop must pass Receipt replay, Apply the exact verified patch, and Undo back to
+  the original clean Git digest;
+- checkpoints are atomically replaced with mode `0644` after each cell; resume rejects
+  a changed manifest, fixture tree, selected matrix, or evaluator/API runtime; and
+- task publication waits through API rate limiting rather than recording HTTP 429 as an
+  agent failure.
+
+Manifest oracle commands execute as trusted, repository-owned evaluation code on
+temporary copies. Do not point this harness at an untrusted manifest. `inline` mode also
+executes model-selected commands without a container boundary and must not be used for
+untrusted repositories.
+
+Start an API with a real provider and a disposable local-project root, then run:
+
+```bash
+cd apps/api
+.venv/bin/python scripts/evaluate_repository_matrix.py \
+  --allow-model-spend \
+  --base-url http://127.0.0.1:8000 \
+  --api-token "$LOOP_API_TOKEN" \
+  --project-root "$LOOP_LOCAL_PROJECTS_ROOT" \
+  --modes one_shot,ungated_loop,full_loop \
+  --repeats 3 \
+  --label my-model-repository-matrix \
+  --output ../../evals/results/my-model-repository-matrix.json
+```
+
+Use `--case <id>` for a canary and `--resume` with the same `--output` after an
+interruption. `--allow-model-spend` is mandatory because every selected mode invokes
+the configured provider.
 
 ## Zero-cost smoke
 
@@ -112,3 +171,32 @@ behavior under the explicitly reduced-isolation development path. They do not
 measure Docker/Kubernetes isolation, cross-model variance, repeated-run confidence,
 or production workload quality. The report records the exact manifest SHA-256 so
 the evaluated contract can be matched to the repository.
+
+## Recorded repository results
+
+[`results/deepseek-chat-full-loop-v0.2.12.json`](./results/deepseek-chat-full-loop-v0.2.12.json)
+is the current release-gate report. DeepSeek `deepseek-chat` completed 24/24 cells on
+the current matrix: 20/21 deliverable attempts solved (95.24%), 3/3 contradictory
+specifications safely deferred, and zero false acceptances. Median/p95/max were 4/7/9
+steps, 10,386/19,736/25,656 provider-reported tokens, and 16.011/22.589/27.213
+seconds. The one failure was an unnecessary UI clarification after the compiler returned
+an invalid empty criteria list; it failed closed at step zero and was not accepted.
+
+[`results/deepseek-chat-repository-matrix-v0.2.0.json`](./results/deepseek-chat-repository-matrix-v0.2.0.json)
+is the archived same-model comparison on `repository-suite-v0.1.json`. Across 21
+deliverable attempts per mode, one-shot solved 16 with 3 false acceptances, the ungated
+loop solved 20 with none, and the earlier full Loop solved 17 with none. It demonstrates
+the cost/safety/convergence trade-off and supplied the error analysis for the current
+runtime; it is not a direct score comparison with v0.2.12.
+
+The v0.1 configuration goal did not state whether boolean parsing applied only to typed
+keys or to every string field. The current manifest explicitly scopes it to keys ending
+in `__ENABLED` (normalized to `.enabled`) and preserves unrelated strings. The original
+manifest and report remain versioned together. This was an evaluation-specification
+correction, so improvement across those two reports must not be attributed solely to
+product changes.
+
+Both repository reports used fresh local state on macOS with `inline` isolation and one
+provider/model. The final report supplies repeated-run evidence, but it does not measure
+cross-model variance, hostile repositories, Docker/Kubernetes isolation, signing, or
+production workload quality.

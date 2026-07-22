@@ -17,6 +17,43 @@ All notable changes are documented here. The project follows Semantic Versioning
   deduplication of deterministic repository checks.
 - Made discovered Python test gates use `python -m pytest -q` so flat repositories run
   consistently across virtual environments and pytest entrypoint modes.
+- Added bounded source/test previews to repository discovery, deterministic test-gate
+  canonicalization when every criterion is grounded in test-source evidence, validation
+  for malformed inline Python and subprocess-output checks, and safe adjudication of
+  non-user-answerable critic noise.
+- Reduced repeated-file inspection and evidence-free branches, compacted planner history,
+  lowered planner variance, reserved a right-sized final-verification budget, and fed
+  automatic contract failures directly into the next decision.
+- Added one total deadline across provider retries/fallbacks so a failing model request
+  cannot multiply the configured timeout across every route.
+- Added integer-or-`nonzero` exit contracts and consistent replay semantics for negative
+  command assertions.
+
+### Reliability
+
+- Made the local in-memory rate limiter preserve the original fixed-window expiry, matching
+  Redis behavior.
+- Added atomic repository-matrix checkpoints that reject manifest, fixture, runtime, mode,
+  or selection drift, plus bounded retry of task publication throttling.
+- Expanded no-progress recovery so new failure output is useful evidence while repeated
+  output, immediate post-write rereads, duplicate research calls, and unchanged finish
+  attempts remain bounded.
+
+### Evaluation
+
+- Added eight protected fixture repositories spanning bug repair, feature work,
+  multi-file refactoring, CLI, API, UI, regression preservation, and incomplete
+  specifications.
+- Added a three-mode evaluator for one-shot, ungated tool loop, and full Loop with
+  protected-test hashes, independent double oracle execution, artifact and source
+  integrity checks, Receipt replay, Apply/Undo, trajectory taxonomy, and distribution
+  reporting.
+- Published the frozen DeepSeek `deepseek-chat` full-Loop matrix: 20/21 deliverable
+  attempts solved (95.24%), 3/3 safe specification deferrals, zero false acceptances,
+  and one disclosed fail-closed contract-compilation failure.
+- Archived the earlier same-model comparison and its exact v0.1 manifest; versioned the
+  corrected configuration fixture instead of presenting an eval-spec change as a pure
+  product improvement.
 
 ### Security
 
@@ -31,6 +68,8 @@ All notable changes are documented here. The project follows Semantic Versioning
   while retaining its repeated-run and production-isolation limitations.
 - Published the first real-provider one-instruction local-project result, including
   contract locking, execution verification, Receipt replay, Apply, and Undo evidence.
+- Documented the repository-level protocol, repeated-run distributions, historical
+  comparison, current limitations, and the remaining Docker/Kubernetes Gate 4 subgate.
 
 ## [0.1.0] - 2026-07-15
 

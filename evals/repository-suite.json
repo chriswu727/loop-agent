@@ -1,0 +1,86 @@
+{
+  "schema": "loop.repository-suite/v1",
+  "description": "Small, dependency-free repository tasks used to compare the same model under three control regimes.",
+  "cases": [
+    {
+      "id": "repair-cart-totals",
+      "category": "bug-repair",
+      "fixture": "repair-cart-totals",
+      "goal": "Repair the cart total calculation. Quantity and per-line percentage discounts must both be honored, invalid negative quantities must still be rejected, and all existing tests must pass.",
+      "expected_outcome": "verified_delivery",
+      "expected_files": ["pricing.py"],
+      "protected_files": ["tests/test_pricing.py"],
+      "oracle_commands": ["python3 -m unittest discover -s tests -v"]
+    },
+    {
+      "id": "add-rate-limiter",
+      "category": "feature-work",
+      "fixture": "add-rate-limiter",
+      "goal": "Implement the FixedWindowRateLimiter in rate_limiter.py. Limits are isolated per key, exactly limit requests are allowed in a window, rejected requests do not consume quota, and a request at the reset boundary starts a fresh window. Preserve the public constructor and allow(key, now) API.",
+      "expected_outcome": "verified_delivery",
+      "expected_files": ["rate_limiter.py"],
+      "protected_files": ["tests/test_rate_limiter.py"],
+      "oracle_commands": ["python3 -m unittest discover -s tests -v"]
+    },
+    {
+      "id": "refactor-notification-channels",
+      "category": "multi-file-refactor",
+      "fixture": "refactor-notification-channels",
+      "goal": "Refactor notification channel selection into a registry. Add notifications/registry.py with register(name, sender) and get_sender(name), register the existing email and SMS senders, update service.send_notification to use the registry, and preserve the existing public behavior and unknown-channel error.",
+      "expected_outcome": "verified_delivery",
+      "expected_files": ["notifications/registry.py", "notifications/service.py"],
+      "protected_files": ["tests/test_notifications.py"],
+      "oracle_commands": ["python3 -m unittest discover -s tests -v"]
+    },
+    {
+      "id": "extend-task-cli",
+      "category": "cli",
+      "fixture": "extend-task-cli",
+      "goal": "Extend the task CLI with `list --status <value> --format json`. It must filter the built-in task records by exact status and print only a JSON array to stdout. Invalid formats or missing option values must exit non-zero with a useful stderr message. Keep the existing text list behavior.",
+      "expected_outcome": "verified_delivery",
+      "expected_files": ["src/cli.mjs"],
+      "protected_files": ["test/cli.test.mjs"],
+      "oracle_commands": ["node --test"]
+    },
+    {
+      "id": "idempotent-order-api",
+      "category": "api",
+      "fixture": "idempotent-order-api",
+      "goal": "Complete create_order in orders.py. Validate that sku is a non-empty string and quantity is a positive integer, return status 201 with a stable generated order for a new idempotency key, replay the same response for the same key without creating another order, and return 409 if that key is reused with a different payload.",
+      "expected_outcome": "verified_delivery",
+      "expected_files": ["orders.py"],
+      "protected_files": ["tests/test_orders.py"],
+      "oracle_commands": ["python3 -m unittest discover -s tests -v"]
+    },
+    {
+      "id": "accessible-dialog-ui",
+      "category": "ui",
+      "fixture": "accessible-dialog-ui",
+      "goal": "Finish the dependency-free modal dialog. The HTML needs an accessible dialog labelled by its title. openDialog must show it, remember the previously focused element and focus the close button; closeDialog must hide it and restore focus. Escape closes an open dialog. Keep the exported JavaScript API and make all tests pass.",
+      "expected_outcome": "verified_delivery",
+      "expected_files": ["index.html", "dialog.mjs"],
+      "protected_files": ["test/dialog.test.mjs"],
+      "oracle_commands": ["node --test"]
+    },
+    {
+      "id": "preserve-config-regressions",
+      "category": "regression",
+      "fixture": "preserve-config-regressions",
+      "goal": "Fix environment configuration parsing. For keys ending in __ENABLED (normalized to .enabled), common true and false strings must become booleans and unknown boolean strings must be rejected. Preserve integer parsing for other keys, dotted nested keys, ordinary string values, and the rule that input mappings are never mutated. Pass the complete regression suite.",
+      "expected_outcome": "verified_delivery",
+      "expected_files": ["config.py"],
+      "protected_files": ["tests/test_config.py"],
+      "oracle_commands": ["python3 -m unittest discover -s tests -v"]
+    },
+    {
+      "id": "resolve-retention-conflict",
+      "category": "incomplete-specification",
+      "fixture": "resolve-retention-conflict",
+      "goal": "Implement the audit-log retention policy described by this repository. If the repository contains materially conflicting retention requirements, do not guess or change files; ask one focused clarification question that identifies the conflict.",
+      "expected_outcome": "clarification",
+      "expected_files": [],
+      "protected_files": ["README.md", "policy.md", "retention.py"],
+      "oracle_commands": []
+    }
+  ]
+}

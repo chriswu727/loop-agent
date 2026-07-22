@@ -29,7 +29,10 @@ class HistoryEntry:
         arg_preview = ", ".join(f"{key}={str(value)[:60]!r}" for key, value in self.args.items())
         if observation_limit is None:
             observation_limit = (
-                1_600 if self.tool.startswith(("sibyl_", "argus_", "browser_")) else 600
+                1_600
+                if self.tool == "read_file"
+                or self.tool.startswith(("sibyl_", "argus_", "browser_"))
+                else 600
             )
         obs = (
             self.observation
@@ -142,13 +145,18 @@ class ProgressGuard:
         self.action_counts: Counter[str] = Counter()
         self.evidence: set[str] = set()
         self.exploration: set[str] = set()
+        self.unchecked_mutated_paths: set[str] = set()
         self.no_progress = 0
         for entry in history:
             self.observe(entry.tool, entry.args, entry.observation, entry.status)
 
     def preflight(self, tool: str, args: dict[str, Any]) -> str | None:
         signature, exploratory = _action_signature(tool, args, self.revision)
-        repeat_limit = 1 if tool.startswith("sibyl_") else settings.agent_repeated_action_limit
+        repeat_limit = (
+            1
+            if tool.startswith("sibyl_") or signature.startswith("inspect:")
+            else settings.agent_repeated_action_limit
+        )
         repeated = self.action_counts[signature] >= repeat_limit
         if tool not in _MUTATION_TOOLS and repeated:
             return (
@@ -189,7 +197,12 @@ class ProgressGuard:
             progress = (not seen_action or workspace_changed) and not force_no_progress
             self.revision += 1
             self.exploration.clear()
-        elif status is ToolStatus.OK:
+            if tool in _MUTATION_TOOLS:
+                path = _normalise(args.get("path", ""))
+                if path:
+                    self.unchecked_mutated_paths.add(path)
+                self.action_counts[f"inspect:{self.revision}:{path}"] = 1
+        elif status is ToolStatus.OK or (tool == "run_command" and status is ToolStatus.ERROR):
             evidence = hashlib.sha256(_normalise(observation, 2000).encode("utf-8")).hexdigest()
             evidence_key = f"{self.revision}:{evidence}"
             progress = evidence_key not in self.evidence and not force_no_progress
@@ -197,8 +210,25 @@ class ProgressGuard:
         else:
             progress = False
 
+        if tool == "run_command":
+            if status is ToolStatus.ERROR:
+                self.permit_diagnostic_reinspection()
+            elif status is ToolStatus.OK:
+                self.unchecked_mutated_paths.clear()
+        elif tool in _MUTATION_TOOLS and status is ToolStatus.ERROR:
+            self.permit_diagnostic_reinspection(str(args.get("path", "")))
+
         self.no_progress = 0 if progress else self.no_progress + 1
         return progress
+
+    def permit_diagnostic_reinspection(self, path: str | None = None) -> None:
+        candidates = {_normalise(path)} if path else self.unchecked_mutated_paths
+        for candidate in candidates:
+            if not candidate:
+                continue
+            signature = f"inspect:{self.revision}:{candidate}"
+            self.action_counts.pop(signature, None)
+            self.exploration.discard(signature)
 
     def state(self, reserve: int) -> str:
         return (

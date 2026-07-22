@@ -117,13 +117,13 @@ class Settings(BaseSettings):
         Literal["anthropic", "deepseek", "gemini", "glm", "ollama", "mock"] | None
     ) = None
     llm_timeout_seconds: int = 120
+    llm_total_timeout_seconds: float = Field(default=180.0, ge=1.0)
     # Retry a retryable failure (timeout, 5xx, empty) on the same provider before
     # cascading — one transient blip shouldn't fail a whole task. A mid-run failure
     # is expensive: it discards a partially-complete run (the model may already have
     # written correct output), so the budget is set to ride out a multi-second
-    # overload of a reasoning model, not just an instant blip. With these defaults:
-    # 5 attempts, linear backoff summing to ~7.5s. Bounded so a negative value can't
-    # make complete() skip every provider (client asserts >=1 attempt).
+    # overload of a reasoning model, not just an instant blip. The total deadline
+    # bounds the complete cascade even when individual requests time out slowly.
     llm_max_retries: int = Field(default=4, ge=0)
     llm_retry_backoff_seconds: float = Field(default=0.75, ge=0.0)
 
@@ -237,7 +237,7 @@ class Settings(BaseSettings):
     agent_max_spawn_depth: int = 2  # how deep sub-agents may delegate further
     agent_repeated_action_limit: int = Field(default=2, ge=1, le=10)
     agent_exploration_branch_cap: int = Field(default=8, ge=1, le=20)
-    agent_verification_token_reserve: int = Field(default=16_000, ge=500)
+    agent_verification_token_reserve: int = Field(default=6_000, ge=500)
 
     # ---- Trigger heartbeat (scheduled firing) ----
     scheduler_enabled: bool = True

@@ -164,6 +164,7 @@ class AgentReactService:
         self._browser_specs = ""  # MCP browser tool list, injected into planning
         self._mcp_specs = ""
         self._notices = ""  # run-time notices for the planner (e.g. a tool went missing)
+        self._contract_notice = ""
         self._email_specs = ""  # email tool list, injected into planning
         self._calendar_specs = ""  # calendar tool list, injected into planning
         self._vision_specs = ""  # see_image tool, injected into planning when available
@@ -379,6 +380,7 @@ class AgentReactService:
         self._calendar_specs = ""
         self._vision_specs = ""
         self._notices = ""
+        self._contract_notice = ""
         if task.skill:
             store = SkillStore(Path(settings.agent_skills_root), settings.trust_public_key_pem())
             skill = store.load(task.skill)
@@ -1229,23 +1231,26 @@ class AgentReactService:
             infer_criterion_ids=task.verification_mode != "strict",
         )
 
-    async def _contract_evidence_ready(self, task: TaskModel, workspace: Workspace) -> bool:
+    async def _contract_evidence_status(
+        self, task: TaskModel, workspace: Workspace
+    ) -> tuple[bool, str]:
         contract_checks = [
             check for check in (task.required_checks or []) if check.get("source") == "contract"
         ]
         if not contract_checks:
-            return False
+            return False, ""
         checks = merge_completion_checks(
             contract_checks,
             [],
             criterion_count=len(task.rubric or []),
         )
         results = await self._run_completion_checks(task, workspace, checks)
-        return (
+        ready = (
             bool(results)
             and completion_gates_pass(results)
             and execution_coverage_complete(results, len(task.rubric or []))
         )
+        return ready, checks_summary(results)
 
     async def _start_browser(self, envelope: CapabilityEnvelope) -> McpBrowser | None:
         if not (
@@ -1411,7 +1416,7 @@ class AgentReactService:
                 self._calendar_specs,
                 self._vision_specs,
                 self._conversation,
-                notices=self._notices,
+                notices=self._notices + self._contract_notice,
                 allow_spawn=task.depth < settings.agent_max_spawn_depth,
                 today=date.today().isoformat(),
                 progress_state=guard.state(verification_reserve),
@@ -1423,7 +1428,7 @@ class AgentReactService:
                     system,
                     user,
                     max_tokens=_PLAN_MAX_TOKENS,
-                    temperature=0.5,
+                    temperature=0.1,
                     token_budget=planning_budget,
                 )
             except LLMError as exc:
@@ -1696,12 +1701,23 @@ class AgentReactService:
             auto_finish_candidate = (
                 tool in {"write_file", "edit_file"} and workspace_changed
             ) or tool == "run_command"
-            if (
-                auto_finish_candidate
-                and status is ToolStatus.OK
-                and number < task.max_steps
-                and await self._contract_evidence_ready(task, workspace)
-            ):
+            evidence_ready = False
+            if auto_finish_candidate and status is ToolStatus.OK and number < task.max_steps:
+                evidence_ready, evidence_summary = await self._contract_evidence_status(
+                    task, workspace
+                )
+                self._contract_notice = (
+                    "\nLatest automatic contract check after the previous action:\n"
+                    f"[DATA] {evidence_summary[:3_000]}\n"
+                    "Use this failure directly. After an explicit failed check, re-read at most "
+                    "one changed file only if exact context is needed for the corrective edit; "
+                    "do not re-explore unchanged files.\n"
+                    if evidence_summary and not evidence_ready
+                    else ""
+                )
+                if evidence_summary and not evidence_ready and tool != "write_file":
+                    guard.permit_diagnostic_reinspection()
+            if auto_finish_candidate and status is ToolStatus.OK and evidence_ready:
                 auto_number = number + 1
                 auto_args = {
                     "summary": (

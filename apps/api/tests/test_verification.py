@@ -27,6 +27,27 @@ async def test_command_check_fails_on_wrong_output(tmp_path: Path) -> None:
     assert results[0].passed is False
 
 
+async def test_command_check_can_require_any_nonzero_exit(tmp_path: Path) -> None:
+    ws = Workspace(tmp_path / "ws")
+    results = await run_checks(
+        [
+            {
+                "kind": "command",
+                "command": "python3 -c 'raise SystemExit(3)'",
+                "expect_exit": "nonzero",
+            },
+            {
+                "kind": "command",
+                "command": "python3 -c 'raise SystemExit(0)'",
+                "expect_exit": "nonzero",
+            },
+        ],
+        ws,
+    )
+
+    assert [result.passed for result in results] == [True, False]
+
+
 async def test_command_check_rejects_zero_discovered_tests(tmp_path: Path) -> None:
     ws = Workspace(tmp_path / "ws")
     results = await run_checks(

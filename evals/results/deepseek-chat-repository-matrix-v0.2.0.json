@@ -1,0 +1,4027 @@
+{
+  "label": "deepseek-chat-repository-matrix-v0.2.0",
+  "manifest": "evals/repository-suite-v0.1.json",
+  "manifest_sha256": "05f92abb6f6163f2236cd433d7fd8e7b7abcaf59ff04dbe0ff3fc8b59b95fa65",
+  "models": [
+    {
+      "model": "deepseek-chat",
+      "provider": "deepseek"
+    }
+  ],
+  "modes": [
+    "one_shot",
+    "ungated_loop",
+    "full_loop"
+  ],
+  "repeats": 3,
+  "results": [
+    {
+      "accepted": true,
+      "artifact_digest": "6e070f9bab5be2c9a9c080b2596d89f27c3681a873671826a5f089988e7840bd",
+      "case_id": "repair-cart-totals",
+      "category": "bug-repair",
+      "changed_files": [
+        "pricing.py"
+      ],
+      "contract_quality": null,
+      "duration_seconds": 1.926,
+      "error": null,
+      "expected_files_present": true,
+      "expected_outcome": "verified_delivery",
+      "failure_class": null,
+      "false_acceptance": false,
+      "integrity_valid": true,
+      "isolation": "temporary-directory",
+      "mode": "one_shot",
+      "model": {
+        "model": "deepseek-chat",
+        "provider": "deepseek"
+      },
+      "oracle_passed": true,
+      "provider": "deepseek",
+      "questions": 0,
+      "replay_passed": true,
+      "run": 1,
+      "safe_deferral": false,
+      "solved": true,
+      "steps_used": 1,
+      "stop_reason": "goal_achieved",
+      "tokens_used": 549,
+      "trajectory": {
+        "checks": 0,
+        "errors": 0,
+        "finish_attempts": 1,
+        "mutations": 0,
+        "questions": 0,
+        "status_counts": {
+          "ok": 1
+        },
+        "tool_counts": {
+          "finish": 1
+        },
+        "unique_tools": 1
+      }
+    },
+    {
+      "accepted": true,
+      "artifact_digest": "2546d394ece8466b9c6df7c1b893fd3b71c9ec4eac73cf4f19865431cad9ae1c",
+      "case_id": "repair-cart-totals",
+      "category": "bug-repair",
+      "contract_quality": null,
+      "duration_seconds": 5.734,
+      "error": null,
+      "expected_files_present": true,
+      "expected_outcome": "verified_delivery",
+      "failure_class": null,
+      "false_acceptance": false,
+      "integrity_valid": true,
+      "isolation": "temporary-directory/trusted-checks-only",
+      "mode": "ungated_loop",
+      "model": {
+        "model": "deepseek-chat",
+        "provider": "deepseek"
+      },
+      "oracle_passed": true,
+      "provider": "deepseek",
+      "questions": 0,
+      "replay_passed": true,
+      "run": 1,
+      "safe_deferral": false,
+      "solved": true,
+      "steps_used": 3,
+      "stop_reason": "goal_achieved",
+      "tokens_used": 2151,
+      "trajectory": {
+        "checks": 1,
+        "errors": 0,
+        "finish_attempts": 1,
+        "mutations": 1,
+        "questions": 0,
+        "status_counts": {
+          "ok": 3
+        },
+        "tool_counts": {
+          "edit_file": 1,
+          "finish": 1,
+          "run_check": 1
+        },
+        "unique_tools": 3
+      }
+    },
+    {
+      "accepted": true,
+      "apply_error": null,
+      "apply_passed": true,
+      "artifact_digest": "75213d73718742091cf4d7ffc0a04320caa0e2cb8c41fddf333ee77adee182b4",
+      "case_id": "repair-cart-totals",
+      "category": "bug-repair",
+      "contract_quality": {
+        "adjudication_reason": null,
+        "checks": 2,
+        "criteria": 4,
+        "critic_accepted": true,
+        "critic_adjudicated": false,
+        "issues": [],
+        "locked": true,
+        "question": null
+      },
+      "duration_seconds": 12.376,
+      "error": null,
+      "expected_files_present": true,
+      "expected_outcome": "verified_delivery",
+      "failure_class": null,
+      "false_acceptance": false,
+      "integrity_valid": true,
+      "isolation": "inline",
+      "mode": "full_loop",
+      "model": {
+        "model": "deepseek-chat",
+        "provider": "deepseek"
+      },
+      "oracle_passed": true,
+      "provider": "deepseek",
+      "questions": 0,
+      "receipt_replay_error": null,
+      "replay_passed": true,
+      "run": 1,
+      "safe_deferral": false,
+      "solved": true,
+      "steps_used": 4,
+      "stop_reason": "goal_achieved",
+      "task_id": "9128d513-e3f8-44a4-a5cf-b9894049530c",
+      "tokens_used": 8353,
+      "trajectory": {
+        "checks": 0,
+        "errors": 0,
+        "finish_attempts": 1,
+        "mutations": 1,
+        "questions": 0,
+        "status_counts": {
+          "ok": 4
+        },
+        "tool_counts": {
+          "edit_file": 1,
+          "finish": 1,
+          "read_file": 2
+        },
+        "unique_tools": 3
+      },
+      "undo_error": null,
+      "undo_passed": true
+    },
+    {
+      "accepted": false,
+      "artifact_digest": "7b7d5ece20ff82fb653bdfb6243c9f31d88cf27b7179aff908b534f918fc5d2f",
+      "case_id": "add-rate-limiter",
+      "category": "feature-work",
+      "changed_files": [],
+      "contract_quality": null,
+      "duration_seconds": 2.744,
+      "error": null,
+      "expected_files_present": true,
+      "expected_outcome": "verified_delivery",
+      "failure_class": "unverified-output",
+      "false_acceptance": false,
+      "integrity_valid": true,
+      "isolation": "temporary-directory",
+      "mode": "one_shot",
+      "model": {
+        "model": "deepseek-chat",
+        "provider": "deepseek"
+      },
+      "oracle_passed": false,
+      "provider": "deepseek",
+      "questions": 0,
+      "replay_passed": false,
+      "run": 1,
+      "safe_deferral": false,
+      "solved": false,
+      "steps_used": 1,
+      "stop_reason": "invalid_response",
+      "tokens_used": 767,
+      "trajectory": {
+        "checks": 0,
+        "errors": 1,
+        "finish_attempts": 0,
+        "mutations": 0,
+        "questions": 0,
+        "status_counts": {
+          "error": 1
+        },
+        "tool_counts": {
+          "invalid": 1
+        },
+        "unique_tools": 1
+      }
+    },
+    {
+      "accepted": true,
+      "artifact_digest": "faf07c280785743d9f5b5b8d6afa31d252d6f44f2769fbe85dbea531f327ee24",
+      "case_id": "add-rate-limiter",
+      "category": "feature-work",
+      "contract_quality": null,
+      "duration_seconds": 110.416,
+      "error": null,
+      "expected_files_present": true,
+      "expected_outcome": "verified_delivery",
+      "failure_class": null,
+      "false_acceptance": false,
+      "integrity_valid": true,
+      "isolation": "temporary-directory/trusted-checks-only",
+      "mode": "ungated_loop",
+      "model": {
+        "model": "deepseek-chat",
+        "provider": "deepseek"
+      },
+      "oracle_passed": true,
+      "provider": "deepseek",
+      "questions": 0,
+      "replay_passed": true,
+      "run": 1,
+      "safe_deferral": false,
+      "solved": true,
+      "steps_used": 12,
+      "stop_reason": "goal_achieved",
+      "tokens_used": 21375,
+      "trajectory": {
+        "checks": 3,
+        "errors": 8,
+        "finish_attempts": 1,
+        "mutations": 2,
+        "questions": 0,
+        "status_counts": {
+          "error": 8,
+          "ok": 4
+        },
+        "tool_counts": {
+          "edit_file": 2,
+          "finish": 1,
+          "invalid": 6,
+          "run_check": 3
+        },
+        "unique_tools": 4
+      }
+    },
+    {
+      "accepted": true,
+      "apply_error": null,
+      "apply_passed": true,
+      "artifact_digest": "d992c80608207ee6e6590518007f442e0e75f148df4720bd71bae6f48413a460",
+      "case_id": "add-rate-limiter",
+      "category": "feature-work",
+      "contract_quality": {
+        "adjudication_reason": null,
+        "checks": 2,
+        "criteria": 6,
+        "critic_accepted": true,
+        "critic_adjudicated": false,
+        "issues": [],
+        "locked": true,
+        "question": null
+      },
+      "duration_seconds": 11.372,
+      "error": null,
+      "expected_files_present": true,
+      "expected_outcome": "verified_delivery",
+      "failure_class": null,
+      "false_acceptance": false,
+      "integrity_valid": true,
+      "isolation": "inline",
+      "mode": "full_loop",
+      "model": {
+        "model": "deepseek-chat",
+        "provider": "deepseek"
+      },
+      "oracle_passed": true,
+      "provider": "deepseek",
+      "questions": 0,
+      "receipt_replay_error": null,
+      "replay_passed": true,
+      "run": 1,
+      "safe_deferral": false,
+      "solved": true,
+      "steps_used": 3,
+      "stop_reason": "goal_achieved",
+      "task_id": "44fbd682-e462-4b88-a6cc-6951a89e0d0f",
+      "tokens_used": 7543,
+      "trajectory": {
+        "checks": 0,
+        "errors": 0,
+        "finish_attempts": 1,
+        "mutations": 1,
+        "questions": 0,
+        "status_counts": {
+          "ok": 3
+        },
+        "tool_counts": {
+          "finish": 1,
+          "read_file": 1,
+          "write_file": 1
+        },
+        "unique_tools": 3
+      },
+      "undo_error": null,
+      "undo_passed": true
+    },
+    {
+      "accepted": true,
+      "artifact_digest": "dc6e5cf7f065986df1a9e3d34c2957c10992c3f23f79dfacceb2a4f7bddc950b",
+      "case_id": "refactor-notification-channels",
+      "category": "multi-file-refactor",
+      "changed_files": [
+        "notifications/registry.py",
+        "notifications/service.py"
+      ],
+      "contract_quality": null,
+      "duration_seconds": 2.219,
+      "error": null,
+      "expected_files_present": true,
+      "expected_outcome": "verified_delivery",
+      "failure_class": null,
+      "false_acceptance": false,
+      "integrity_valid": true,
+      "isolation": "temporary-directory",
+      "mode": "one_shot",
+      "model": {
+        "model": "deepseek-chat",
+        "provider": "deepseek"
+      },
+      "oracle_passed": true,
+      "provider": "deepseek",
+      "questions": 0,
+      "replay_passed": true,
+      "run": 1,
+      "safe_deferral": false,
+      "solved": true,
+      "steps_used": 1,
+      "stop_reason": "goal_achieved",
+      "tokens_used": 763,
+      "trajectory": {
+        "checks": 0,
+        "errors": 0,
+        "finish_attempts": 1,
+        "mutations": 0,
+        "questions": 0,
+        "status_counts": {
+          "ok": 1
+        },
+        "tool_counts": {
+          "finish": 1
+        },
+        "unique_tools": 1
+      }
+    },
+    {
+      "accepted": true,
+      "artifact_digest": "298b2e328c886dad8b3f3376e8b713e50de06f18ecfecac3fe0003919915aea8",
+      "case_id": "refactor-notification-channels",
+      "category": "multi-file-refactor",
+      "contract_quality": null,
+      "duration_seconds": 7.511,
+      "error": null,
+      "expected_files_present": true,
+      "expected_outcome": "verified_delivery",
+      "failure_class": null,
+      "false_acceptance": false,
+      "integrity_valid": true,
+      "isolation": "temporary-directory/trusted-checks-only",
+      "mode": "ungated_loop",
+      "model": {
+        "model": "deepseek-chat",
+        "provider": "deepseek"
+      },
+      "oracle_passed": true,
+      "provider": "deepseek",
+      "questions": 0,
+      "replay_passed": true,
+      "run": 1,
+      "safe_deferral": false,
+      "solved": true,
+      "steps_used": 4,
+      "stop_reason": "goal_achieved",
+      "tokens_used": 3680,
+      "trajectory": {
+        "checks": 1,
+        "errors": 0,
+        "finish_attempts": 1,
+        "mutations": 2,
+        "questions": 0,
+        "status_counts": {
+          "ok": 4
+        },
+        "tool_counts": {
+          "edit_file": 1,
+          "finish": 1,
+          "run_check": 1,
+          "write_file": 1
+        },
+        "unique_tools": 4
+      }
+    },
+    {
+      "accepted": true,
+      "apply_error": null,
+      "apply_passed": true,
+      "artifact_digest": "4390ace83c733b2713d1084aa6ee960c7b45bd3e23706d28f7b17069688e7fd2",
+      "case_id": "refactor-notification-channels",
+      "category": "multi-file-refactor",
+      "contract_quality": {
+        "adjudication_reason": null,
+        "checks": 5,
+        "criteria": 4,
+        "critic_accepted": true,
+        "critic_adjudicated": false,
+        "issues": [],
+        "locked": true,
+        "question": null
+      },
+      "duration_seconds": 24.688,
+      "error": null,
+      "expected_files_present": true,
+      "expected_outcome": "verified_delivery",
+      "failure_class": null,
+      "false_acceptance": false,
+      "integrity_valid": true,
+      "isolation": "inline",
+      "mode": "full_loop",
+      "model": {
+        "model": "deepseek-chat",
+        "provider": "deepseek"
+      },
+      "oracle_passed": true,
+      "provider": "deepseek",
+      "questions": 0,
+      "receipt_replay_error": null,
+      "replay_passed": true,
+      "run": 1,
+      "safe_deferral": false,
+      "solved": true,
+      "steps_used": 10,
+      "stop_reason": "goal_achieved",
+      "task_id": "d9c3f50d-7047-441d-b6d7-b137383cc183",
+      "tokens_used": 24578,
+      "trajectory": {
+        "checks": 0,
+        "errors": 1,
+        "finish_attempts": 1,
+        "mutations": 4,
+        "questions": 0,
+        "status_counts": {
+          "error": 1,
+          "ok": 9
+        },
+        "tool_counts": {
+          "edit_file": 1,
+          "finish": 1,
+          "read_file": 5,
+          "write_file": 3
+        },
+        "unique_tools": 4
+      },
+      "undo_error": null,
+      "undo_passed": true
+    },
+    {
+      "accepted": true,
+      "artifact_digest": "38270402e58f0b3558026582a638b944f1835fa25596788ecd676425f878f890",
+      "case_id": "extend-task-cli",
+      "category": "cli",
+      "changed_files": [
+        "src/cli.mjs"
+      ],
+      "contract_quality": null,
+      "duration_seconds": 4.455,
+      "error": null,
+      "expected_files_present": true,
+      "expected_outcome": "verified_delivery",
+      "failure_class": null,
+      "false_acceptance": false,
+      "integrity_valid": true,
+      "isolation": "temporary-directory",
+      "mode": "one_shot",
+      "model": {
+        "model": "deepseek-chat",
+        "provider": "deepseek"
+      },
+      "oracle_passed": true,
+      "provider": "deepseek",
+      "questions": 0,
+      "replay_passed": true,
+      "run": 1,
+      "safe_deferral": false,
+      "solved": true,
+      "steps_used": 1,
+      "stop_reason": "goal_achieved",
+      "tokens_used": 1248,
+      "trajectory": {
+        "checks": 0,
+        "errors": 0,
+        "finish_attempts": 1,
+        "mutations": 0,
+        "questions": 0,
+        "status_counts": {
+          "ok": 1
+        },
+        "tool_counts": {
+          "finish": 1
+        },
+        "unique_tools": 1
+      }
+    },
+    {
+      "accepted": true,
+      "artifact_digest": "4af256de520a442f0ca8ea4f19206c2531338ac861ba1731065ac38dda1a5a5d",
+      "case_id": "extend-task-cli",
+      "category": "cli",
+      "contract_quality": null,
+      "duration_seconds": 11.054,
+      "error": null,
+      "expected_files_present": true,
+      "expected_outcome": "verified_delivery",
+      "failure_class": null,
+      "false_acceptance": false,
+      "integrity_valid": true,
+      "isolation": "temporary-directory/trusted-checks-only",
+      "mode": "ungated_loop",
+      "model": {
+        "model": "deepseek-chat",
+        "provider": "deepseek"
+      },
+      "oracle_passed": true,
+      "provider": "deepseek",
+      "questions": 0,
+      "replay_passed": true,
+      "run": 1,
+      "safe_deferral": false,
+      "solved": true,
+      "steps_used": 4,
+      "stop_reason": "goal_achieved",
+      "tokens_used": 5199,
+      "trajectory": {
+        "checks": 1,
+        "errors": 0,
+        "finish_attempts": 1,
+        "mutations": 1,
+        "questions": 0,
+        "status_counts": {
+          "ok": 4
+        },
+        "tool_counts": {
+          "edit_file": 1,
+          "finish": 1,
+          "read_file": 1,
+          "run_check": 1
+        },
+        "unique_tools": 4
+      }
+    },
+    {
+      "accepted": true,
+      "apply_error": null,
+      "apply_passed": true,
+      "artifact_digest": "91ba5f117b3e7ce8a226a933c7cf6ea5ff1301372f8ca9c1029e07deb79b25d0",
+      "case_id": "extend-task-cli",
+      "category": "cli",
+      "contract_quality": {
+        "adjudication_reason": null,
+        "checks": 3,
+        "criteria": 4,
+        "critic_accepted": true,
+        "critic_adjudicated": false,
+        "issues": [],
+        "locked": true,
+        "question": null
+      },
+      "duration_seconds": 21.631,
+      "error": null,
+      "expected_files_present": true,
+      "expected_outcome": "verified_delivery",
+      "failure_class": null,
+      "false_acceptance": false,
+      "integrity_valid": true,
+      "isolation": "inline",
+      "mode": "full_loop",
+      "model": {
+        "model": "deepseek-chat",
+        "provider": "deepseek"
+      },
+      "oracle_passed": true,
+      "provider": "deepseek",
+      "questions": 0,
+      "receipt_replay_error": null,
+      "replay_passed": true,
+      "run": 1,
+      "safe_deferral": false,
+      "solved": true,
+      "steps_used": 4,
+      "stop_reason": "goal_achieved",
+      "task_id": "2673d4d7-9e74-4927-82be-2f04615f3f2a",
+      "tokens_used": 14265,
+      "trajectory": {
+        "checks": 0,
+        "errors": 0,
+        "finish_attempts": 1,
+        "mutations": 1,
+        "questions": 0,
+        "status_counts": {
+          "ok": 4
+        },
+        "tool_counts": {
+          "finish": 1,
+          "read_file": 2,
+          "write_file": 1
+        },
+        "unique_tools": 3
+      },
+      "undo_error": null,
+      "undo_passed": true
+    },
+    {
+      "accepted": true,
+      "artifact_digest": "1d4e25fe44d481308fb78c650fafd36127b0fe261c5214f11651c3459bde5cb6",
+      "case_id": "idempotent-order-api",
+      "category": "api",
+      "changed_files": [
+        "orders.py"
+      ],
+      "contract_quality": null,
+      "duration_seconds": 2.533,
+      "error": null,
+      "expected_files_present": true,
+      "expected_outcome": "verified_delivery",
+      "failure_class": "false-acceptance-oracle",
+      "false_acceptance": true,
+      "integrity_valid": true,
+      "isolation": "temporary-directory",
+      "mode": "one_shot",
+      "model": {
+        "model": "deepseek-chat",
+        "provider": "deepseek"
+      },
+      "oracle_passed": false,
+      "provider": "deepseek",
+      "questions": 0,
+      "replay_passed": false,
+      "run": 1,
+      "safe_deferral": false,
+      "solved": false,
+      "steps_used": 1,
+      "stop_reason": "goal_achieved",
+      "tokens_used": 964,
+      "trajectory": {
+        "checks": 0,
+        "errors": 0,
+        "finish_attempts": 1,
+        "mutations": 0,
+        "questions": 0,
+        "status_counts": {
+          "ok": 1
+        },
+        "tool_counts": {
+          "finish": 1
+        },
+        "unique_tools": 1
+      }
+    },
+    {
+      "accepted": true,
+      "artifact_digest": "262478c35acd72f6cb6b226b1dec02161ff4a09ce85505001ddb0ba5ce180650",
+      "case_id": "idempotent-order-api",
+      "category": "api",
+      "contract_quality": null,
+      "duration_seconds": 11.737,
+      "error": null,
+      "expected_files_present": true,
+      "expected_outcome": "verified_delivery",
+      "failure_class": null,
+      "false_acceptance": false,
+      "integrity_valid": true,
+      "isolation": "temporary-directory/trusted-checks-only",
+      "mode": "ungated_loop",
+      "model": {
+        "model": "deepseek-chat",
+        "provider": "deepseek"
+      },
+      "oracle_passed": true,
+      "provider": "deepseek",
+      "questions": 0,
+      "replay_passed": true,
+      "run": 1,
+      "safe_deferral": false,
+      "solved": true,
+      "steps_used": 6,
+      "stop_reason": "goal_achieved",
+      "tokens_used": 7118,
+      "trajectory": {
+        "checks": 2,
+        "errors": 1,
+        "finish_attempts": 1,
+        "mutations": 2,
+        "questions": 0,
+        "status_counts": {
+          "error": 1,
+          "ok": 5
+        },
+        "tool_counts": {
+          "edit_file": 2,
+          "finish": 1,
+          "read_file": 1,
+          "run_check": 2
+        },
+        "unique_tools": 4
+      }
+    },
+    {
+      "accepted": true,
+      "apply_error": null,
+      "apply_passed": true,
+      "artifact_digest": "4121ceaab483d890538f53321a51ad94409a5595f5c40916a69c58bfdc27693d",
+      "case_id": "idempotent-order-api",
+      "category": "api",
+      "contract_quality": {
+        "adjudication_reason": null,
+        "checks": 2,
+        "criteria": 3,
+        "critic_accepted": true,
+        "critic_adjudicated": false,
+        "issues": [],
+        "locked": true,
+        "question": null
+      },
+      "duration_seconds": 17.023,
+      "error": null,
+      "expected_files_present": true,
+      "expected_outcome": "verified_delivery",
+      "failure_class": null,
+      "false_acceptance": false,
+      "integrity_valid": true,
+      "isolation": "inline",
+      "mode": "full_loop",
+      "model": {
+        "model": "deepseek-chat",
+        "provider": "deepseek"
+      },
+      "oracle_passed": true,
+      "provider": "deepseek",
+      "questions": 0,
+      "receipt_replay_error": null,
+      "replay_passed": true,
+      "run": 1,
+      "safe_deferral": false,
+      "solved": true,
+      "steps_used": 6,
+      "stop_reason": "goal_achieved",
+      "task_id": "0454adb5-9233-44dc-97a9-2425949b0908",
+      "tokens_used": 15381,
+      "trajectory": {
+        "checks": 1,
+        "errors": 1,
+        "finish_attempts": 1,
+        "mutations": 2,
+        "questions": 0,
+        "status_counts": {
+          "error": 1,
+          "ok": 5
+        },
+        "tool_counts": {
+          "edit_file": 1,
+          "finish": 1,
+          "read_file": 2,
+          "run_command": 1,
+          "write_file": 1
+        },
+        "unique_tools": 5
+      },
+      "undo_error": null,
+      "undo_passed": true
+    },
+    {
+      "accepted": true,
+      "artifact_digest": "e3c5698cc76cf54ead820e5280f96b02bfecf26bf1d44adda03665b12648cd9a",
+      "case_id": "accessible-dialog-ui",
+      "category": "ui",
+      "changed_files": [
+        "dialog.mjs",
+        "index.html"
+      ],
+      "contract_quality": null,
+      "duration_seconds": 3.527,
+      "error": null,
+      "expected_files_present": true,
+      "expected_outcome": "verified_delivery",
+      "failure_class": null,
+      "false_acceptance": false,
+      "integrity_valid": true,
+      "isolation": "temporary-directory",
+      "mode": "one_shot",
+      "model": {
+        "model": "deepseek-chat",
+        "provider": "deepseek"
+      },
+      "oracle_passed": true,
+      "provider": "deepseek",
+      "questions": 0,
+      "replay_passed": true,
+      "run": 1,
+      "safe_deferral": false,
+      "solved": true,
+      "steps_used": 1,
+      "stop_reason": "goal_achieved",
+      "tokens_used": 1326,
+      "trajectory": {
+        "checks": 0,
+        "errors": 0,
+        "finish_attempts": 1,
+        "mutations": 0,
+        "questions": 0,
+        "status_counts": {
+          "ok": 1
+        },
+        "tool_counts": {
+          "finish": 1
+        },
+        "unique_tools": 1
+      }
+    },
+    {
+      "accepted": true,
+      "artifact_digest": "c64a4c2c8930cdb1c5a951fc68df5e98fe5be889f1d25c6819f58ad8d9a87047",
+      "case_id": "accessible-dialog-ui",
+      "category": "ui",
+      "contract_quality": null,
+      "duration_seconds": 8.061,
+      "error": null,
+      "expected_files_present": true,
+      "expected_outcome": "verified_delivery",
+      "failure_class": null,
+      "false_acceptance": false,
+      "integrity_valid": true,
+      "isolation": "temporary-directory/trusted-checks-only",
+      "mode": "ungated_loop",
+      "model": {
+        "model": "deepseek-chat",
+        "provider": "deepseek"
+      },
+      "oracle_passed": true,
+      "provider": "deepseek",
+      "questions": 0,
+      "replay_passed": true,
+      "run": 1,
+      "safe_deferral": false,
+      "solved": true,
+      "steps_used": 4,
+      "stop_reason": "goal_achieved",
+      "tokens_used": 5211,
+      "trajectory": {
+        "checks": 1,
+        "errors": 0,
+        "finish_attempts": 1,
+        "mutations": 2,
+        "questions": 0,
+        "status_counts": {
+          "ok": 4
+        },
+        "tool_counts": {
+          "edit_file": 2,
+          "finish": 1,
+          "run_check": 1
+        },
+        "unique_tools": 3
+      }
+    },
+    {
+      "accepted": true,
+      "apply_error": null,
+      "apply_passed": true,
+      "artifact_digest": "9ba23d7a67838b4dee777b9b9074a100f174d2ea7c5f787008acacee173e65c5",
+      "case_id": "accessible-dialog-ui",
+      "category": "ui",
+      "contract_quality": {
+        "adjudication_reason": null,
+        "checks": 3,
+        "criteria": 4,
+        "critic_accepted": true,
+        "critic_adjudicated": false,
+        "issues": [],
+        "locked": true,
+        "question": null
+      },
+      "duration_seconds": 15.224,
+      "error": null,
+      "expected_files_present": true,
+      "expected_outcome": "verified_delivery",
+      "failure_class": null,
+      "false_acceptance": false,
+      "integrity_valid": true,
+      "isolation": "inline",
+      "mode": "full_loop",
+      "model": {
+        "model": "deepseek-chat",
+        "provider": "deepseek"
+      },
+      "oracle_passed": true,
+      "provider": "deepseek",
+      "questions": 0,
+      "receipt_replay_error": null,
+      "replay_passed": true,
+      "run": 1,
+      "safe_deferral": false,
+      "solved": true,
+      "steps_used": 5,
+      "stop_reason": "goal_achieved",
+      "task_id": "1feb063c-9aa7-4cd2-95e9-e60753c0d462",
+      "tokens_used": 12900,
+      "trajectory": {
+        "checks": 0,
+        "errors": 0,
+        "finish_attempts": 1,
+        "mutations": 2,
+        "questions": 0,
+        "status_counts": {
+          "ok": 5
+        },
+        "tool_counts": {
+          "edit_file": 1,
+          "finish": 1,
+          "read_file": 2,
+          "write_file": 1
+        },
+        "unique_tools": 4
+      },
+      "undo_error": null,
+      "undo_passed": true
+    },
+    {
+      "accepted": true,
+      "artifact_digest": "b3a99b6f41404f3c47e64de102b588e73195f0038e4a86f00ae2c2d24b5afea0",
+      "case_id": "preserve-config-regressions",
+      "category": "regression",
+      "changed_files": [
+        "config.py"
+      ],
+      "contract_quality": null,
+      "duration_seconds": 2.764,
+      "error": null,
+      "expected_files_present": true,
+      "expected_outcome": "verified_delivery",
+      "failure_class": null,
+      "false_acceptance": false,
+      "integrity_valid": true,
+      "isolation": "temporary-directory",
+      "mode": "one_shot",
+      "model": {
+        "model": "deepseek-chat",
+        "provider": "deepseek"
+      },
+      "oracle_passed": true,
+      "provider": "deepseek",
+      "questions": 0,
+      "replay_passed": true,
+      "run": 1,
+      "safe_deferral": false,
+      "solved": true,
+      "steps_used": 1,
+      "stop_reason": "goal_achieved",
+      "tokens_used": 852,
+      "trajectory": {
+        "checks": 0,
+        "errors": 0,
+        "finish_attempts": 1,
+        "mutations": 0,
+        "questions": 0,
+        "status_counts": {
+          "ok": 1
+        },
+        "tool_counts": {
+          "finish": 1
+        },
+        "unique_tools": 1
+      }
+    },
+    {
+      "accepted": false,
+      "artifact_digest": "c41b4089be9b0fcbd7e81315dc7d7d111729230e86e2aa42838432839502f2e5",
+      "case_id": "preserve-config-regressions",
+      "category": "regression",
+      "contract_quality": null,
+      "duration_seconds": 123.825,
+      "error": null,
+      "expected_files_present": true,
+      "expected_outcome": "verified_delivery",
+      "failure_class": "non-convergence-max_steps",
+      "false_acceptance": false,
+      "integrity_valid": true,
+      "isolation": "temporary-directory/trusted-checks-only",
+      "mode": "ungated_loop",
+      "model": {
+        "model": "deepseek-chat",
+        "provider": "deepseek"
+      },
+      "oracle_passed": false,
+      "provider": "deepseek",
+      "questions": 0,
+      "replay_passed": false,
+      "run": 1,
+      "safe_deferral": false,
+      "solved": false,
+      "steps_used": 12,
+      "stop_reason": "max_steps",
+      "tokens_used": 24245,
+      "trajectory": {
+        "checks": 0,
+        "errors": 11,
+        "finish_attempts": 0,
+        "mutations": 1,
+        "questions": 0,
+        "status_counts": {
+          "error": 11,
+          "ok": 1
+        },
+        "tool_counts": {
+          "edit_file": 1,
+          "invalid": 11
+        },
+        "unique_tools": 2
+      }
+    },
+    {
+      "accepted": false,
+      "apply_error": null,
+      "apply_passed": false,
+      "artifact_digest": null,
+      "case_id": "preserve-config-regressions",
+      "category": "regression",
+      "contract_quality": {
+        "adjudication_reason": null,
+        "checks": 2,
+        "criteria": 7,
+        "critic_accepted": true,
+        "critic_adjudicated": false,
+        "issues": [],
+        "locked": true,
+        "question": null
+      },
+      "duration_seconds": 36.583,
+      "error": null,
+      "expected_files_present": true,
+      "expected_outcome": "verified_delivery",
+      "failure_class": "non-convergence-token-budget",
+      "false_acceptance": false,
+      "integrity_valid": true,
+      "isolation": "inline",
+      "mode": "full_loop",
+      "model": {
+        "model": "deepseek-chat",
+        "provider": "deepseek"
+      },
+      "oracle_passed": false,
+      "provider": "deepseek",
+      "questions": 0,
+      "receipt_replay_error": null,
+      "replay_passed": false,
+      "run": 1,
+      "safe_deferral": false,
+      "solved": false,
+      "steps_used": 7,
+      "stop_reason": "budget_exhausted",
+      "task_id": "7a5b3f73-fc3f-411a-9b26-f474f2313621",
+      "tokens_used": 26455,
+      "trajectory": {
+        "checks": 1,
+        "errors": 1,
+        "finish_attempts": 0,
+        "mutations": 1,
+        "questions": 0,
+        "status_counts": {
+          "error": 1,
+          "ok": 6
+        },
+        "tool_counts": {
+          "read_file": 5,
+          "run_command": 1,
+          "write_file": 1
+        },
+        "unique_tools": 3
+      },
+      "undo_error": null,
+      "undo_passed": false
+    },
+    {
+      "accepted": false,
+      "artifact_digest": "1e9d040db9a9882178d93c1983f322d125206a471ca6217a2a8b21a46249a0b2",
+      "case_id": "resolve-retention-conflict",
+      "category": "incomplete-specification",
+      "changed_files": [],
+      "contract_quality": null,
+      "duration_seconds": 1.204,
+      "error": null,
+      "expected_files_present": true,
+      "expected_outcome": "clarification",
+      "failure_class": null,
+      "false_acceptance": false,
+      "integrity_valid": true,
+      "isolation": "temporary-directory",
+      "mode": "one_shot",
+      "model": {
+        "model": "deepseek-chat",
+        "provider": "deepseek"
+      },
+      "oracle_passed": false,
+      "provider": "deepseek",
+      "questions": 1,
+      "replay_passed": false,
+      "run": 1,
+      "safe_deferral": true,
+      "solved": false,
+      "steps_used": 1,
+      "stop_reason": "clarification",
+      "tokens_used": 266,
+      "trajectory": {
+        "checks": 0,
+        "errors": 0,
+        "finish_attempts": 0,
+        "mutations": 0,
+        "questions": 1,
+        "status_counts": {
+          "ok": 1
+        },
+        "tool_counts": {
+          "ask_user": 1
+        },
+        "unique_tools": 1
+      }
+    },
+    {
+      "accepted": false,
+      "artifact_digest": "1e9d040db9a9882178d93c1983f322d125206a471ca6217a2a8b21a46249a0b2",
+      "case_id": "resolve-retention-conflict",
+      "category": "incomplete-specification",
+      "contract_quality": null,
+      "duration_seconds": 1.428,
+      "error": null,
+      "expected_files_present": true,
+      "expected_outcome": "clarification",
+      "failure_class": null,
+      "false_acceptance": false,
+      "integrity_valid": true,
+      "isolation": "temporary-directory/trusted-checks-only",
+      "mode": "ungated_loop",
+      "model": {
+        "model": "deepseek-chat",
+        "provider": "deepseek"
+      },
+      "oracle_passed": false,
+      "provider": "deepseek",
+      "questions": 1,
+      "replay_passed": false,
+      "run": 1,
+      "safe_deferral": true,
+      "solved": false,
+      "steps_used": 1,
+      "stop_reason": "clarification",
+      "tokens_used": 410,
+      "trajectory": {
+        "checks": 0,
+        "errors": 0,
+        "finish_attempts": 0,
+        "mutations": 0,
+        "questions": 1,
+        "status_counts": {
+          "ok": 1
+        },
+        "tool_counts": {
+          "ask_user": 1
+        },
+        "unique_tools": 1
+      }
+    },
+    {
+      "accepted": false,
+      "apply_error": null,
+      "apply_passed": false,
+      "artifact_digest": null,
+      "case_id": "resolve-retention-conflict",
+      "category": "incomplete-specification",
+      "contract_quality": {
+        "adjudication_reason": null,
+        "checks": 4,
+        "criteria": 3,
+        "critic_accepted": false,
+        "critic_adjudicated": false,
+        "issues": [
+          "The repository contains materially conflicting retention requirements: README.md says 'delete audit logs after 7 days', while policy.md says 'must be retained for a minimum of 90 days'. The proposed contract implements a 90-day threshold, but the user instruction says to implement the policy described by this repository without guessing which to follow.",
+          "Contract confidence is 0%; automatic start requires at least 80%."
+        ],
+        "locked": false,
+        "question": "The repository has conflicting retention requirements: README.md specifies 7 days, while policy.md specifies 90 days. Which retention period should the implementation use?"
+      },
+      "duration_seconds": 17.514,
+      "error": null,
+      "expected_files_present": true,
+      "expected_outcome": "clarification",
+      "failure_class": null,
+      "false_acceptance": false,
+      "integrity_valid": true,
+      "isolation": null,
+      "mode": "full_loop",
+      "model": {
+        "model": "deepseek-chat",
+        "provider": "deepseek"
+      },
+      "oracle_passed": false,
+      "provider": "deepseek",
+      "questions": 1,
+      "receipt_replay_error": null,
+      "replay_passed": false,
+      "run": 1,
+      "safe_deferral": true,
+      "solved": false,
+      "steps_used": 0,
+      "stop_reason": "clarification",
+      "task_id": "c15e355c-8d9c-4397-8dc6-8765347363a0",
+      "tokens_used": 8484,
+      "trajectory": {
+        "checks": 0,
+        "errors": 0,
+        "finish_attempts": 0,
+        "mutations": 0,
+        "questions": 0,
+        "status_counts": {},
+        "tool_counts": {},
+        "unique_tools": 0
+      },
+      "undo_error": null,
+      "undo_passed": false
+    },
+    {
+      "accepted": true,
+      "artifact_digest": "04f03cf54bd3e0e4f5c437135813baa096364432b91c8a52050e25805c3f4839",
+      "case_id": "repair-cart-totals",
+      "category": "bug-repair",
+      "changed_files": [
+        "pricing.py"
+      ],
+      "contract_quality": null,
+      "duration_seconds": 1.706,
+      "error": null,
+      "expected_files_present": true,
+      "expected_outcome": "verified_delivery",
+      "failure_class": null,
+      "false_acceptance": false,
+      "integrity_valid": true,
+      "isolation": "temporary-directory",
+      "mode": "one_shot",
+      "model": {
+        "model": "deepseek-chat",
+        "provider": "deepseek"
+      },
+      "oracle_passed": true,
+      "provider": "deepseek",
+      "questions": 0,
+      "replay_passed": true,
+      "run": 2,
+      "safe_deferral": false,
+      "solved": true,
+      "steps_used": 1,
+      "stop_reason": "goal_achieved",
+      "tokens_used": 540,
+      "trajectory": {
+        "checks": 0,
+        "errors": 0,
+        "finish_attempts": 1,
+        "mutations": 0,
+        "questions": 0,
+        "status_counts": {
+          "ok": 1
+        },
+        "tool_counts": {
+          "finish": 1
+        },
+        "unique_tools": 1
+      }
+    },
+    {
+      "accepted": true,
+      "artifact_digest": "04f03cf54bd3e0e4f5c437135813baa096364432b91c8a52050e25805c3f4839",
+      "case_id": "repair-cart-totals",
+      "category": "bug-repair",
+      "contract_quality": null,
+      "duration_seconds": 4.928,
+      "error": null,
+      "expected_files_present": true,
+      "expected_outcome": "verified_delivery",
+      "failure_class": null,
+      "false_acceptance": false,
+      "integrity_valid": true,
+      "isolation": "temporary-directory/trusted-checks-only",
+      "mode": "ungated_loop",
+      "model": {
+        "model": "deepseek-chat",
+        "provider": "deepseek"
+      },
+      "oracle_passed": true,
+      "provider": "deepseek",
+      "questions": 0,
+      "replay_passed": true,
+      "run": 2,
+      "safe_deferral": false,
+      "solved": true,
+      "steps_used": 3,
+      "stop_reason": "goal_achieved",
+      "tokens_used": 2128,
+      "trajectory": {
+        "checks": 1,
+        "errors": 0,
+        "finish_attempts": 1,
+        "mutations": 1,
+        "questions": 0,
+        "status_counts": {
+          "ok": 3
+        },
+        "tool_counts": {
+          "edit_file": 1,
+          "finish": 1,
+          "run_check": 1
+        },
+        "unique_tools": 3
+      }
+    },
+    {
+      "accepted": true,
+      "apply_error": null,
+      "apply_passed": true,
+      "artifact_digest": "81dee6d207babf3ae7d19dd967a05d0362c0d64eac44d3458958eef7d39c72ce",
+      "case_id": "repair-cart-totals",
+      "category": "bug-repair",
+      "contract_quality": {
+        "adjudication_reason": null,
+        "checks": 2,
+        "criteria": 4,
+        "critic_accepted": true,
+        "critic_adjudicated": false,
+        "issues": [],
+        "locked": true,
+        "question": null
+      },
+      "duration_seconds": 11.946,
+      "error": null,
+      "expected_files_present": true,
+      "expected_outcome": "verified_delivery",
+      "failure_class": null,
+      "false_acceptance": false,
+      "integrity_valid": true,
+      "isolation": "inline",
+      "mode": "full_loop",
+      "model": {
+        "model": "deepseek-chat",
+        "provider": "deepseek"
+      },
+      "oracle_passed": true,
+      "provider": "deepseek",
+      "questions": 0,
+      "receipt_replay_error": null,
+      "replay_passed": true,
+      "run": 2,
+      "safe_deferral": false,
+      "solved": true,
+      "steps_used": 4,
+      "stop_reason": "goal_achieved",
+      "task_id": "ef80f1ba-42f1-476d-a9dd-4a14164657cf",
+      "tokens_used": 8379,
+      "trajectory": {
+        "checks": 0,
+        "errors": 0,
+        "finish_attempts": 1,
+        "mutations": 1,
+        "questions": 0,
+        "status_counts": {
+          "ok": 4
+        },
+        "tool_counts": {
+          "edit_file": 1,
+          "finish": 1,
+          "read_file": 2
+        },
+        "unique_tools": 3
+      },
+      "undo_error": null,
+      "undo_passed": true
+    },
+    {
+      "accepted": false,
+      "artifact_digest": "7b7d5ece20ff82fb653bdfb6243c9f31d88cf27b7179aff908b534f918fc5d2f",
+      "case_id": "add-rate-limiter",
+      "category": "feature-work",
+      "changed_files": [],
+      "contract_quality": null,
+      "duration_seconds": 2.252,
+      "error": null,
+      "expected_files_present": true,
+      "expected_outcome": "verified_delivery",
+      "failure_class": "unverified-output",
+      "false_acceptance": false,
+      "integrity_valid": true,
+      "isolation": "temporary-directory",
+      "mode": "one_shot",
+      "model": {
+        "model": "deepseek-chat",
+        "provider": "deepseek"
+      },
+      "oracle_passed": false,
+      "provider": "deepseek",
+      "questions": 0,
+      "replay_passed": false,
+      "run": 2,
+      "safe_deferral": false,
+      "solved": false,
+      "steps_used": 1,
+      "stop_reason": "invalid_response",
+      "tokens_used": 770,
+      "trajectory": {
+        "checks": 0,
+        "errors": 1,
+        "finish_attempts": 0,
+        "mutations": 0,
+        "questions": 0,
+        "status_counts": {
+          "error": 1
+        },
+        "tool_counts": {
+          "invalid": 1
+        },
+        "unique_tools": 1
+      }
+    },
+    {
+      "accepted": true,
+      "artifact_digest": "d084928c066baf5f4fc6eef11fd8f26082fb5154467d762aff9f354219540d41",
+      "case_id": "add-rate-limiter",
+      "category": "feature-work",
+      "contract_quality": null,
+      "duration_seconds": 10.609,
+      "error": null,
+      "expected_files_present": true,
+      "expected_outcome": "verified_delivery",
+      "failure_class": null,
+      "false_acceptance": false,
+      "integrity_valid": true,
+      "isolation": "temporary-directory/trusted-checks-only",
+      "mode": "ungated_loop",
+      "model": {
+        "model": "deepseek-chat",
+        "provider": "deepseek"
+      },
+      "oracle_passed": true,
+      "provider": "deepseek",
+      "questions": 0,
+      "replay_passed": true,
+      "run": 2,
+      "safe_deferral": false,
+      "solved": true,
+      "steps_used": 4,
+      "stop_reason": "goal_achieved",
+      "tokens_used": 4194,
+      "trajectory": {
+        "checks": 1,
+        "errors": 1,
+        "finish_attempts": 1,
+        "mutations": 1,
+        "questions": 0,
+        "status_counts": {
+          "error": 1,
+          "ok": 3
+        },
+        "tool_counts": {
+          "edit_file": 1,
+          "finish": 1,
+          "invalid": 1,
+          "run_check": 1
+        },
+        "unique_tools": 4
+      }
+    },
+    {
+      "accepted": true,
+      "apply_error": null,
+      "apply_passed": true,
+      "artifact_digest": "aa9ebbf830de8bdfd065b47aceecad825d5d33836bbb7cfe7f623361675be812",
+      "case_id": "add-rate-limiter",
+      "category": "feature-work",
+      "contract_quality": {
+        "adjudication_reason": null,
+        "checks": 2,
+        "criteria": 6,
+        "critic_accepted": true,
+        "critic_adjudicated": false,
+        "issues": [],
+        "locked": true,
+        "question": null
+      },
+      "duration_seconds": 11.888,
+      "error": null,
+      "expected_files_present": true,
+      "expected_outcome": "verified_delivery",
+      "failure_class": null,
+      "false_acceptance": false,
+      "integrity_valid": true,
+      "isolation": "inline",
+      "mode": "full_loop",
+      "model": {
+        "model": "deepseek-chat",
+        "provider": "deepseek"
+      },
+      "oracle_passed": true,
+      "provider": "deepseek",
+      "questions": 0,
+      "receipt_replay_error": null,
+      "replay_passed": true,
+      "run": 2,
+      "safe_deferral": false,
+      "solved": true,
+      "steps_used": 3,
+      "stop_reason": "goal_achieved",
+      "task_id": "b394c44f-1cc1-468d-b3df-9287cc115806",
+      "tokens_used": 7555,
+      "trajectory": {
+        "checks": 0,
+        "errors": 0,
+        "finish_attempts": 1,
+        "mutations": 1,
+        "questions": 0,
+        "status_counts": {
+          "ok": 3
+        },
+        "tool_counts": {
+          "finish": 1,
+          "read_file": 1,
+          "write_file": 1
+        },
+        "unique_tools": 3
+      },
+      "undo_error": null,
+      "undo_passed": true
+    },
+    {
+      "accepted": true,
+      "artifact_digest": "d17a2086d8d258bebe13f3e0fdb4a96a6f07c9ea957d1faa3fa8bf12b84ec179",
+      "case_id": "refactor-notification-channels",
+      "category": "multi-file-refactor",
+      "changed_files": [
+        "notifications/registry.py",
+        "notifications/service.py"
+      ],
+      "contract_quality": null,
+      "duration_seconds": 2.112,
+      "error": null,
+      "expected_files_present": true,
+      "expected_outcome": "verified_delivery",
+      "failure_class": null,
+      "false_acceptance": false,
+      "integrity_valid": true,
+      "isolation": "temporary-directory",
+      "mode": "one_shot",
+      "model": {
+        "model": "deepseek-chat",
+        "provider": "deepseek"
+      },
+      "oracle_passed": true,
+      "provider": "deepseek",
+      "questions": 0,
+      "replay_passed": true,
+      "run": 2,
+      "safe_deferral": false,
+      "solved": true,
+      "steps_used": 1,
+      "stop_reason": "goal_achieved",
+      "tokens_used": 762,
+      "trajectory": {
+        "checks": 0,
+        "errors": 0,
+        "finish_attempts": 1,
+        "mutations": 0,
+        "questions": 0,
+        "status_counts": {
+          "ok": 1
+        },
+        "tool_counts": {
+          "finish": 1
+        },
+        "unique_tools": 1
+      }
+    },
+    {
+      "accepted": true,
+      "artifact_digest": "4dd28838dbf1252403730f7244846b7ef7badf1156481a38f274f9ab8f09705e",
+      "case_id": "refactor-notification-channels",
+      "category": "multi-file-refactor",
+      "contract_quality": null,
+      "duration_seconds": 7.534,
+      "error": null,
+      "expected_files_present": true,
+      "expected_outcome": "verified_delivery",
+      "failure_class": null,
+      "false_acceptance": false,
+      "integrity_valid": true,
+      "isolation": "temporary-directory/trusted-checks-only",
+      "mode": "ungated_loop",
+      "model": {
+        "model": "deepseek-chat",
+        "provider": "deepseek"
+      },
+      "oracle_passed": true,
+      "provider": "deepseek",
+      "questions": 0,
+      "replay_passed": true,
+      "run": 2,
+      "safe_deferral": false,
+      "solved": true,
+      "steps_used": 4,
+      "stop_reason": "goal_achieved",
+      "tokens_used": 3626,
+      "trajectory": {
+        "checks": 1,
+        "errors": 0,
+        "finish_attempts": 1,
+        "mutations": 2,
+        "questions": 0,
+        "status_counts": {
+          "ok": 4
+        },
+        "tool_counts": {
+          "edit_file": 1,
+          "finish": 1,
+          "run_check": 1,
+          "write_file": 1
+        },
+        "unique_tools": 4
+      }
+    },
+    {
+      "accepted": false,
+      "apply_error": null,
+      "apply_passed": false,
+      "artifact_digest": null,
+      "case_id": "refactor-notification-channels",
+      "category": "multi-file-refactor",
+      "contract_quality": {
+        "adjudication_reason": null,
+        "checks": 8,
+        "criteria": 5,
+        "critic_accepted": true,
+        "critic_adjudicated": false,
+        "issues": [],
+        "locked": true,
+        "question": null
+      },
+      "duration_seconds": 26.924,
+      "error": null,
+      "expected_files_present": true,
+      "expected_outcome": "verified_delivery",
+      "failure_class": "non-convergence-token-budget",
+      "false_acceptance": false,
+      "integrity_valid": true,
+      "isolation": "inline",
+      "mode": "full_loop",
+      "model": {
+        "model": "deepseek-chat",
+        "provider": "deepseek"
+      },
+      "oracle_passed": false,
+      "provider": "deepseek",
+      "questions": 0,
+      "receipt_replay_error": null,
+      "replay_passed": false,
+      "run": 2,
+      "safe_deferral": false,
+      "solved": false,
+      "steps_used": 10,
+      "stop_reason": "budget_exhausted",
+      "task_id": "422d46b6-7f6d-4f83-b26f-5afb54b39924",
+      "tokens_used": 28955,
+      "trajectory": {
+        "checks": 1,
+        "errors": 0,
+        "finish_attempts": 1,
+        "mutations": 3,
+        "questions": 0,
+        "status_counts": {
+          "ok": 10
+        },
+        "tool_counts": {
+          "edit_file": 2,
+          "finish": 1,
+          "read_file": 5,
+          "run_command": 1,
+          "write_file": 1
+        },
+        "unique_tools": 5
+      },
+      "undo_error": null,
+      "undo_passed": false
+    },
+    {
+      "accepted": true,
+      "artifact_digest": "f64454d6340787d24c60a426a1935d8e528178b1a75399d147207e9e391d1109",
+      "case_id": "extend-task-cli",
+      "category": "cli",
+      "changed_files": [
+        "src/cli.mjs"
+      ],
+      "contract_quality": null,
+      "duration_seconds": 4.724,
+      "error": null,
+      "expected_files_present": true,
+      "expected_outcome": "verified_delivery",
+      "failure_class": null,
+      "false_acceptance": false,
+      "integrity_valid": true,
+      "isolation": "temporary-directory",
+      "mode": "one_shot",
+      "model": {
+        "model": "deepseek-chat",
+        "provider": "deepseek"
+      },
+      "oracle_passed": true,
+      "provider": "deepseek",
+      "questions": 0,
+      "replay_passed": true,
+      "run": 2,
+      "safe_deferral": false,
+      "solved": true,
+      "steps_used": 1,
+      "stop_reason": "goal_achieved",
+      "tokens_used": 1284,
+      "trajectory": {
+        "checks": 0,
+        "errors": 0,
+        "finish_attempts": 1,
+        "mutations": 0,
+        "questions": 0,
+        "status_counts": {
+          "ok": 1
+        },
+        "tool_counts": {
+          "finish": 1
+        },
+        "unique_tools": 1
+      }
+    },
+    {
+      "accepted": true,
+      "artifact_digest": "3860530bf421b42f46d879a452f505a710cef1fd7aa74318a59e0e102d8a12bf",
+      "case_id": "extend-task-cli",
+      "category": "cli",
+      "contract_quality": null,
+      "duration_seconds": 8.907,
+      "error": null,
+      "expected_files_present": true,
+      "expected_outcome": "verified_delivery",
+      "failure_class": null,
+      "false_acceptance": false,
+      "integrity_valid": true,
+      "isolation": "temporary-directory/trusted-checks-only",
+      "mode": "ungated_loop",
+      "model": {
+        "model": "deepseek-chat",
+        "provider": "deepseek"
+      },
+      "oracle_passed": true,
+      "provider": "deepseek",
+      "questions": 0,
+      "replay_passed": true,
+      "run": 2,
+      "safe_deferral": false,
+      "solved": true,
+      "steps_used": 3,
+      "stop_reason": "goal_achieved",
+      "tokens_used": 4096,
+      "trajectory": {
+        "checks": 1,
+        "errors": 0,
+        "finish_attempts": 1,
+        "mutations": 1,
+        "questions": 0,
+        "status_counts": {
+          "ok": 3
+        },
+        "tool_counts": {
+          "edit_file": 1,
+          "finish": 1,
+          "run_check": 1
+        },
+        "unique_tools": 3
+      }
+    },
+    {
+      "accepted": true,
+      "apply_error": null,
+      "apply_passed": true,
+      "artifact_digest": "c065172b5f3dec1671d2bfec9866c66e40eb07c283ca6623b27ba042f8f772b4",
+      "case_id": "extend-task-cli",
+      "category": "cli",
+      "contract_quality": {
+        "adjudication_reason": "The critic supplied no user-answerable question and the deterministic contract validator found no blocking issue. Every criterion maps to a discovered test gate whose test sources were included in bounded repository discovery; the critic's issues remain recorded as advisory evidence.",
+        "checks": 2,
+        "criteria": 4,
+        "critic_accepted": true,
+        "critic_adjudicated": true,
+        "issues": [
+          "The check 'contract-001' maps to all four criteria but only runs `npm run test`. The existing test file `test/cli.test.mjs` does not contain a test for `list --status <value> --format json` that filters by an exact status other than 'open' (e.g., 'closed'), nor does it test that the output is a JSON array (the existing test parses JSON but does not assert it is an array). Additionally, the test for missing status value uses `run(\"list\", \"--status\")` which passes `--status` as the last argument;"
+        ],
+        "locked": true,
+        "question": null
+      },
+      "duration_seconds": 16.721,
+      "error": null,
+      "expected_files_present": true,
+      "expected_outcome": "verified_delivery",
+      "failure_class": null,
+      "false_acceptance": false,
+      "integrity_valid": true,
+      "isolation": "inline",
+      "mode": "full_loop",
+      "model": {
+        "model": "deepseek-chat",
+        "provider": "deepseek"
+      },
+      "oracle_passed": true,
+      "provider": "deepseek",
+      "questions": 0,
+      "receipt_replay_error": null,
+      "replay_passed": true,
+      "run": 2,
+      "safe_deferral": false,
+      "solved": true,
+      "steps_used": 4,
+      "stop_reason": "goal_achieved",
+      "task_id": "73ca5874-4750-487a-ad48-3b441c2b40b2",
+      "tokens_used": 10405,
+      "trajectory": {
+        "checks": 0,
+        "errors": 0,
+        "finish_attempts": 1,
+        "mutations": 1,
+        "questions": 0,
+        "status_counts": {
+          "ok": 4
+        },
+        "tool_counts": {
+          "finish": 1,
+          "read_file": 2,
+          "write_file": 1
+        },
+        "unique_tools": 3
+      },
+      "undo_error": null,
+      "undo_passed": true
+    },
+    {
+      "accepted": true,
+      "artifact_digest": "07db04791b3f639e33d64feb244308d0e232044b0a5944c39d2c44f17e4e62ef",
+      "case_id": "idempotent-order-api",
+      "category": "api",
+      "changed_files": [
+        "orders.py"
+      ],
+      "contract_quality": null,
+      "duration_seconds": 2.708,
+      "error": null,
+      "expected_files_present": true,
+      "expected_outcome": "verified_delivery",
+      "failure_class": "false-acceptance-oracle",
+      "false_acceptance": true,
+      "integrity_valid": true,
+      "isolation": "temporary-directory",
+      "mode": "one_shot",
+      "model": {
+        "model": "deepseek-chat",
+        "provider": "deepseek"
+      },
+      "oracle_passed": false,
+      "provider": "deepseek",
+      "questions": 0,
+      "replay_passed": false,
+      "run": 2,
+      "safe_deferral": false,
+      "solved": false,
+      "steps_used": 1,
+      "stop_reason": "goal_achieved",
+      "tokens_used": 959,
+      "trajectory": {
+        "checks": 0,
+        "errors": 0,
+        "finish_attempts": 1,
+        "mutations": 0,
+        "questions": 0,
+        "status_counts": {
+          "ok": 1
+        },
+        "tool_counts": {
+          "finish": 1
+        },
+        "unique_tools": 1
+      }
+    },
+    {
+      "accepted": true,
+      "artifact_digest": "a1325cdd06bb46583a2fc26f52a23198b1147be4e30763df533291b70db651a4",
+      "case_id": "idempotent-order-api",
+      "category": "api",
+      "contract_quality": null,
+      "duration_seconds": 11.479,
+      "error": null,
+      "expected_files_present": true,
+      "expected_outcome": "verified_delivery",
+      "failure_class": null,
+      "false_acceptance": false,
+      "integrity_valid": true,
+      "isolation": "temporary-directory/trusted-checks-only",
+      "mode": "ungated_loop",
+      "model": {
+        "model": "deepseek-chat",
+        "provider": "deepseek"
+      },
+      "oracle_passed": true,
+      "provider": "deepseek",
+      "questions": 0,
+      "replay_passed": true,
+      "run": 2,
+      "safe_deferral": false,
+      "solved": true,
+      "steps_used": 6,
+      "stop_reason": "goal_achieved",
+      "tokens_used": 7059,
+      "trajectory": {
+        "checks": 2,
+        "errors": 1,
+        "finish_attempts": 1,
+        "mutations": 2,
+        "questions": 0,
+        "status_counts": {
+          "error": 1,
+          "ok": 5
+        },
+        "tool_counts": {
+          "edit_file": 2,
+          "finish": 1,
+          "read_file": 1,
+          "run_check": 2
+        },
+        "unique_tools": 4
+      }
+    },
+    {
+      "accepted": true,
+      "apply_error": null,
+      "apply_passed": true,
+      "artifact_digest": "3990a8fb6202fc2ed555b9c4825f053d993c53f4df8a73d41be05b352430d673",
+      "case_id": "idempotent-order-api",
+      "category": "api",
+      "contract_quality": {
+        "adjudication_reason": null,
+        "checks": 2,
+        "criteria": 4,
+        "critic_accepted": true,
+        "critic_adjudicated": false,
+        "issues": [],
+        "locked": true,
+        "question": null
+      },
+      "duration_seconds": 29.762,
+      "error": null,
+      "expected_files_present": true,
+      "expected_outcome": "verified_delivery",
+      "failure_class": null,
+      "false_acceptance": false,
+      "integrity_valid": true,
+      "isolation": "inline",
+      "mode": "full_loop",
+      "model": {
+        "model": "deepseek-chat",
+        "provider": "deepseek"
+      },
+      "oracle_passed": true,
+      "provider": "deepseek",
+      "questions": 0,
+      "receipt_replay_error": null,
+      "replay_passed": true,
+      "run": 2,
+      "safe_deferral": false,
+      "solved": true,
+      "steps_used": 9,
+      "stop_reason": "goal_achieved",
+      "task_id": "eb0639b6-29d2-496a-b802-0e2d1b779989",
+      "tokens_used": 26466,
+      "trajectory": {
+        "checks": 1,
+        "errors": 1,
+        "finish_attempts": 1,
+        "mutations": 2,
+        "questions": 0,
+        "status_counts": {
+          "error": 1,
+          "ok": 8
+        },
+        "tool_counts": {
+          "edit_file": 1,
+          "finish": 1,
+          "read_file": 5,
+          "run_command": 1,
+          "write_file": 1
+        },
+        "unique_tools": 5
+      },
+      "undo_error": null,
+      "undo_passed": true
+    },
+    {
+      "accepted": true,
+      "artifact_digest": "c64a4c2c8930cdb1c5a951fc68df5e98fe5be889f1d25c6819f58ad8d9a87047",
+      "case_id": "accessible-dialog-ui",
+      "category": "ui",
+      "changed_files": [
+        "dialog.mjs",
+        "index.html"
+      ],
+      "contract_quality": null,
+      "duration_seconds": 3.896,
+      "error": null,
+      "expected_files_present": true,
+      "expected_outcome": "verified_delivery",
+      "failure_class": null,
+      "false_acceptance": false,
+      "integrity_valid": true,
+      "isolation": "temporary-directory",
+      "mode": "one_shot",
+      "model": {
+        "model": "deepseek-chat",
+        "provider": "deepseek"
+      },
+      "oracle_passed": true,
+      "provider": "deepseek",
+      "questions": 0,
+      "replay_passed": true,
+      "run": 2,
+      "safe_deferral": false,
+      "solved": true,
+      "steps_used": 1,
+      "stop_reason": "goal_achieved",
+      "tokens_used": 1323,
+      "trajectory": {
+        "checks": 0,
+        "errors": 0,
+        "finish_attempts": 1,
+        "mutations": 0,
+        "questions": 0,
+        "status_counts": {
+          "ok": 1
+        },
+        "tool_counts": {
+          "finish": 1
+        },
+        "unique_tools": 1
+      }
+    },
+    {
+      "accepted": true,
+      "artifact_digest": "c64a4c2c8930cdb1c5a951fc68df5e98fe5be889f1d25c6819f58ad8d9a87047",
+      "case_id": "accessible-dialog-ui",
+      "category": "ui",
+      "contract_quality": null,
+      "duration_seconds": 9.401,
+      "error": null,
+      "expected_files_present": true,
+      "expected_outcome": "verified_delivery",
+      "failure_class": null,
+      "false_acceptance": false,
+      "integrity_valid": true,
+      "isolation": "temporary-directory/trusted-checks-only",
+      "mode": "ungated_loop",
+      "model": {
+        "model": "deepseek-chat",
+        "provider": "deepseek"
+      },
+      "oracle_passed": true,
+      "provider": "deepseek",
+      "questions": 0,
+      "replay_passed": true,
+      "run": 2,
+      "safe_deferral": false,
+      "solved": true,
+      "steps_used": 4,
+      "stop_reason": "goal_achieved",
+      "tokens_used": 5204,
+      "trajectory": {
+        "checks": 1,
+        "errors": 0,
+        "finish_attempts": 1,
+        "mutations": 2,
+        "questions": 0,
+        "status_counts": {
+          "ok": 4
+        },
+        "tool_counts": {
+          "edit_file": 2,
+          "finish": 1,
+          "run_check": 1
+        },
+        "unique_tools": 3
+      }
+    },
+    {
+      "accepted": true,
+      "apply_error": null,
+      "apply_passed": true,
+      "artifact_digest": "2315bba5551d3177377f226ad20419d83432df1df32fb20e0a797141e322e6c4",
+      "case_id": "accessible-dialog-ui",
+      "category": "ui",
+      "contract_quality": {
+        "adjudication_reason": null,
+        "checks": 3,
+        "criteria": 4,
+        "critic_accepted": true,
+        "critic_adjudicated": false,
+        "issues": [],
+        "locked": true,
+        "question": null
+      },
+      "duration_seconds": 19.317,
+      "error": null,
+      "expected_files_present": true,
+      "expected_outcome": "verified_delivery",
+      "failure_class": null,
+      "false_acceptance": false,
+      "integrity_valid": true,
+      "isolation": "inline",
+      "mode": "full_loop",
+      "model": {
+        "model": "deepseek-chat",
+        "provider": "deepseek"
+      },
+      "oracle_passed": true,
+      "provider": "deepseek",
+      "questions": 0,
+      "receipt_replay_error": null,
+      "replay_passed": true,
+      "run": 2,
+      "safe_deferral": false,
+      "solved": true,
+      "steps_used": 6,
+      "stop_reason": "goal_achieved",
+      "task_id": "232d3061-d6de-472f-9ea3-82c3766003cd",
+      "tokens_used": 15634,
+      "trajectory": {
+        "checks": 0,
+        "errors": 0,
+        "finish_attempts": 1,
+        "mutations": 2,
+        "questions": 0,
+        "status_counts": {
+          "ok": 6
+        },
+        "tool_counts": {
+          "edit_file": 1,
+          "finish": 1,
+          "read_file": 3,
+          "write_file": 1
+        },
+        "unique_tools": 4
+      },
+      "undo_error": null,
+      "undo_passed": true
+    },
+    {
+      "accepted": true,
+      "artifact_digest": "b3a99b6f41404f3c47e64de102b588e73195f0038e4a86f00ae2c2d24b5afea0",
+      "case_id": "preserve-config-regressions",
+      "category": "regression",
+      "changed_files": [
+        "config.py"
+      ],
+      "contract_quality": null,
+      "duration_seconds": 2.752,
+      "error": null,
+      "expected_files_present": true,
+      "expected_outcome": "verified_delivery",
+      "failure_class": null,
+      "false_acceptance": false,
+      "integrity_valid": true,
+      "isolation": "temporary-directory",
+      "mode": "one_shot",
+      "model": {
+        "model": "deepseek-chat",
+        "provider": "deepseek"
+      },
+      "oracle_passed": true,
+      "provider": "deepseek",
+      "questions": 0,
+      "replay_passed": true,
+      "run": 2,
+      "safe_deferral": false,
+      "solved": true,
+      "steps_used": 1,
+      "stop_reason": "goal_achieved",
+      "tokens_used": 852,
+      "trajectory": {
+        "checks": 0,
+        "errors": 0,
+        "finish_attempts": 1,
+        "mutations": 0,
+        "questions": 0,
+        "status_counts": {
+          "ok": 1
+        },
+        "tool_counts": {
+          "finish": 1
+        },
+        "unique_tools": 1
+      }
+    },
+    {
+      "accepted": true,
+      "artifact_digest": "32da2d197ce0fb39fa5276106eddebce0141af06fa35b78b7b3c607d70cbe3f4",
+      "case_id": "preserve-config-regressions",
+      "category": "regression",
+      "contract_quality": null,
+      "duration_seconds": 7.75,
+      "error": null,
+      "expected_files_present": true,
+      "expected_outcome": "verified_delivery",
+      "failure_class": null,
+      "false_acceptance": false,
+      "integrity_valid": true,
+      "isolation": "temporary-directory/trusted-checks-only",
+      "mode": "ungated_loop",
+      "model": {
+        "model": "deepseek-chat",
+        "provider": "deepseek"
+      },
+      "oracle_passed": true,
+      "provider": "deepseek",
+      "questions": 0,
+      "replay_passed": true,
+      "run": 2,
+      "safe_deferral": false,
+      "solved": true,
+      "steps_used": 3,
+      "stop_reason": "goal_achieved",
+      "tokens_used": 3147,
+      "trajectory": {
+        "checks": 1,
+        "errors": 0,
+        "finish_attempts": 1,
+        "mutations": 1,
+        "questions": 0,
+        "status_counts": {
+          "ok": 3
+        },
+        "tool_counts": {
+          "edit_file": 1,
+          "finish": 1,
+          "run_check": 1
+        },
+        "unique_tools": 3
+      }
+    },
+    {
+      "accepted": true,
+      "apply_error": null,
+      "apply_passed": true,
+      "artifact_digest": "ab1039a81ea688aeca061f97f2a2fd9c7f1b9636ad6f5076168da222aaf8ffa0",
+      "case_id": "preserve-config-regressions",
+      "category": "regression",
+      "contract_quality": {
+        "adjudication_reason": null,
+        "checks": 2,
+        "criteria": 6,
+        "critic_accepted": true,
+        "critic_adjudicated": false,
+        "issues": [],
+        "locked": true,
+        "question": null
+      },
+      "duration_seconds": 49.692,
+      "error": null,
+      "expected_files_present": true,
+      "expected_outcome": "verified_delivery",
+      "failure_class": null,
+      "false_acceptance": false,
+      "integrity_valid": true,
+      "isolation": "inline",
+      "mode": "full_loop",
+      "model": {
+        "model": "deepseek-chat",
+        "provider": "deepseek"
+      },
+      "oracle_passed": true,
+      "provider": "deepseek",
+      "questions": 0,
+      "receipt_replay_error": null,
+      "replay_passed": true,
+      "run": 2,
+      "safe_deferral": false,
+      "solved": true,
+      "steps_used": 8,
+      "stop_reason": "goal_achieved",
+      "task_id": "9ba283dd-5e2c-4dab-91e1-b10040c6104a",
+      "tokens_used": 25525,
+      "trajectory": {
+        "checks": 2,
+        "errors": 1,
+        "finish_attempts": 1,
+        "mutations": 3,
+        "questions": 0,
+        "status_counts": {
+          "error": 1,
+          "ok": 7
+        },
+        "tool_counts": {
+          "edit_file": 1,
+          "finish": 1,
+          "read_file": 2,
+          "run_command": 2,
+          "write_file": 2
+        },
+        "unique_tools": 5
+      },
+      "undo_error": null,
+      "undo_passed": true
+    },
+    {
+      "accepted": false,
+      "artifact_digest": "1e9d040db9a9882178d93c1983f322d125206a471ca6217a2a8b21a46249a0b2",
+      "case_id": "resolve-retention-conflict",
+      "category": "incomplete-specification",
+      "changed_files": [],
+      "contract_quality": null,
+      "duration_seconds": 1.238,
+      "error": null,
+      "expected_files_present": true,
+      "expected_outcome": "clarification",
+      "failure_class": null,
+      "false_acceptance": false,
+      "integrity_valid": true,
+      "isolation": "temporary-directory",
+      "mode": "one_shot",
+      "model": {
+        "model": "deepseek-chat",
+        "provider": "deepseek"
+      },
+      "oracle_passed": false,
+      "provider": "deepseek",
+      "questions": 1,
+      "replay_passed": false,
+      "run": 2,
+      "safe_deferral": true,
+      "solved": false,
+      "steps_used": 1,
+      "stop_reason": "clarification",
+      "tokens_used": 266,
+      "trajectory": {
+        "checks": 0,
+        "errors": 0,
+        "finish_attempts": 0,
+        "mutations": 0,
+        "questions": 1,
+        "status_counts": {
+          "ok": 1
+        },
+        "tool_counts": {
+          "ask_user": 1
+        },
+        "unique_tools": 1
+      }
+    },
+    {
+      "accepted": false,
+      "artifact_digest": "1e9d040db9a9882178d93c1983f322d125206a471ca6217a2a8b21a46249a0b2",
+      "case_id": "resolve-retention-conflict",
+      "category": "incomplete-specification",
+      "contract_quality": null,
+      "duration_seconds": 1.63,
+      "error": null,
+      "expected_files_present": true,
+      "expected_outcome": "clarification",
+      "failure_class": null,
+      "false_acceptance": false,
+      "integrity_valid": true,
+      "isolation": "temporary-directory/trusted-checks-only",
+      "mode": "ungated_loop",
+      "model": {
+        "model": "deepseek-chat",
+        "provider": "deepseek"
+      },
+      "oracle_passed": false,
+      "provider": "deepseek",
+      "questions": 1,
+      "replay_passed": false,
+      "run": 2,
+      "safe_deferral": true,
+      "solved": false,
+      "steps_used": 1,
+      "stop_reason": "clarification",
+      "tokens_used": 411,
+      "trajectory": {
+        "checks": 0,
+        "errors": 0,
+        "finish_attempts": 0,
+        "mutations": 0,
+        "questions": 1,
+        "status_counts": {
+          "ok": 1
+        },
+        "tool_counts": {
+          "ask_user": 1
+        },
+        "unique_tools": 1
+      }
+    },
+    {
+      "accepted": false,
+      "apply_error": null,
+      "apply_passed": false,
+      "artifact_digest": null,
+      "case_id": "resolve-retention-conflict",
+      "category": "incomplete-specification",
+      "contract_quality": {
+        "adjudication_reason": null,
+        "checks": 4,
+        "criteria": 2,
+        "critic_accepted": false,
+        "critic_adjudicated": false,
+        "issues": [
+          "The repository contains materially conflicting retention requirements: README.md says 7 days, policy.md says 90 days. The user instruction says to implement the policy described by the repository, but there is a material conflict. I will ask a clarification question before proceeding."
+        ],
+        "locked": false,
+        "question": "README.md specifies a 7-day retention period, while policy.md specifies a 90-day retention period. Which retention period should the implementation follow?"
+      },
+      "duration_seconds": 15.47,
+      "error": null,
+      "expected_files_present": true,
+      "expected_outcome": "clarification",
+      "failure_class": null,
+      "false_acceptance": false,
+      "integrity_valid": true,
+      "isolation": null,
+      "mode": "full_loop",
+      "model": {
+        "model": "deepseek-chat",
+        "provider": "deepseek"
+      },
+      "oracle_passed": false,
+      "provider": "deepseek",
+      "questions": 1,
+      "receipt_replay_error": null,
+      "replay_passed": false,
+      "run": 2,
+      "safe_deferral": true,
+      "solved": false,
+      "steps_used": 0,
+      "stop_reason": "clarification",
+      "task_id": "aa9fb5a5-8a24-451d-937b-58d029616989",
+      "tokens_used": 7628,
+      "trajectory": {
+        "checks": 0,
+        "errors": 0,
+        "finish_attempts": 0,
+        "mutations": 0,
+        "questions": 0,
+        "status_counts": {},
+        "tool_counts": {},
+        "unique_tools": 0
+      },
+      "undo_error": null,
+      "undo_passed": false
+    },
+    {
+      "accepted": true,
+      "artifact_digest": "04f03cf54bd3e0e4f5c437135813baa096364432b91c8a52050e25805c3f4839",
+      "case_id": "repair-cart-totals",
+      "category": "bug-repair",
+      "changed_files": [
+        "pricing.py"
+      ],
+      "contract_quality": null,
+      "duration_seconds": 2.078,
+      "error": null,
+      "expected_files_present": true,
+      "expected_outcome": "verified_delivery",
+      "failure_class": null,
+      "false_acceptance": false,
+      "integrity_valid": true,
+      "isolation": "temporary-directory",
+      "mode": "one_shot",
+      "model": {
+        "model": "deepseek-chat",
+        "provider": "deepseek"
+      },
+      "oracle_passed": true,
+      "provider": "deepseek",
+      "questions": 0,
+      "replay_passed": true,
+      "run": 3,
+      "safe_deferral": false,
+      "solved": true,
+      "steps_used": 1,
+      "stop_reason": "goal_achieved",
+      "tokens_used": 546,
+      "trajectory": {
+        "checks": 0,
+        "errors": 0,
+        "finish_attempts": 1,
+        "mutations": 0,
+        "questions": 0,
+        "status_counts": {
+          "ok": 1
+        },
+        "tool_counts": {
+          "finish": 1
+        },
+        "unique_tools": 1
+      }
+    },
+    {
+      "accepted": true,
+      "artifact_digest": "a50c04a524cd6ef20172cc6968d4aba0a769dbd58f42a85a0f3a8a157cfd6b4b",
+      "case_id": "repair-cart-totals",
+      "category": "bug-repair",
+      "contract_quality": null,
+      "duration_seconds": 6.459,
+      "error": null,
+      "expected_files_present": true,
+      "expected_outcome": "verified_delivery",
+      "failure_class": null,
+      "false_acceptance": false,
+      "integrity_valid": true,
+      "isolation": "temporary-directory/trusted-checks-only",
+      "mode": "ungated_loop",
+      "model": {
+        "model": "deepseek-chat",
+        "provider": "deepseek"
+      },
+      "oracle_passed": true,
+      "provider": "deepseek",
+      "questions": 0,
+      "replay_passed": true,
+      "run": 3,
+      "safe_deferral": false,
+      "solved": true,
+      "steps_used": 3,
+      "stop_reason": "goal_achieved",
+      "tokens_used": 2300,
+      "trajectory": {
+        "checks": 1,
+        "errors": 0,
+        "finish_attempts": 1,
+        "mutations": 1,
+        "questions": 0,
+        "status_counts": {
+          "ok": 3
+        },
+        "tool_counts": {
+          "edit_file": 1,
+          "finish": 1,
+          "run_check": 1
+        },
+        "unique_tools": 3
+      }
+    },
+    {
+      "accepted": true,
+      "apply_error": null,
+      "apply_passed": true,
+      "artifact_digest": "d37582e3a615ac74bf94971d5407549c51a3202fd0b2cc4f861b234e58b708e4",
+      "case_id": "repair-cart-totals",
+      "category": "bug-repair",
+      "contract_quality": {
+        "adjudication_reason": "The critic supplied no user-answerable question and the deterministic contract validator found no blocking issue. Every criterion maps to a discovered test gate whose test sources were included in bounded repository discovery; the critic's issues remain recorded as advisory evidence.",
+        "checks": 2,
+        "criteria": 4,
+        "critic_accepted": true,
+        "critic_adjudicated": true,
+        "issues": [
+          "The check contract-001 runs pytest but does not include any inline assertion that verifies the specific behavior of quantity and per-line percentage discounts being honored. The existing test test_quantity_and_line_discount only tests one specific case (2 items at $12.50 with 20% discount and 3 items at $3.00 with no discount, expecting $29.00), but the current implementation in pricing.py incorrectly computes the total (it adds price minus discount as a flat amount, ignoring quantity). Running"
+        ],
+        "locked": true,
+        "question": null
+      },
+      "duration_seconds": 14.923,
+      "error": null,
+      "expected_files_present": true,
+      "expected_outcome": "verified_delivery",
+      "failure_class": null,
+      "false_acceptance": false,
+      "integrity_valid": true,
+      "isolation": "inline",
+      "mode": "full_loop",
+      "model": {
+        "model": "deepseek-chat",
+        "provider": "deepseek"
+      },
+      "oracle_passed": true,
+      "provider": "deepseek",
+      "questions": 0,
+      "receipt_replay_error": null,
+      "replay_passed": true,
+      "run": 3,
+      "safe_deferral": false,
+      "solved": true,
+      "steps_used": 4,
+      "stop_reason": "goal_achieved",
+      "task_id": "0e2fca72-0623-430d-8926-d9ba75d47afe",
+      "tokens_used": 8499,
+      "trajectory": {
+        "checks": 0,
+        "errors": 0,
+        "finish_attempts": 1,
+        "mutations": 1,
+        "questions": 0,
+        "status_counts": {
+          "ok": 4
+        },
+        "tool_counts": {
+          "edit_file": 1,
+          "finish": 1,
+          "read_file": 2
+        },
+        "unique_tools": 3
+      },
+      "undo_error": null,
+      "undo_passed": true
+    },
+    {
+      "accepted": true,
+      "artifact_digest": "06c54688d3def412a758040d7ac79f429eea901385e9f81958a68baf29b52f7c",
+      "case_id": "add-rate-limiter",
+      "category": "feature-work",
+      "changed_files": [
+        "rate_limiter.py"
+      ],
+      "contract_quality": null,
+      "duration_seconds": 2.287,
+      "error": null,
+      "expected_files_present": true,
+      "expected_outcome": "verified_delivery",
+      "failure_class": null,
+      "false_acceptance": false,
+      "integrity_valid": true,
+      "isolation": "temporary-directory",
+      "mode": "one_shot",
+      "model": {
+        "model": "deepseek-chat",
+        "provider": "deepseek"
+      },
+      "oracle_passed": true,
+      "provider": "deepseek",
+      "questions": 0,
+      "replay_passed": true,
+      "run": 3,
+      "safe_deferral": false,
+      "solved": true,
+      "steps_used": 1,
+      "stop_reason": "goal_achieved",
+      "tokens_used": 768,
+      "trajectory": {
+        "checks": 0,
+        "errors": 0,
+        "finish_attempts": 1,
+        "mutations": 0,
+        "questions": 0,
+        "status_counts": {
+          "ok": 1
+        },
+        "tool_counts": {
+          "finish": 1
+        },
+        "unique_tools": 1
+      }
+    },
+    {
+      "accepted": true,
+      "artifact_digest": "0ebc4495565c4db29f25d1139b5009046e8783a6d524ab035bdde8bfadc166c9",
+      "case_id": "add-rate-limiter",
+      "category": "feature-work",
+      "contract_quality": null,
+      "duration_seconds": 22.128,
+      "error": null,
+      "expected_files_present": true,
+      "expected_outcome": "verified_delivery",
+      "failure_class": null,
+      "false_acceptance": false,
+      "integrity_valid": true,
+      "isolation": "temporary-directory/trusted-checks-only",
+      "mode": "ungated_loop",
+      "model": {
+        "model": "deepseek-chat",
+        "provider": "deepseek"
+      },
+      "oracle_passed": true,
+      "provider": "deepseek",
+      "questions": 0,
+      "replay_passed": true,
+      "run": 3,
+      "safe_deferral": false,
+      "solved": true,
+      "steps_used": 5,
+      "stop_reason": "goal_achieved",
+      "tokens_used": 6531,
+      "trajectory": {
+        "checks": 2,
+        "errors": 1,
+        "finish_attempts": 1,
+        "mutations": 2,
+        "questions": 0,
+        "status_counts": {
+          "error": 1,
+          "ok": 4
+        },
+        "tool_counts": {
+          "edit_file": 2,
+          "finish": 1,
+          "run_check": 2
+        },
+        "unique_tools": 3
+      }
+    },
+    {
+      "accepted": false,
+      "apply_error": null,
+      "apply_passed": false,
+      "artifact_digest": null,
+      "case_id": "add-rate-limiter",
+      "category": "feature-work",
+      "contract_quality": {
+        "adjudication_reason": null,
+        "checks": 2,
+        "criteria": 6,
+        "critic_accepted": true,
+        "critic_adjudicated": false,
+        "issues": [],
+        "locked": true,
+        "question": null
+      },
+      "duration_seconds": 52.895,
+      "error": null,
+      "expected_files_present": true,
+      "expected_outcome": "verified_delivery",
+      "failure_class": "non-convergence-token-budget",
+      "false_acceptance": false,
+      "integrity_valid": true,
+      "isolation": "inline",
+      "mode": "full_loop",
+      "model": {
+        "model": "deepseek-chat",
+        "provider": "deepseek"
+      },
+      "oracle_passed": false,
+      "provider": "deepseek",
+      "questions": 0,
+      "receipt_replay_error": null,
+      "replay_passed": false,
+      "run": 3,
+      "safe_deferral": false,
+      "solved": false,
+      "steps_used": 8,
+      "stop_reason": "budget_exhausted",
+      "task_id": "e91456c3-c7e7-4d8b-983b-4d0c9ea79f51",
+      "tokens_used": 30045,
+      "trajectory": {
+        "checks": 1,
+        "errors": 3,
+        "finish_attempts": 0,
+        "mutations": 1,
+        "questions": 0,
+        "status_counts": {
+          "blocked": 1,
+          "error": 2,
+          "ok": 5
+        },
+        "tool_counts": {
+          "invalid": 1,
+          "read_file": 5,
+          "run_command": 1,
+          "write_file": 1
+        },
+        "unique_tools": 4
+      },
+      "undo_error": null,
+      "undo_passed": false
+    },
+    {
+      "accepted": true,
+      "artifact_digest": "dc6e5cf7f065986df1a9e3d34c2957c10992c3f23f79dfacceb2a4f7bddc950b",
+      "case_id": "refactor-notification-channels",
+      "category": "multi-file-refactor",
+      "changed_files": [
+        "notifications/registry.py",
+        "notifications/service.py"
+      ],
+      "contract_quality": null,
+      "duration_seconds": 2.266,
+      "error": null,
+      "expected_files_present": true,
+      "expected_outcome": "verified_delivery",
+      "failure_class": null,
+      "false_acceptance": false,
+      "integrity_valid": true,
+      "isolation": "temporary-directory",
+      "mode": "one_shot",
+      "model": {
+        "model": "deepseek-chat",
+        "provider": "deepseek"
+      },
+      "oracle_passed": true,
+      "provider": "deepseek",
+      "questions": 0,
+      "replay_passed": true,
+      "run": 3,
+      "safe_deferral": false,
+      "solved": true,
+      "steps_used": 1,
+      "stop_reason": "goal_achieved",
+      "tokens_used": 763,
+      "trajectory": {
+        "checks": 0,
+        "errors": 0,
+        "finish_attempts": 1,
+        "mutations": 0,
+        "questions": 0,
+        "status_counts": {
+          "ok": 1
+        },
+        "tool_counts": {
+          "finish": 1
+        },
+        "unique_tools": 1
+      }
+    },
+    {
+      "accepted": true,
+      "artifact_digest": "3bf88095c6213fcd66ff53881ffb191506d1dfcfda21de02d5780b94b8f3c481",
+      "case_id": "refactor-notification-channels",
+      "category": "multi-file-refactor",
+      "contract_quality": null,
+      "duration_seconds": 7.078,
+      "error": null,
+      "expected_files_present": true,
+      "expected_outcome": "verified_delivery",
+      "failure_class": null,
+      "false_acceptance": false,
+      "integrity_valid": true,
+      "isolation": "temporary-directory/trusted-checks-only",
+      "mode": "ungated_loop",
+      "model": {
+        "model": "deepseek-chat",
+        "provider": "deepseek"
+      },
+      "oracle_passed": true,
+      "provider": "deepseek",
+      "questions": 0,
+      "replay_passed": true,
+      "run": 3,
+      "safe_deferral": false,
+      "solved": true,
+      "steps_used": 4,
+      "stop_reason": "goal_achieved",
+      "tokens_used": 3620,
+      "trajectory": {
+        "checks": 1,
+        "errors": 0,
+        "finish_attempts": 1,
+        "mutations": 2,
+        "questions": 0,
+        "status_counts": {
+          "ok": 4
+        },
+        "tool_counts": {
+          "edit_file": 1,
+          "finish": 1,
+          "run_check": 1,
+          "write_file": 1
+        },
+        "unique_tools": 4
+      }
+    },
+    {
+      "accepted": false,
+      "apply_error": null,
+      "apply_passed": false,
+      "artifact_digest": null,
+      "case_id": "refactor-notification-channels",
+      "category": "multi-file-refactor",
+      "contract_quality": {
+        "adjudication_reason": null,
+        "checks": 7,
+        "criteria": 5,
+        "critic_accepted": true,
+        "critic_adjudicated": false,
+        "issues": [],
+        "locked": true,
+        "question": null
+      },
+      "duration_seconds": 30.929,
+      "error": null,
+      "expected_files_present": true,
+      "expected_outcome": "verified_delivery",
+      "failure_class": "non-convergence-token-budget",
+      "false_acceptance": false,
+      "integrity_valid": true,
+      "isolation": "inline",
+      "mode": "full_loop",
+      "model": {
+        "model": "deepseek-chat",
+        "provider": "deepseek"
+      },
+      "oracle_passed": false,
+      "provider": "deepseek",
+      "questions": 0,
+      "receipt_replay_error": null,
+      "replay_passed": false,
+      "run": 3,
+      "safe_deferral": false,
+      "solved": false,
+      "steps_used": 9,
+      "stop_reason": "budget_exhausted",
+      "task_id": "0199196f-5b49-4e75-bdbd-7093ec5bd2da",
+      "tokens_used": 29268,
+      "trajectory": {
+        "checks": 3,
+        "errors": 1,
+        "finish_attempts": 1,
+        "mutations": 3,
+        "questions": 0,
+        "status_counts": {
+          "error": 1,
+          "ok": 8
+        },
+        "tool_counts": {
+          "edit_file": 1,
+          "finish": 1,
+          "read_file": 2,
+          "run_command": 3,
+          "write_file": 2
+        },
+        "unique_tools": 5
+      },
+      "undo_error": null,
+      "undo_passed": false
+    },
+    {
+      "accepted": true,
+      "artifact_digest": "38270402e58f0b3558026582a638b944f1835fa25596788ecd676425f878f890",
+      "case_id": "extend-task-cli",
+      "category": "cli",
+      "changed_files": [
+        "src/cli.mjs"
+      ],
+      "contract_quality": null,
+      "duration_seconds": 4.51,
+      "error": null,
+      "expected_files_present": true,
+      "expected_outcome": "verified_delivery",
+      "failure_class": null,
+      "false_acceptance": false,
+      "integrity_valid": true,
+      "isolation": "temporary-directory",
+      "mode": "one_shot",
+      "model": {
+        "model": "deepseek-chat",
+        "provider": "deepseek"
+      },
+      "oracle_passed": true,
+      "provider": "deepseek",
+      "questions": 0,
+      "replay_passed": true,
+      "run": 3,
+      "safe_deferral": false,
+      "solved": true,
+      "steps_used": 1,
+      "stop_reason": "goal_achieved",
+      "tokens_used": 1248,
+      "trajectory": {
+        "checks": 0,
+        "errors": 0,
+        "finish_attempts": 1,
+        "mutations": 0,
+        "questions": 0,
+        "status_counts": {
+          "ok": 1
+        },
+        "tool_counts": {
+          "finish": 1
+        },
+        "unique_tools": 1
+      }
+    },
+    {
+      "accepted": true,
+      "artifact_digest": "0513263b530b5668c61f91bee2f1d5c1799864747850564c613d25098c3da133",
+      "case_id": "extend-task-cli",
+      "category": "cli",
+      "contract_quality": null,
+      "duration_seconds": 8.603,
+      "error": null,
+      "expected_files_present": true,
+      "expected_outcome": "verified_delivery",
+      "failure_class": null,
+      "false_acceptance": false,
+      "integrity_valid": true,
+      "isolation": "temporary-directory/trusted-checks-only",
+      "mode": "ungated_loop",
+      "model": {
+        "model": "deepseek-chat",
+        "provider": "deepseek"
+      },
+      "oracle_passed": true,
+      "provider": "deepseek",
+      "questions": 0,
+      "replay_passed": true,
+      "run": 3,
+      "safe_deferral": false,
+      "solved": true,
+      "steps_used": 3,
+      "stop_reason": "goal_achieved",
+      "tokens_used": 4077,
+      "trajectory": {
+        "checks": 1,
+        "errors": 0,
+        "finish_attempts": 1,
+        "mutations": 1,
+        "questions": 0,
+        "status_counts": {
+          "ok": 3
+        },
+        "tool_counts": {
+          "edit_file": 1,
+          "finish": 1,
+          "run_check": 1
+        },
+        "unique_tools": 3
+      }
+    },
+    {
+      "accepted": true,
+      "apply_error": null,
+      "apply_passed": true,
+      "artifact_digest": "8291dc7b643dd41a41cf145d35b429affe57108d15c4a3ef8a272017c7243dc7",
+      "case_id": "extend-task-cli",
+      "category": "cli",
+      "contract_quality": {
+        "adjudication_reason": "The critic supplied no user-answerable question and the deterministic contract validator found no blocking issue. Every criterion maps to a discovered test gate whose test sources were included in bounded repository discovery; the critic's issues remain recorded as advisory evidence.",
+        "checks": 2,
+        "criteria": 4,
+        "critic_accepted": true,
+        "critic_adjudicated": true,
+        "issues": [
+          "The proposed contract assumes the existing test suite already covers the new behavior, but the test file preview shows tests for the new features. However, the contract's check `contract-001` runs `npm run test` and expects exit 0, which would fail against the current broken baseline because the implementation does not yet support `--status` and `--format json`. The contract must either acknowledge that the test will fail until the implementation is correct, or the check should be a post-change"
+        ],
+        "locked": true,
+        "question": null
+      },
+      "duration_seconds": 18.296,
+      "error": null,
+      "expected_files_present": true,
+      "expected_outcome": "verified_delivery",
+      "failure_class": null,
+      "false_acceptance": false,
+      "integrity_valid": true,
+      "isolation": "inline",
+      "mode": "full_loop",
+      "model": {
+        "model": "deepseek-chat",
+        "provider": "deepseek"
+      },
+      "oracle_passed": true,
+      "provider": "deepseek",
+      "questions": 0,
+      "receipt_replay_error": null,
+      "replay_passed": true,
+      "run": 3,
+      "safe_deferral": false,
+      "solved": true,
+      "steps_used": 4,
+      "stop_reason": "goal_achieved",
+      "task_id": "bdfd3d18-f67f-4d3d-b9c3-8b9df568fa56",
+      "tokens_used": 11027,
+      "trajectory": {
+        "checks": 0,
+        "errors": 0,
+        "finish_attempts": 1,
+        "mutations": 1,
+        "questions": 0,
+        "status_counts": {
+          "ok": 4
+        },
+        "tool_counts": {
+          "finish": 1,
+          "read_file": 2,
+          "write_file": 1
+        },
+        "unique_tools": 3
+      },
+      "undo_error": null,
+      "undo_passed": true
+    },
+    {
+      "accepted": true,
+      "artifact_digest": "141f2aea7c15d77830b82d14d19f2d48706009715a39a4c4ff24f6febe9630c9",
+      "case_id": "idempotent-order-api",
+      "category": "api",
+      "changed_files": [
+        "orders.py"
+      ],
+      "contract_quality": null,
+      "duration_seconds": 3.169,
+      "error": null,
+      "expected_files_present": true,
+      "expected_outcome": "verified_delivery",
+      "failure_class": "false-acceptance-oracle",
+      "false_acceptance": true,
+      "integrity_valid": true,
+      "isolation": "temporary-directory",
+      "mode": "one_shot",
+      "model": {
+        "model": "deepseek-chat",
+        "provider": "deepseek"
+      },
+      "oracle_passed": false,
+      "provider": "deepseek",
+      "questions": 0,
+      "replay_passed": false,
+      "run": 3,
+      "safe_deferral": false,
+      "solved": false,
+      "steps_used": 1,
+      "stop_reason": "goal_achieved",
+      "tokens_used": 1010,
+      "trajectory": {
+        "checks": 0,
+        "errors": 0,
+        "finish_attempts": 1,
+        "mutations": 0,
+        "questions": 0,
+        "status_counts": {
+          "ok": 1
+        },
+        "tool_counts": {
+          "finish": 1
+        },
+        "unique_tools": 1
+      }
+    },
+    {
+      "accepted": true,
+      "artifact_digest": "262478c35acd72f6cb6b226b1dec02161ff4a09ce85505001ddb0ba5ce180650",
+      "case_id": "idempotent-order-api",
+      "category": "api",
+      "contract_quality": null,
+      "duration_seconds": 11.876,
+      "error": null,
+      "expected_files_present": true,
+      "expected_outcome": "verified_delivery",
+      "failure_class": null,
+      "false_acceptance": false,
+      "integrity_valid": true,
+      "isolation": "temporary-directory/trusted-checks-only",
+      "mode": "ungated_loop",
+      "model": {
+        "model": "deepseek-chat",
+        "provider": "deepseek"
+      },
+      "oracle_passed": true,
+      "provider": "deepseek",
+      "questions": 0,
+      "replay_passed": true,
+      "run": 3,
+      "safe_deferral": false,
+      "solved": true,
+      "steps_used": 6,
+      "stop_reason": "goal_achieved",
+      "tokens_used": 7073,
+      "trajectory": {
+        "checks": 2,
+        "errors": 1,
+        "finish_attempts": 1,
+        "mutations": 2,
+        "questions": 0,
+        "status_counts": {
+          "error": 1,
+          "ok": 5
+        },
+        "tool_counts": {
+          "edit_file": 2,
+          "finish": 1,
+          "read_file": 1,
+          "run_check": 2
+        },
+        "unique_tools": 4
+      }
+    },
+    {
+      "accepted": true,
+      "apply_error": null,
+      "apply_passed": true,
+      "artifact_digest": "71f4342e3ef195401c90dd4a4b63dfec5175961335627b54269d72ff2ba57aa4",
+      "case_id": "idempotent-order-api",
+      "category": "api",
+      "contract_quality": {
+        "adjudication_reason": null,
+        "checks": 2,
+        "criteria": 3,
+        "critic_accepted": true,
+        "critic_adjudicated": false,
+        "issues": [],
+        "locked": true,
+        "question": null
+      },
+      "duration_seconds": 26.728,
+      "error": null,
+      "expected_files_present": true,
+      "expected_outcome": "verified_delivery",
+      "failure_class": null,
+      "false_acceptance": false,
+      "integrity_valid": true,
+      "isolation": "inline",
+      "mode": "full_loop",
+      "model": {
+        "model": "deepseek-chat",
+        "provider": "deepseek"
+      },
+      "oracle_passed": true,
+      "provider": "deepseek",
+      "questions": 0,
+      "receipt_replay_error": null,
+      "replay_passed": true,
+      "run": 3,
+      "safe_deferral": false,
+      "solved": true,
+      "steps_used": 9,
+      "stop_reason": "goal_achieved",
+      "task_id": "6f2507b6-4beb-4e47-836f-ca1b29947dcb",
+      "tokens_used": 27314,
+      "trajectory": {
+        "checks": 1,
+        "errors": 1,
+        "finish_attempts": 1,
+        "mutations": 4,
+        "questions": 0,
+        "status_counts": {
+          "error": 1,
+          "ok": 8
+        },
+        "tool_counts": {
+          "edit_file": 3,
+          "finish": 1,
+          "read_file": 3,
+          "run_command": 1,
+          "write_file": 1
+        },
+        "unique_tools": 5
+      },
+      "undo_error": null,
+      "undo_passed": true
+    },
+    {
+      "accepted": true,
+      "artifact_digest": "e3c5698cc76cf54ead820e5280f96b02bfecf26bf1d44adda03665b12648cd9a",
+      "case_id": "accessible-dialog-ui",
+      "category": "ui",
+      "changed_files": [
+        "dialog.mjs",
+        "index.html"
+      ],
+      "contract_quality": null,
+      "duration_seconds": 3.267,
+      "error": null,
+      "expected_files_present": true,
+      "expected_outcome": "verified_delivery",
+      "failure_class": null,
+      "false_acceptance": false,
+      "integrity_valid": true,
+      "isolation": "temporary-directory",
+      "mode": "one_shot",
+      "model": {
+        "model": "deepseek-chat",
+        "provider": "deepseek"
+      },
+      "oracle_passed": true,
+      "provider": "deepseek",
+      "questions": 0,
+      "replay_passed": true,
+      "run": 3,
+      "safe_deferral": false,
+      "solved": true,
+      "steps_used": 1,
+      "stop_reason": "goal_achieved",
+      "tokens_used": 1326,
+      "trajectory": {
+        "checks": 0,
+        "errors": 0,
+        "finish_attempts": 1,
+        "mutations": 0,
+        "questions": 0,
+        "status_counts": {
+          "ok": 1
+        },
+        "tool_counts": {
+          "finish": 1
+        },
+        "unique_tools": 1
+      }
+    },
+    {
+      "accepted": true,
+      "artifact_digest": "c64a4c2c8930cdb1c5a951fc68df5e98fe5be889f1d25c6819f58ad8d9a87047",
+      "case_id": "accessible-dialog-ui",
+      "category": "ui",
+      "contract_quality": null,
+      "duration_seconds": 7.294,
+      "error": null,
+      "expected_files_present": true,
+      "expected_outcome": "verified_delivery",
+      "failure_class": null,
+      "false_acceptance": false,
+      "integrity_valid": true,
+      "isolation": "temporary-directory/trusted-checks-only",
+      "mode": "ungated_loop",
+      "model": {
+        "model": "deepseek-chat",
+        "provider": "deepseek"
+      },
+      "oracle_passed": true,
+      "provider": "deepseek",
+      "questions": 0,
+      "replay_passed": true,
+      "run": 3,
+      "safe_deferral": false,
+      "solved": true,
+      "steps_used": 4,
+      "stop_reason": "goal_achieved",
+      "tokens_used": 5074,
+      "trajectory": {
+        "checks": 1,
+        "errors": 0,
+        "finish_attempts": 1,
+        "mutations": 2,
+        "questions": 0,
+        "status_counts": {
+          "ok": 4
+        },
+        "tool_counts": {
+          "edit_file": 1,
+          "finish": 1,
+          "run_check": 1,
+          "write_file": 1
+        },
+        "unique_tools": 4
+      }
+    },
+    {
+      "accepted": true,
+      "apply_error": null,
+      "apply_passed": true,
+      "artifact_digest": "cf89688680b70a7457e179be981f5ad4f12b85a555b9d4e5d643ccd71f298fa1",
+      "case_id": "accessible-dialog-ui",
+      "category": "ui",
+      "contract_quality": {
+        "adjudication_reason": null,
+        "checks": 3,
+        "criteria": 5,
+        "critic_accepted": true,
+        "critic_adjudicated": false,
+        "issues": [],
+        "locked": true,
+        "question": null
+      },
+      "duration_seconds": 27.489,
+      "error": null,
+      "expected_files_present": true,
+      "expected_outcome": "verified_delivery",
+      "failure_class": null,
+      "false_acceptance": false,
+      "integrity_valid": true,
+      "isolation": "inline",
+      "mode": "full_loop",
+      "model": {
+        "model": "deepseek-chat",
+        "provider": "deepseek"
+      },
+      "oracle_passed": true,
+      "provider": "deepseek",
+      "questions": 0,
+      "receipt_replay_error": null,
+      "replay_passed": true,
+      "run": 3,
+      "safe_deferral": false,
+      "solved": true,
+      "steps_used": 10,
+      "stop_reason": "goal_achieved",
+      "task_id": "2d81aa4b-2189-4da9-9a08-bfc859f32923",
+      "tokens_used": 30019,
+      "trajectory": {
+        "checks": 1,
+        "errors": 2,
+        "finish_attempts": 1,
+        "mutations": 4,
+        "questions": 0,
+        "status_counts": {
+          "error": 2,
+          "ok": 8
+        },
+        "tool_counts": {
+          "edit_file": 3,
+          "finish": 1,
+          "read_file": 4,
+          "run_command": 1,
+          "write_file": 1
+        },
+        "unique_tools": 5
+      },
+      "undo_error": null,
+      "undo_passed": true
+    },
+    {
+      "accepted": true,
+      "artifact_digest": "d931b9711e1ba6ead5cd64bcef7742a07a08a06b7fb84dec1486fcdd00f22e37",
+      "case_id": "preserve-config-regressions",
+      "category": "regression",
+      "changed_files": [
+        "config.py"
+      ],
+      "contract_quality": null,
+      "duration_seconds": 2.41,
+      "error": null,
+      "expected_files_present": true,
+      "expected_outcome": "verified_delivery",
+      "failure_class": null,
+      "false_acceptance": false,
+      "integrity_valid": true,
+      "isolation": "temporary-directory",
+      "mode": "one_shot",
+      "model": {
+        "model": "deepseek-chat",
+        "provider": "deepseek"
+      },
+      "oracle_passed": true,
+      "provider": "deepseek",
+      "questions": 0,
+      "replay_passed": true,
+      "run": 3,
+      "safe_deferral": false,
+      "solved": true,
+      "steps_used": 1,
+      "stop_reason": "goal_achieved",
+      "tokens_used": 853,
+      "trajectory": {
+        "checks": 0,
+        "errors": 0,
+        "finish_attempts": 1,
+        "mutations": 0,
+        "questions": 0,
+        "status_counts": {
+          "ok": 1
+        },
+        "tool_counts": {
+          "finish": 1
+        },
+        "unique_tools": 1
+      }
+    },
+    {
+      "accepted": true,
+      "artifact_digest": "f6327742e8862eb7b7ac2fb1b5224cef2c9fd8fc0c0b7d9b3ef66d6a407a1c03",
+      "case_id": "preserve-config-regressions",
+      "category": "regression",
+      "contract_quality": null,
+      "duration_seconds": 8.992,
+      "error": null,
+      "expected_files_present": true,
+      "expected_outcome": "verified_delivery",
+      "failure_class": null,
+      "false_acceptance": false,
+      "integrity_valid": true,
+      "isolation": "temporary-directory/trusted-checks-only",
+      "mode": "ungated_loop",
+      "model": {
+        "model": "deepseek-chat",
+        "provider": "deepseek"
+      },
+      "oracle_passed": true,
+      "provider": "deepseek",
+      "questions": 0,
+      "replay_passed": true,
+      "run": 3,
+      "safe_deferral": false,
+      "solved": true,
+      "steps_used": 3,
+      "stop_reason": "goal_achieved",
+      "tokens_used": 3293,
+      "trajectory": {
+        "checks": 1,
+        "errors": 0,
+        "finish_attempts": 1,
+        "mutations": 1,
+        "questions": 0,
+        "status_counts": {
+          "ok": 3
+        },
+        "tool_counts": {
+          "edit_file": 1,
+          "finish": 1,
+          "run_check": 1
+        },
+        "unique_tools": 3
+      }
+    },
+    {
+      "accepted": true,
+      "apply_error": null,
+      "apply_passed": true,
+      "artifact_digest": "5cbee51a7b7ed7c9236e8b96dce722df0930a257953d8c55dd0f6c07ef73c6c3",
+      "case_id": "preserve-config-regressions",
+      "category": "regression",
+      "contract_quality": {
+        "adjudication_reason": null,
+        "checks": 2,
+        "criteria": 6,
+        "critic_accepted": true,
+        "critic_adjudicated": false,
+        "issues": [],
+        "locked": true,
+        "question": null
+      },
+      "duration_seconds": 30.792,
+      "error": null,
+      "expected_files_present": true,
+      "expected_outcome": "verified_delivery",
+      "failure_class": null,
+      "false_acceptance": false,
+      "integrity_valid": true,
+      "isolation": "inline",
+      "mode": "full_loop",
+      "model": {
+        "model": "deepseek-chat",
+        "provider": "deepseek"
+      },
+      "oracle_passed": true,
+      "provider": "deepseek",
+      "questions": 0,
+      "receipt_replay_error": null,
+      "replay_passed": true,
+      "run": 3,
+      "safe_deferral": false,
+      "solved": true,
+      "steps_used": 9,
+      "stop_reason": "goal_achieved",
+      "task_id": "ed31dd60-8680-4084-8003-817886ba926e",
+      "tokens_used": 27376,
+      "trajectory": {
+        "checks": 1,
+        "errors": 2,
+        "finish_attempts": 1,
+        "mutations": 3,
+        "questions": 0,
+        "status_counts": {
+          "error": 2,
+          "ok": 7
+        },
+        "tool_counts": {
+          "edit_file": 2,
+          "finish": 1,
+          "read_file": 4,
+          "run_command": 1,
+          "write_file": 1
+        },
+        "unique_tools": 5
+      },
+      "undo_error": null,
+      "undo_passed": true
+    },
+    {
+      "accepted": false,
+      "artifact_digest": "1e9d040db9a9882178d93c1983f322d125206a471ca6217a2a8b21a46249a0b2",
+      "case_id": "resolve-retention-conflict",
+      "category": "incomplete-specification",
+      "changed_files": [],
+      "contract_quality": null,
+      "duration_seconds": 1.012,
+      "error": null,
+      "expected_files_present": true,
+      "expected_outcome": "clarification",
+      "failure_class": null,
+      "false_acceptance": false,
+      "integrity_valid": true,
+      "isolation": "temporary-directory",
+      "mode": "one_shot",
+      "model": {
+        "model": "deepseek-chat",
+        "provider": "deepseek"
+      },
+      "oracle_passed": false,
+      "provider": "deepseek",
+      "questions": 1,
+      "replay_passed": false,
+      "run": 3,
+      "safe_deferral": true,
+      "solved": false,
+      "steps_used": 1,
+      "stop_reason": "clarification",
+      "tokens_used": 269,
+      "trajectory": {
+        "checks": 0,
+        "errors": 0,
+        "finish_attempts": 0,
+        "mutations": 0,
+        "questions": 1,
+        "status_counts": {
+          "ok": 1
+        },
+        "tool_counts": {
+          "ask_user": 1
+        },
+        "unique_tools": 1
+      }
+    },
+    {
+      "accepted": false,
+      "artifact_digest": "1e9d040db9a9882178d93c1983f322d125206a471ca6217a2a8b21a46249a0b2",
+      "case_id": "resolve-retention-conflict",
+      "category": "incomplete-specification",
+      "contract_quality": null,
+      "duration_seconds": 1.444,
+      "error": null,
+      "expected_files_present": true,
+      "expected_outcome": "clarification",
+      "failure_class": null,
+      "false_acceptance": false,
+      "integrity_valid": true,
+      "isolation": "temporary-directory/trusted-checks-only",
+      "mode": "ungated_loop",
+      "model": {
+        "model": "deepseek-chat",
+        "provider": "deepseek"
+      },
+      "oracle_passed": false,
+      "provider": "deepseek",
+      "questions": 1,
+      "replay_passed": false,
+      "run": 3,
+      "safe_deferral": true,
+      "solved": false,
+      "steps_used": 1,
+      "stop_reason": "clarification",
+      "tokens_used": 409,
+      "trajectory": {
+        "checks": 0,
+        "errors": 0,
+        "finish_attempts": 0,
+        "mutations": 0,
+        "questions": 1,
+        "status_counts": {
+          "ok": 1
+        },
+        "tool_counts": {
+          "ask_user": 1
+        },
+        "unique_tools": 1
+      }
+    },
+    {
+      "accepted": false,
+      "apply_error": null,
+      "apply_passed": false,
+      "artifact_digest": null,
+      "case_id": "resolve-retention-conflict",
+      "category": "incomplete-specification",
+      "contract_quality": {
+        "adjudication_reason": null,
+        "checks": 4,
+        "criteria": 2,
+        "critic_accepted": false,
+        "critic_adjudicated": false,
+        "issues": [
+          "The repository contains materially conflicting retention requirements: README.md says 'delete audit logs after 7 days', while policy.md says 'retained for a minimum of 90 days'. The proposed contract implements the 90-day policy, but the conflict must be resolved before proceeding.",
+          "Contract confidence is 0%; automatic start requires at least 80%."
+        ],
+        "locked": false,
+        "question": "The README specifies a 7-day retention period, but policy.md requires a minimum of 90 days. Which retention period should the implementation follow?"
+      },
+      "duration_seconds": 13.908,
+      "error": null,
+      "expected_files_present": true,
+      "expected_outcome": "clarification",
+      "failure_class": null,
+      "false_acceptance": false,
+      "integrity_valid": true,
+      "isolation": null,
+      "mode": "full_loop",
+      "model": {
+        "model": "deepseek-chat",
+        "provider": "deepseek"
+      },
+      "oracle_passed": false,
+      "provider": "deepseek",
+      "questions": 1,
+      "receipt_replay_error": null,
+      "replay_passed": false,
+      "run": 3,
+      "safe_deferral": true,
+      "solved": false,
+      "steps_used": 0,
+      "stop_reason": "clarification",
+      "task_id": "48ce1dfa-4780-47df-991e-99555a2165ab",
+      "tokens_used": 7447,
+      "trajectory": {
+        "checks": 0,
+        "errors": 0,
+        "finish_attempts": 0,
+        "mutations": 0,
+        "questions": 0,
+        "status_counts": {},
+        "tool_counts": {},
+        "unique_tools": 0
+      },
+      "undo_error": null,
+      "undo_passed": false
+    }
+  ],
+  "run_at": "2026-07-21T23:07:20.841892+00:00",
+  "same_model_across_modes": true,
+  "schema": "loop.repository-eval-report/v1",
+  "summary": {
+    "comparisons": {
+      "full_loop_vs_one_shot": {
+        "false_acceptance_delta": -3,
+        "median_duration_delta": 16.335,
+        "median_steps_delta": 4.5,
+        "median_tokens_delta": 14012.0,
+        "solve_rate_delta": 0.0476
+      },
+      "full_loop_vs_ungated_loop": {
+        "false_acceptance_delta": 0,
+        "median_duration_delta": 10.474,
+        "median_steps_delta": 1.5,
+        "median_tokens_delta": 10736.5,
+        "solve_rate_delta": -0.1429
+      }
+    },
+    "modes": {
+      "full_loop": {
+        "attempts": 24,
+        "categories": {
+          "api": {
+            "attempts": 3,
+            "success_rate": 1.0,
+            "successes": 3
+          },
+          "bug-repair": {
+            "attempts": 3,
+            "success_rate": 1.0,
+            "successes": 3
+          },
+          "cli": {
+            "attempts": 3,
+            "success_rate": 1.0,
+            "successes": 3
+          },
+          "feature-work": {
+            "attempts": 3,
+            "success_rate": 0.6667,
+            "successes": 2
+          },
+          "incomplete-specification": {
+            "attempts": 3,
+            "success_rate": 1.0,
+            "successes": 3
+          },
+          "multi-file-refactor": {
+            "attempts": 3,
+            "success_rate": 0.3333,
+            "successes": 1
+          },
+          "regression": {
+            "attempts": 3,
+            "success_rate": 0.6667,
+            "successes": 2
+          },
+          "ui": {
+            "attempts": 3,
+            "success_rate": 1.0,
+            "successes": 3
+          }
+        },
+        "clarification_attempts": 3,
+        "distributions": {
+          "duration_seconds": {
+            "max": 52.895,
+            "median": 18.806,
+            "p95": 49.692
+          },
+          "questions": {
+            "max": 1.0,
+            "median": 0.0,
+            "p95": 1.0
+          },
+          "steps_used": {
+            "max": 10.0,
+            "median": 5.5,
+            "p95": 10.0
+          },
+          "tokens_used": {
+            "max": 30045.0,
+            "median": 14823.0,
+            "p95": 30019.0
+          }
+        },
+        "failure_classes": {
+          "non-convergence-token-budget": 4
+        },
+        "false_acceptance_rate": 0.0,
+        "false_acceptances": 0,
+        "safe_deferrals": 3,
+        "solve_rate": 0.8095,
+        "solved": 17,
+        "stop_reasons": {
+          "budget_exhausted": 4,
+          "clarification": 3,
+          "goal_achieved": 17
+        },
+        "verified_attempts": 21
+      },
+      "one_shot": {
+        "attempts": 24,
+        "categories": {
+          "api": {
+            "attempts": 3,
+            "success_rate": 0.0,
+            "successes": 0
+          },
+          "bug-repair": {
+            "attempts": 3,
+            "success_rate": 1.0,
+            "successes": 3
+          },
+          "cli": {
+            "attempts": 3,
+            "success_rate": 1.0,
+            "successes": 3
+          },
+          "feature-work": {
+            "attempts": 3,
+            "success_rate": 0.3333,
+            "successes": 1
+          },
+          "incomplete-specification": {
+            "attempts": 3,
+            "success_rate": 1.0,
+            "successes": 3
+          },
+          "multi-file-refactor": {
+            "attempts": 3,
+            "success_rate": 1.0,
+            "successes": 3
+          },
+          "regression": {
+            "attempts": 3,
+            "success_rate": 1.0,
+            "successes": 3
+          },
+          "ui": {
+            "attempts": 3,
+            "success_rate": 1.0,
+            "successes": 3
+          }
+        },
+        "clarification_attempts": 3,
+        "distributions": {
+          "duration_seconds": {
+            "max": 4.724,
+            "median": 2.471,
+            "p95": 4.51
+          },
+          "questions": {
+            "max": 1.0,
+            "median": 0.0,
+            "p95": 1.0
+          },
+          "steps_used": {
+            "max": 1.0,
+            "median": 1.0,
+            "p95": 1.0
+          },
+          "tokens_used": {
+            "max": 1326.0,
+            "median": 811.0,
+            "p95": 1326.0
+          }
+        },
+        "failure_classes": {
+          "false-acceptance-oracle": 3,
+          "unverified-output": 2
+        },
+        "false_acceptance_rate": 0.125,
+        "false_acceptances": 3,
+        "safe_deferrals": 3,
+        "solve_rate": 0.7619,
+        "solved": 16,
+        "stop_reasons": {
+          "clarification": 3,
+          "goal_achieved": 19,
+          "invalid_response": 2
+        },
+        "verified_attempts": 21
+      },
+      "ungated_loop": {
+        "attempts": 24,
+        "categories": {
+          "api": {
+            "attempts": 3,
+            "success_rate": 1.0,
+            "successes": 3
+          },
+          "bug-repair": {
+            "attempts": 3,
+            "success_rate": 1.0,
+            "successes": 3
+          },
+          "cli": {
+            "attempts": 3,
+            "success_rate": 1.0,
+            "successes": 3
+          },
+          "feature-work": {
+            "attempts": 3,
+            "success_rate": 1.0,
+            "successes": 3
+          },
+          "incomplete-specification": {
+            "attempts": 3,
+            "success_rate": 1.0,
+            "successes": 3
+          },
+          "multi-file-refactor": {
+            "attempts": 3,
+            "success_rate": 1.0,
+            "successes": 3
+          },
+          "regression": {
+            "attempts": 3,
+            "success_rate": 0.6667,
+            "successes": 2
+          },
+          "ui": {
+            "attempts": 3,
+            "success_rate": 1.0,
+            "successes": 3
+          }
+        },
+        "clarification_attempts": 3,
+        "distributions": {
+          "duration_seconds": {
+            "max": 123.825,
+            "median": 8.332,
+            "p95": 110.416
+          },
+          "questions": {
+            "max": 1.0,
+            "median": 0.0,
+            "p95": 1.0
+          },
+          "steps_used": {
+            "max": 12.0,
+            "median": 4.0,
+            "p95": 12.0
+          },
+          "tokens_used": {
+            "max": 24245.0,
+            "median": 4086.5,
+            "p95": 21375.0
+          }
+        },
+        "failure_classes": {
+          "non-convergence-max_steps": 1
+        },
+        "false_acceptance_rate": 0.0,
+        "false_acceptances": 0,
+        "safe_deferrals": 3,
+        "solve_rate": 0.9524,
+        "solved": 20,
+        "stop_reasons": {
+          "clarification": 3,
+          "goal_achieved": 20,
+          "max_steps": 1
+        },
+        "verified_attempts": 21
+      }
+    },
+    "primary_gate": {
+      "false_acceptance_passed": true,
+      "observed_min_repeats": 3,
+      "passed": false,
+      "repeats_passed": true,
+      "required_repeats": 3,
+      "required_solve_rate": 0.85,
+      "solve_rate_passed": false
+    }
+  }
+}

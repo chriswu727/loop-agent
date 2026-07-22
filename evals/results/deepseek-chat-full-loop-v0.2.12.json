@@ -1,0 +1,1621 @@
+{
+  "complete": true,
+  "completed_results": 24,
+  "evaluation_runtime_sha256": "c56bf3ed461d0167a0fba4e8753309e6f75431bfe326300041890a55d8d882b5",
+  "expected_results": 24,
+  "fixtures": "evals/repositories",
+  "fixtures_sha256": "903ae0ea1f898078c031aa2703526e7adb8ab4e18dfba9f20273ea67ab745c16",
+  "label": "deepseek-chat-full-loop-v0.2.12",
+  "limits": {
+    "default_token_budget": 40000,
+    "llm_max_retries": 0,
+    "llm_request_timeout_seconds": 60,
+    "llm_total_timeout_seconds": 90.0,
+    "task_timeout_seconds": 180.0
+  },
+  "manifest": "evals/repository-suite.json",
+  "manifest_sha256": "518b240a99c25104169bdcbdfb691174547bad02217561cbe3bb754b722422c8",
+  "model_identity_complete": true,
+  "models": [
+    {
+      "model": "deepseek-chat",
+      "provider": "deepseek"
+    }
+  ],
+  "modes": [
+    "full_loop"
+  ],
+  "repeats": 3,
+  "results": [
+    {
+      "accepted": true,
+      "apply_error": null,
+      "apply_passed": true,
+      "artifact_digest": "04f03cf54bd3e0e4f5c437135813baa096364432b91c8a52050e25805c3f4839",
+      "case_id": "repair-cart-totals",
+      "category": "bug-repair",
+      "contract_quality": {
+        "adjudication_reason": "The critic supplied no user-answerable question and the deterministic contract validator found no blocking issue. Every criterion maps to a discovered test gate whose test sources were included in bounded repository discovery; the critic's issues remain recorded as advisory evidence.",
+        "checks": 1,
+        "criteria": 3,
+        "critic_accepted": true,
+        "critic_adjudicated": true,
+        "issues": [
+          "The check 'contract-001' runs pytest but does not capture or assert stdout. The test suite output is not forwarded, so a test failure would not be detected by the contract runner. The check must either capture stdout and assert on it, or use a different mechanism to verify test results."
+        ],
+        "locked": true,
+        "question": null
+      },
+      "duration_seconds": 12.491,
+      "error": null,
+      "expected_files_present": true,
+      "expected_outcome": "verified_delivery",
+      "failure_class": null,
+      "false_acceptance": false,
+      "integrity_valid": true,
+      "isolation": "inline",
+      "mode": "full_loop",
+      "model": {
+        "model": "deepseek-chat",
+        "provider": "deepseek"
+      },
+      "oracle_passed": true,
+      "provider": "deepseek",
+      "questions": 0,
+      "receipt_replay_error": null,
+      "replay_passed": true,
+      "run": 1,
+      "safe_deferral": false,
+      "solved": true,
+      "steps_used": 4,
+      "stop_reason": "goal_achieved",
+      "task_id": "58531b8f-9fe5-4002-b4e0-de9273ac5024",
+      "tokens_used": 8677,
+      "trajectory": {
+        "checks": 0,
+        "errors": 0,
+        "finish_attempts": 1,
+        "mutations": 1,
+        "questions": 0,
+        "status_counts": {
+          "ok": 4
+        },
+        "tool_counts": {
+          "edit_file": 1,
+          "finish": 1,
+          "read_file": 2
+        },
+        "unique_tools": 3
+      },
+      "undo_error": null,
+      "undo_passed": true
+    },
+    {
+      "accepted": true,
+      "apply_error": null,
+      "apply_passed": true,
+      "artifact_digest": "01719bba8446111c60e84b3d3cd8b2fa8ce19b8015035ecb36fae826329937ae",
+      "case_id": "add-rate-limiter",
+      "category": "feature-work",
+      "contract_quality": {
+        "adjudication_reason": null,
+        "checks": 1,
+        "criteria": 6,
+        "critic_accepted": true,
+        "critic_adjudicated": false,
+        "issues": [],
+        "locked": true,
+        "question": null
+      },
+      "duration_seconds": 10.906,
+      "error": null,
+      "expected_files_present": true,
+      "expected_outcome": "verified_delivery",
+      "failure_class": null,
+      "false_acceptance": false,
+      "integrity_valid": true,
+      "isolation": "inline",
+      "mode": "full_loop",
+      "model": {
+        "model": "deepseek-chat",
+        "provider": "deepseek"
+      },
+      "oracle_passed": true,
+      "provider": "deepseek",
+      "questions": 0,
+      "receipt_replay_error": null,
+      "replay_passed": true,
+      "run": 1,
+      "safe_deferral": false,
+      "solved": true,
+      "steps_used": 3,
+      "stop_reason": "goal_achieved",
+      "task_id": "e4639535-0f95-41b1-bfb9-2570b66b0d13",
+      "tokens_used": 7833,
+      "trajectory": {
+        "checks": 0,
+        "errors": 0,
+        "finish_attempts": 1,
+        "mutations": 1,
+        "questions": 0,
+        "status_counts": {
+          "ok": 3
+        },
+        "tool_counts": {
+          "finish": 1,
+          "read_file": 1,
+          "write_file": 1
+        },
+        "unique_tools": 3
+      },
+      "undo_error": null,
+      "undo_passed": true
+    },
+    {
+      "accepted": true,
+      "apply_error": null,
+      "apply_passed": true,
+      "artifact_digest": "66a9cfa7014a32271bebebec6a3d883e188b1662371bc26f2a21d1c8cade0b07",
+      "case_id": "refactor-notification-channels",
+      "category": "multi-file-refactor",
+      "contract_quality": {
+        "adjudication_reason": null,
+        "checks": 1,
+        "criteria": 5,
+        "critic_accepted": true,
+        "critic_adjudicated": false,
+        "issues": [],
+        "locked": true,
+        "question": null
+      },
+      "duration_seconds": 13.969,
+      "error": null,
+      "expected_files_present": true,
+      "expected_outcome": "verified_delivery",
+      "failure_class": null,
+      "false_acceptance": false,
+      "integrity_valid": true,
+      "isolation": "inline",
+      "mode": "full_loop",
+      "model": {
+        "model": "deepseek-chat",
+        "provider": "deepseek"
+      },
+      "oracle_passed": true,
+      "provider": "deepseek",
+      "questions": 0,
+      "receipt_replay_error": null,
+      "replay_passed": true,
+      "run": 1,
+      "safe_deferral": false,
+      "solved": true,
+      "steps_used": 4,
+      "stop_reason": "goal_achieved",
+      "task_id": "d2d4517c-0feb-47ca-aeaa-89f3a9e6020e",
+      "tokens_used": 10238,
+      "trajectory": {
+        "checks": 0,
+        "errors": 0,
+        "finish_attempts": 1,
+        "mutations": 2,
+        "questions": 0,
+        "status_counts": {
+          "ok": 4
+        },
+        "tool_counts": {
+          "edit_file": 1,
+          "finish": 1,
+          "read_file": 1,
+          "write_file": 1
+        },
+        "unique_tools": 4
+      },
+      "undo_error": null,
+      "undo_passed": true
+    },
+    {
+      "accepted": true,
+      "apply_error": null,
+      "apply_passed": true,
+      "artifact_digest": "eeb78321a2160b6376870b57de9f478fa0eb12a191d0c05f14a8d6cfba0af5b0",
+      "case_id": "extend-task-cli",
+      "category": "cli",
+      "contract_quality": {
+        "adjudication_reason": "The critic supplied no user-answerable question and the deterministic contract validator found no blocking issue. Every criterion maps to a discovered test gate whose test sources were included in bounded repository discovery; the critic's issues remain recorded as advisory evidence.",
+        "checks": 1,
+        "criteria": 4,
+        "critic_accepted": true,
+        "critic_adjudicated": true,
+        "issues": [
+          "The check 'contract-001' runs `npm run test` (which executes `node --test`) and claims to cover all four criteria, but the existing test file test/cli.test.mjs does not contain a test for `list --status open --format json` that verifies the exact JSON array with the two open tasks. The test file shown in the preview has a test that filters open tasks and emits JSON, but it does not assert the exact JSON array content \u2014 it only parses and deep-equals the parsed object. However, the preview shows"
+        ],
+        "locked": true,
+        "question": null
+      },
+      "duration_seconds": 22.379,
+      "error": null,
+      "expected_files_present": true,
+      "expected_outcome": "verified_delivery",
+      "failure_class": null,
+      "false_acceptance": false,
+      "integrity_valid": true,
+      "isolation": "inline",
+      "mode": "full_loop",
+      "model": {
+        "model": "deepseek-chat",
+        "provider": "deepseek"
+      },
+      "oracle_passed": true,
+      "provider": "deepseek",
+      "questions": 0,
+      "receipt_replay_error": null,
+      "replay_passed": true,
+      "run": 1,
+      "safe_deferral": false,
+      "solved": true,
+      "steps_used": 4,
+      "stop_reason": "goal_achieved",
+      "task_id": "80c36383-8c3c-45b8-a09f-96352960c44f",
+      "tokens_used": 11868,
+      "trajectory": {
+        "checks": 0,
+        "errors": 0,
+        "finish_attempts": 1,
+        "mutations": 1,
+        "questions": 0,
+        "status_counts": {
+          "ok": 4
+        },
+        "tool_counts": {
+          "finish": 1,
+          "read_file": 2,
+          "write_file": 1
+        },
+        "unique_tools": 3
+      },
+      "undo_error": null,
+      "undo_passed": true
+    },
+    {
+      "accepted": true,
+      "apply_error": null,
+      "apply_passed": true,
+      "artifact_digest": "ed8655b0cbc56d9a026a028ffe5d0114c752c0cdad840f42f229a3c476c4a586",
+      "case_id": "idempotent-order-api",
+      "category": "api",
+      "contract_quality": {
+        "adjudication_reason": null,
+        "checks": 1,
+        "criteria": 3,
+        "critic_accepted": true,
+        "critic_adjudicated": false,
+        "issues": [],
+        "locked": true,
+        "question": null
+      },
+      "duration_seconds": 12.911,
+      "error": null,
+      "expected_files_present": true,
+      "expected_outcome": "verified_delivery",
+      "failure_class": null,
+      "false_acceptance": false,
+      "integrity_valid": true,
+      "isolation": "inline",
+      "mode": "full_loop",
+      "model": {
+        "model": "deepseek-chat",
+        "provider": "deepseek"
+      },
+      "oracle_passed": true,
+      "provider": "deepseek",
+      "questions": 0,
+      "receipt_replay_error": null,
+      "replay_passed": true,
+      "run": 1,
+      "safe_deferral": false,
+      "solved": true,
+      "steps_used": 4,
+      "stop_reason": "goal_achieved",
+      "task_id": "4b3866b8-3525-4e2e-8efb-745bd27a7045",
+      "tokens_used": 10324,
+      "trajectory": {
+        "checks": 0,
+        "errors": 0,
+        "finish_attempts": 1,
+        "mutations": 1,
+        "questions": 0,
+        "status_counts": {
+          "ok": 4
+        },
+        "tool_counts": {
+          "finish": 1,
+          "read_file": 2,
+          "write_file": 1
+        },
+        "unique_tools": 3
+      },
+      "undo_error": null,
+      "undo_passed": true
+    },
+    {
+      "accepted": true,
+      "apply_error": null,
+      "apply_passed": true,
+      "artifact_digest": "8ac37712de50a80bb5fdcfa78e0e68c26f877ace2fd11333fa80ed35367f99ea",
+      "case_id": "accessible-dialog-ui",
+      "category": "ui",
+      "contract_quality": {
+        "adjudication_reason": "The critic supplied no user-answerable question and the deterministic contract validator found no blocking issue. Every criterion maps to a discovered test gate whose test sources were included in bounded repository discovery; the critic's issues remain recorded as advisory evidence.",
+        "checks": 1,
+        "criteria": 4,
+        "critic_accepted": true,
+        "critic_adjudicated": true,
+        "issues": [
+          "The check 'contract-004' runs 'npm run test' but does not capture or assert stdout/stderr. The test file uses assert.match on the HTML content, which will produce output only on failure; the check only asserts exit status 0. This is insufficient to prove the HTML criterion (criterion-001) because a test that fails the HTML assertion would still exit non-zero, but the check does not verify that the test actually ran or that its assertions passed. A command check that only checks exit code cannot"
+        ],
+        "locked": true,
+        "question": null
+      },
+      "duration_seconds": 27.213,
+      "error": null,
+      "expected_files_present": true,
+      "expected_outcome": "verified_delivery",
+      "failure_class": null,
+      "false_acceptance": false,
+      "integrity_valid": true,
+      "isolation": "inline",
+      "mode": "full_loop",
+      "model": {
+        "model": "deepseek-chat",
+        "provider": "deepseek"
+      },
+      "oracle_passed": true,
+      "provider": "deepseek",
+      "questions": 0,
+      "receipt_replay_error": null,
+      "replay_passed": true,
+      "run": 1,
+      "safe_deferral": false,
+      "solved": true,
+      "steps_used": 9,
+      "stop_reason": "goal_achieved",
+      "task_id": "126f4fd0-c6a7-4ff5-b3b3-685bca0ed26e",
+      "tokens_used": 25656,
+      "trajectory": {
+        "checks": 1,
+        "errors": 3,
+        "finish_attempts": 1,
+        "mutations": 3,
+        "questions": 0,
+        "status_counts": {
+          "blocked": 2,
+          "error": 1,
+          "ok": 6
+        },
+        "tool_counts": {
+          "edit_file": 1,
+          "finish": 1,
+          "read_file": 4,
+          "run_command": 1,
+          "write_file": 2
+        },
+        "unique_tools": 5
+      },
+      "undo_error": null,
+      "undo_passed": true
+    },
+    {
+      "accepted": true,
+      "apply_error": null,
+      "apply_passed": true,
+      "artifact_digest": "8ceb6593f12de550cb705a7113ffa65e2fd2bee8157108aa2fe0ca09458495db",
+      "case_id": "preserve-config-regressions",
+      "category": "regression",
+      "contract_quality": {
+        "adjudication_reason": null,
+        "checks": 1,
+        "criteria": 5,
+        "critic_accepted": true,
+        "critic_adjudicated": false,
+        "issues": [],
+        "locked": true,
+        "question": null
+      },
+      "duration_seconds": 14.881,
+      "error": null,
+      "expected_files_present": true,
+      "expected_outcome": "verified_delivery",
+      "failure_class": null,
+      "false_acceptance": false,
+      "integrity_valid": true,
+      "isolation": "inline",
+      "mode": "full_loop",
+      "model": {
+        "model": "deepseek-chat",
+        "provider": "deepseek"
+      },
+      "oracle_passed": true,
+      "provider": "deepseek",
+      "questions": 0,
+      "receipt_replay_error": null,
+      "replay_passed": true,
+      "run": 1,
+      "safe_deferral": false,
+      "solved": true,
+      "steps_used": 4,
+      "stop_reason": "goal_achieved",
+      "task_id": "9c3a2019-b0f0-4e73-82c5-8ff8eea9cd63",
+      "tokens_used": 10178,
+      "trajectory": {
+        "checks": 0,
+        "errors": 0,
+        "finish_attempts": 1,
+        "mutations": 1,
+        "questions": 0,
+        "status_counts": {
+          "ok": 4
+        },
+        "tool_counts": {
+          "edit_file": 1,
+          "finish": 1,
+          "read_file": 2
+        },
+        "unique_tools": 3
+      },
+      "undo_error": null,
+      "undo_passed": true
+    },
+    {
+      "accepted": false,
+      "apply_error": null,
+      "apply_passed": false,
+      "artifact_digest": null,
+      "case_id": "resolve-retention-conflict",
+      "category": "incomplete-specification",
+      "contract_quality": {
+        "adjudication_reason": null,
+        "checks": 2,
+        "criteria": 1,
+        "critic_accepted": false,
+        "critic_adjudicated": false,
+        "issues": [
+          "The repository contains materially conflicting retention requirements: README.md says 'delete audit logs after 7 days' while policy.md says 'minimum of 90 days'. The proposed contract assumes policy.md is authoritative, but this assumption is not justified by the user instruction, which says not to guess or change files in case of conflict."
+        ],
+        "locked": false,
+        "question": "The README.md says to delete after 7 days, but policy.md requires a minimum 90-day retention. Which retention period should the implementation follow?"
+      },
+      "duration_seconds": 16.46,
+      "error": null,
+      "expected_files_present": true,
+      "expected_outcome": "clarification",
+      "failure_class": null,
+      "false_acceptance": false,
+      "integrity_valid": true,
+      "isolation": null,
+      "mode": "full_loop",
+      "model": {
+        "model": "deepseek-chat",
+        "provider": "deepseek"
+      },
+      "oracle_passed": false,
+      "provider": "deepseek",
+      "questions": 1,
+      "receipt_replay_error": null,
+      "replay_passed": false,
+      "run": 1,
+      "safe_deferral": true,
+      "solved": false,
+      "steps_used": 0,
+      "stop_reason": "clarification",
+      "task_id": "2c152434-9b63-4fe7-bed0-1cb0b2991446",
+      "tokens_used": 7862,
+      "trajectory": {
+        "checks": 0,
+        "errors": 0,
+        "finish_attempts": 0,
+        "mutations": 0,
+        "questions": 0,
+        "status_counts": {},
+        "tool_counts": {},
+        "unique_tools": 0
+      },
+      "undo_error": null,
+      "undo_passed": false
+    },
+    {
+      "accepted": true,
+      "apply_error": null,
+      "apply_passed": true,
+      "artifact_digest": "fd89cac5b28a0eba2a143dba04d7a8e48f3b66ab2b5b6a1c80d2e677f4ed31cb",
+      "case_id": "repair-cart-totals",
+      "category": "bug-repair",
+      "contract_quality": {
+        "adjudication_reason": "The critic supplied no user-answerable question and the deterministic contract validator found no blocking issue. Every criterion maps to a discovered test gate whose test sources were included in bounded repository discovery; the critic's issues remain recorded as advisory evidence.",
+        "checks": 1,
+        "criteria": 3,
+        "critic_accepted": true,
+        "critic_adjudicated": true,
+        "issues": [
+          "The check 'contract-001' runs pytest but does not capture or assert stdout; it only checks exit status. This cannot verify that the total calculation honors both quantity and per-line percentage discounts, nor that negative quantities are rejected with a ValueError. The test output must be forwarded or the check must assert specific output to prove the criteria."
+        ],
+        "locked": true,
+        "question": null
+      },
+      "duration_seconds": 13.953,
+      "error": null,
+      "expected_files_present": true,
+      "expected_outcome": "verified_delivery",
+      "failure_class": null,
+      "false_acceptance": false,
+      "integrity_valid": true,
+      "isolation": "inline",
+      "mode": "full_loop",
+      "model": {
+        "model": "deepseek-chat",
+        "provider": "deepseek"
+      },
+      "oracle_passed": true,
+      "provider": "deepseek",
+      "questions": 0,
+      "receipt_replay_error": null,
+      "replay_passed": true,
+      "run": 2,
+      "safe_deferral": false,
+      "solved": true,
+      "steps_used": 4,
+      "stop_reason": "goal_achieved",
+      "task_id": "0e4bdecb-cb89-43ff-8731-d42d33f1e0b8",
+      "tokens_used": 8803,
+      "trajectory": {
+        "checks": 0,
+        "errors": 0,
+        "finish_attempts": 1,
+        "mutations": 1,
+        "questions": 0,
+        "status_counts": {
+          "ok": 4
+        },
+        "tool_counts": {
+          "edit_file": 1,
+          "finish": 1,
+          "read_file": 2
+        },
+        "unique_tools": 3
+      },
+      "undo_error": null,
+      "undo_passed": true
+    },
+    {
+      "accepted": true,
+      "apply_error": null,
+      "apply_passed": true,
+      "artifact_digest": "f9bd322982405f58d65872e735a1d760bca6ff674d29a541dd1fe7c286fb0cc0",
+      "case_id": "add-rate-limiter",
+      "category": "feature-work",
+      "contract_quality": {
+        "adjudication_reason": null,
+        "checks": 1,
+        "criteria": 5,
+        "critic_accepted": true,
+        "critic_adjudicated": false,
+        "issues": [],
+        "locked": true,
+        "question": null
+      },
+      "duration_seconds": 12.592,
+      "error": null,
+      "expected_files_present": true,
+      "expected_outcome": "verified_delivery",
+      "failure_class": null,
+      "false_acceptance": false,
+      "integrity_valid": true,
+      "isolation": "inline",
+      "mode": "full_loop",
+      "model": {
+        "model": "deepseek-chat",
+        "provider": "deepseek"
+      },
+      "oracle_passed": true,
+      "provider": "deepseek",
+      "questions": 0,
+      "receipt_replay_error": null,
+      "replay_passed": true,
+      "run": 2,
+      "safe_deferral": false,
+      "solved": true,
+      "steps_used": 3,
+      "stop_reason": "goal_achieved",
+      "task_id": "a0ea1c9c-2dd7-48ad-ab7b-9c7a4e4f83fc",
+      "tokens_used": 7746,
+      "trajectory": {
+        "checks": 0,
+        "errors": 0,
+        "finish_attempts": 1,
+        "mutations": 1,
+        "questions": 0,
+        "status_counts": {
+          "ok": 3
+        },
+        "tool_counts": {
+          "finish": 1,
+          "read_file": 1,
+          "write_file": 1
+        },
+        "unique_tools": 3
+      },
+      "undo_error": null,
+      "undo_passed": true
+    },
+    {
+      "accepted": true,
+      "apply_error": null,
+      "apply_passed": true,
+      "artifact_digest": "6f83270c285b7164c0e733b1159b6dbc52b852d80ef279ddbb783b4d8d50556d",
+      "case_id": "refactor-notification-channels",
+      "category": "multi-file-refactor",
+      "contract_quality": {
+        "adjudication_reason": null,
+        "checks": 1,
+        "criteria": 6,
+        "critic_accepted": true,
+        "critic_adjudicated": false,
+        "issues": [],
+        "locked": true,
+        "question": null
+      },
+      "duration_seconds": 15.561,
+      "error": null,
+      "expected_files_present": true,
+      "expected_outcome": "verified_delivery",
+      "failure_class": null,
+      "false_acceptance": false,
+      "integrity_valid": true,
+      "isolation": "inline",
+      "mode": "full_loop",
+      "model": {
+        "model": "deepseek-chat",
+        "provider": "deepseek"
+      },
+      "oracle_passed": true,
+      "provider": "deepseek",
+      "questions": 0,
+      "receipt_replay_error": null,
+      "replay_passed": true,
+      "run": 2,
+      "safe_deferral": false,
+      "solved": true,
+      "steps_used": 4,
+      "stop_reason": "goal_achieved",
+      "task_id": "b8d81433-3895-4317-a1f1-255ec2a0d55e",
+      "tokens_used": 10448,
+      "trajectory": {
+        "checks": 0,
+        "errors": 0,
+        "finish_attempts": 1,
+        "mutations": 2,
+        "questions": 0,
+        "status_counts": {
+          "ok": 4
+        },
+        "tool_counts": {
+          "edit_file": 1,
+          "finish": 1,
+          "read_file": 1,
+          "write_file": 1
+        },
+        "unique_tools": 4
+      },
+      "undo_error": null,
+      "undo_passed": true
+    },
+    {
+      "accepted": true,
+      "apply_error": null,
+      "apply_passed": true,
+      "artifact_digest": "b712024acc4de78db3957bd6abd94491f6e42f92b0a15ce98815e07827ae7e23",
+      "case_id": "extend-task-cli",
+      "category": "cli",
+      "contract_quality": {
+        "adjudication_reason": "The critic supplied no user-answerable question and the deterministic contract validator found no blocking issue. Every criterion maps to a discovered test gate whose test sources were included in bounded repository discovery; the critic's issues remain recorded as advisory evidence.",
+        "checks": 1,
+        "criteria": 4,
+        "critic_accepted": true,
+        "critic_adjudicated": true,
+        "issues": [
+          "The check `contract-discovered-test-006` runs `npm run test` and maps to all four criteria, but the existing test file `test/cli.test.mjs` already contains tests that directly match criteria 1-4. The contract's check is a redundant subprocess invocation that does not forward captured output and only asserts exit status 0, which cannot prove the criteria about specific stdout/stderr content. The existing tests in the repository provide direct behavioral evidence for all criteria, so the contract"
+        ],
+        "locked": true,
+        "question": null
+      },
+      "duration_seconds": 19.817,
+      "error": null,
+      "expected_files_present": true,
+      "expected_outcome": "verified_delivery",
+      "failure_class": null,
+      "false_acceptance": false,
+      "integrity_valid": true,
+      "isolation": "inline",
+      "mode": "full_loop",
+      "model": {
+        "model": "deepseek-chat",
+        "provider": "deepseek"
+      },
+      "oracle_passed": true,
+      "provider": "deepseek",
+      "questions": 0,
+      "receipt_replay_error": null,
+      "replay_passed": true,
+      "run": 2,
+      "safe_deferral": false,
+      "solved": true,
+      "steps_used": 4,
+      "stop_reason": "goal_achieved",
+      "task_id": "541b7407-0e6e-46a1-aa12-601074c52766",
+      "tokens_used": 11362,
+      "trajectory": {
+        "checks": 0,
+        "errors": 0,
+        "finish_attempts": 1,
+        "mutations": 1,
+        "questions": 0,
+        "status_counts": {
+          "ok": 4
+        },
+        "tool_counts": {
+          "finish": 1,
+          "read_file": 2,
+          "write_file": 1
+        },
+        "unique_tools": 3
+      },
+      "undo_error": null,
+      "undo_passed": true
+    },
+    {
+      "accepted": true,
+      "apply_error": null,
+      "apply_passed": true,
+      "artifact_digest": "53b2d257e5b0504cf1a809cde3137cafab6bf949d643326f4248465859f49557",
+      "case_id": "idempotent-order-api",
+      "category": "api",
+      "contract_quality": {
+        "adjudication_reason": "The critic supplied no user-answerable question and the deterministic contract validator found no blocking issue. Every criterion maps to a discovered test gate whose test sources were included in bounded repository discovery; the critic's issues remain recorded as advisory evidence.",
+        "checks": 1,
+        "criteria": 4,
+        "critic_accepted": true,
+        "critic_adjudicated": true,
+        "issues": [
+          "The contract's check (contract-001) runs `python3 -m pytest -q` but does not forward captured stdout/stderr, so the test runner's output is hidden. This makes it impossible to diagnose test failures from the contract output alone."
+        ],
+        "locked": true,
+        "question": null
+      },
+      "duration_seconds": 14.459,
+      "error": null,
+      "expected_files_present": true,
+      "expected_outcome": "verified_delivery",
+      "failure_class": null,
+      "false_acceptance": false,
+      "integrity_valid": true,
+      "isolation": "inline",
+      "mode": "full_loop",
+      "model": {
+        "model": "deepseek-chat",
+        "provider": "deepseek"
+      },
+      "oracle_passed": true,
+      "provider": "deepseek",
+      "questions": 0,
+      "receipt_replay_error": null,
+      "replay_passed": true,
+      "run": 2,
+      "safe_deferral": false,
+      "solved": true,
+      "steps_used": 4,
+      "stop_reason": "goal_achieved",
+      "task_id": "545237f8-a306-4d49-8a4f-c73a3f531fdd",
+      "tokens_used": 10509,
+      "trajectory": {
+        "checks": 0,
+        "errors": 0,
+        "finish_attempts": 1,
+        "mutations": 1,
+        "questions": 0,
+        "status_counts": {
+          "ok": 4
+        },
+        "tool_counts": {
+          "finish": 1,
+          "read_file": 2,
+          "write_file": 1
+        },
+        "unique_tools": 3
+      },
+      "undo_error": null,
+      "undo_passed": true
+    },
+    {
+      "accepted": false,
+      "apply_error": null,
+      "apply_passed": false,
+      "artifact_digest": null,
+      "case_id": "accessible-dialog-ui",
+      "category": "ui",
+      "contract_quality": {
+        "adjudication_reason": null,
+        "checks": 1,
+        "criteria": 1,
+        "critic_accepted": false,
+        "critic_adjudicated": false,
+        "issues": [
+          "The contract compiler returned an invalid draft: 1 validation error for ContractProposal\ncriteria\n  List should have at least 1 item after validation, not 0 [type=too_short, input_value=[], input_type=list]\n    For further information visit https://errors.pydantic.dev/2.13/v/too_short"
+        ],
+        "locked": false,
+        "question": "Loop could not compile a verifiable contract. What observable behavior or output must be true when this task is finished?"
+      },
+      "duration_seconds": 3.677,
+      "error": null,
+      "expected_files_present": false,
+      "expected_outcome": "verified_delivery",
+      "failure_class": "unnecessary-clarification",
+      "false_acceptance": false,
+      "integrity_valid": true,
+      "isolation": null,
+      "mode": "full_loop",
+      "model": {
+        "model": "deepseek-chat",
+        "provider": "deepseek"
+      },
+      "oracle_passed": false,
+      "provider": "deepseek",
+      "questions": 1,
+      "receipt_replay_error": null,
+      "replay_passed": false,
+      "run": 2,
+      "safe_deferral": false,
+      "solved": false,
+      "steps_used": 0,
+      "stop_reason": "clarification",
+      "task_id": "eb567a1e-7803-4e6b-88c7-f97152baa813",
+      "tokens_used": 1948,
+      "trajectory": {
+        "checks": 0,
+        "errors": 0,
+        "finish_attempts": 0,
+        "mutations": 0,
+        "questions": 0,
+        "status_counts": {},
+        "tool_counts": {},
+        "unique_tools": 0
+      },
+      "undo_error": null,
+      "undo_passed": false
+    },
+    {
+      "accepted": true,
+      "apply_error": null,
+      "apply_passed": true,
+      "artifact_digest": "74485334d02fedc0bce30e9dd6d1e65ba0298ed63a26bcb684f5a7f6e4135fb0",
+      "case_id": "preserve-config-regressions",
+      "category": "regression",
+      "contract_quality": {
+        "adjudication_reason": "The critic supplied no user-answerable question and the deterministic contract validator found no blocking issue. Every criterion maps to a discovered test gate whose test sources were included in bounded repository discovery; the critic's issues remain recorded as advisory evidence.",
+        "checks": 1,
+        "criteria": 7,
+        "critic_accepted": true,
+        "critic_adjudicated": true,
+        "issues": [
+          "The check contract-001 runs the full test suite but does not capture or assert stdout/stderr. The test suite may print test results to stdout, but the check only asserts exit status 0. This is insufficient to prove that the tests actually ran and passed; a test runner could exit 0 even if no tests were collected or if tests were skipped. The check must forward captured output or assert on stdout to provide meaningful evidence."
+        ],
+        "locked": true,
+        "question": null
+      },
+      "duration_seconds": 19.517,
+      "error": null,
+      "expected_files_present": true,
+      "expected_outcome": "verified_delivery",
+      "failure_class": null,
+      "false_acceptance": false,
+      "integrity_valid": true,
+      "isolation": "inline",
+      "mode": "full_loop",
+      "model": {
+        "model": "deepseek-chat",
+        "provider": "deepseek"
+      },
+      "oracle_passed": true,
+      "provider": "deepseek",
+      "questions": 0,
+      "receipt_replay_error": null,
+      "replay_passed": true,
+      "run": 2,
+      "safe_deferral": false,
+      "solved": true,
+      "steps_used": 4,
+      "stop_reason": "goal_achieved",
+      "task_id": "93fc279e-88f7-4029-a2c7-6de3e0080e74",
+      "tokens_used": 14327,
+      "trajectory": {
+        "checks": 0,
+        "errors": 0,
+        "finish_attempts": 1,
+        "mutations": 1,
+        "questions": 0,
+        "status_counts": {
+          "ok": 4
+        },
+        "tool_counts": {
+          "edit_file": 1,
+          "finish": 1,
+          "read_file": 2
+        },
+        "unique_tools": 3
+      },
+      "undo_error": null,
+      "undo_passed": true
+    },
+    {
+      "accepted": false,
+      "apply_error": null,
+      "apply_passed": false,
+      "artifact_digest": null,
+      "case_id": "resolve-retention-conflict",
+      "category": "incomplete-specification",
+      "contract_quality": {
+        "adjudication_reason": null,
+        "checks": 5,
+        "criteria": 4,
+        "critic_accepted": false,
+        "critic_adjudicated": false,
+        "issues": [
+          "The criteria are contradictory: criteria 1 and 2 require a 7-day retention (delete at age > 7), while criteria 3 and 4 require a 90-day retention (do not delete at age 90 or 89). The function cannot satisfy both sets simultaneously, and the contract does not resolve which policy takes precedence.",
+          "Contract risk is high; only low-risk contracts start automatically."
+        ],
+        "locked": false,
+        "question": "README.md specifies a 7-day retention, while policy.md specifies a minimum 90-day retention. Which policy should the should_delete function follow?"
+      },
+      "duration_seconds": 22.589,
+      "error": null,
+      "expected_files_present": true,
+      "expected_outcome": "clarification",
+      "failure_class": null,
+      "false_acceptance": false,
+      "integrity_valid": true,
+      "isolation": null,
+      "mode": "full_loop",
+      "model": {
+        "model": "deepseek-chat",
+        "provider": "deepseek"
+      },
+      "oracle_passed": false,
+      "provider": "deepseek",
+      "questions": 1,
+      "receipt_replay_error": null,
+      "replay_passed": false,
+      "run": 2,
+      "safe_deferral": true,
+      "solved": false,
+      "steps_used": 0,
+      "stop_reason": "clarification",
+      "task_id": "8865092f-073a-44ef-9e09-0fcdda0012f1",
+      "tokens_used": 11296,
+      "trajectory": {
+        "checks": 0,
+        "errors": 0,
+        "finish_attempts": 0,
+        "mutations": 0,
+        "questions": 0,
+        "status_counts": {},
+        "tool_counts": {},
+        "unique_tools": 0
+      },
+      "undo_error": null,
+      "undo_passed": false
+    },
+    {
+      "accepted": true,
+      "apply_error": null,
+      "apply_passed": true,
+      "artifact_digest": "04f03cf54bd3e0e4f5c437135813baa096364432b91c8a52050e25805c3f4839",
+      "case_id": "repair-cart-totals",
+      "category": "bug-repair",
+      "contract_quality": {
+        "adjudication_reason": "The critic supplied no user-answerable question and the deterministic contract validator found no blocking issue. Every criterion maps to a discovered test gate whose test sources were included in bounded repository discovery; the critic's issues remain recorded as advisory evidence.",
+        "checks": 1,
+        "criteria": 4,
+        "critic_accepted": true,
+        "critic_adjudicated": true,
+        "issues": [
+          "The existing implementation in pricing.py does not honor quantity in the total calculation: it adds only the price minus discount, ignoring quantity. The proposed contract's criterion-001 ('Quantity and per-line percentage discount are both honored in the total calculation') is not verifiable by the single pytest command alone because the existing test test_quantity_and_line_discount expects 29.0, which the current code would not produce (it would produce 15.5). The contract must include a check"
+        ],
+        "locked": true,
+        "question": null
+      },
+      "duration_seconds": 19.006,
+      "error": null,
+      "expected_files_present": true,
+      "expected_outcome": "verified_delivery",
+      "failure_class": null,
+      "false_acceptance": false,
+      "integrity_valid": true,
+      "isolation": "inline",
+      "mode": "full_loop",
+      "model": {
+        "model": "deepseek-chat",
+        "provider": "deepseek"
+      },
+      "oracle_passed": true,
+      "provider": "deepseek",
+      "questions": 0,
+      "receipt_replay_error": null,
+      "replay_passed": true,
+      "run": 3,
+      "safe_deferral": false,
+      "solved": true,
+      "steps_used": 4,
+      "stop_reason": "goal_achieved",
+      "task_id": "154d8cfc-0b57-4eaf-8299-a02e776a55ac",
+      "tokens_used": 9639,
+      "trajectory": {
+        "checks": 0,
+        "errors": 0,
+        "finish_attempts": 1,
+        "mutations": 1,
+        "questions": 0,
+        "status_counts": {
+          "ok": 4
+        },
+        "tool_counts": {
+          "edit_file": 1,
+          "finish": 1,
+          "read_file": 2
+        },
+        "unique_tools": 3
+      },
+      "undo_error": null,
+      "undo_passed": true
+    },
+    {
+      "accepted": true,
+      "apply_error": null,
+      "apply_passed": true,
+      "artifact_digest": "fe76e7c846562b90eaf6fa6b256ce78a7b60dde1f11c6999ff07bdaae9f32dd1",
+      "case_id": "add-rate-limiter",
+      "category": "feature-work",
+      "contract_quality": {
+        "adjudication_reason": null,
+        "checks": 2,
+        "criteria": 5,
+        "critic_accepted": true,
+        "critic_adjudicated": false,
+        "issues": [],
+        "locked": true,
+        "question": null
+      },
+      "duration_seconds": 17.637,
+      "error": null,
+      "expected_files_present": true,
+      "expected_outcome": "verified_delivery",
+      "failure_class": null,
+      "false_acceptance": false,
+      "integrity_valid": true,
+      "isolation": "inline",
+      "mode": "full_loop",
+      "model": {
+        "model": "deepseek-chat",
+        "provider": "deepseek"
+      },
+      "oracle_passed": true,
+      "provider": "deepseek",
+      "questions": 0,
+      "receipt_replay_error": null,
+      "replay_passed": true,
+      "run": 3,
+      "safe_deferral": false,
+      "solved": true,
+      "steps_used": 3,
+      "stop_reason": "goal_achieved",
+      "task_id": "85343b42-ef62-472f-8118-9602dfb8d450",
+      "tokens_used": 11303,
+      "trajectory": {
+        "checks": 0,
+        "errors": 0,
+        "finish_attempts": 1,
+        "mutations": 1,
+        "questions": 0,
+        "status_counts": {
+          "ok": 3
+        },
+        "tool_counts": {
+          "finish": 1,
+          "read_file": 1,
+          "write_file": 1
+        },
+        "unique_tools": 3
+      },
+      "undo_error": null,
+      "undo_passed": true
+    },
+    {
+      "accepted": true,
+      "apply_error": null,
+      "apply_passed": true,
+      "artifact_digest": "6f83270c285b7164c0e733b1159b6dbc52b852d80ef279ddbb783b4d8d50556d",
+      "case_id": "refactor-notification-channels",
+      "category": "multi-file-refactor",
+      "contract_quality": {
+        "adjudication_reason": null,
+        "checks": 1,
+        "criteria": 6,
+        "critic_accepted": true,
+        "critic_adjudicated": false,
+        "issues": [],
+        "locked": true,
+        "question": null
+      },
+      "duration_seconds": 13.465,
+      "error": null,
+      "expected_files_present": true,
+      "expected_outcome": "verified_delivery",
+      "failure_class": null,
+      "false_acceptance": false,
+      "integrity_valid": true,
+      "isolation": "inline",
+      "mode": "full_loop",
+      "model": {
+        "model": "deepseek-chat",
+        "provider": "deepseek"
+      },
+      "oracle_passed": true,
+      "provider": "deepseek",
+      "questions": 0,
+      "receipt_replay_error": null,
+      "replay_passed": true,
+      "run": 3,
+      "safe_deferral": false,
+      "solved": true,
+      "steps_used": 4,
+      "stop_reason": "goal_achieved",
+      "task_id": "5eded6ee-088e-4809-9ac6-6fe0710164eb",
+      "tokens_used": 10107,
+      "trajectory": {
+        "checks": 0,
+        "errors": 0,
+        "finish_attempts": 1,
+        "mutations": 2,
+        "questions": 0,
+        "status_counts": {
+          "ok": 4
+        },
+        "tool_counts": {
+          "edit_file": 1,
+          "finish": 1,
+          "read_file": 1,
+          "write_file": 1
+        },
+        "unique_tools": 4
+      },
+      "undo_error": null,
+      "undo_passed": true
+    },
+    {
+      "accepted": true,
+      "apply_error": null,
+      "apply_passed": true,
+      "artifact_digest": "3a48b895298c2ce0ae660c2a067c0d3001de9d0551bf524c91609af0dd591e99",
+      "case_id": "extend-task-cli",
+      "category": "cli",
+      "contract_quality": {
+        "adjudication_reason": "The critic supplied no user-answerable question and the deterministic contract validator found no blocking issue. Every criterion maps to a discovered test gate whose test sources were included in bounded repository discovery; the critic's issues remain recorded as advisory evidence.",
+        "checks": 1,
+        "criteria": 4,
+        "critic_accepted": true,
+        "critic_adjudicated": true,
+        "issues": [
+          "The check `contract-discovered-test-006` runs `npm run test` and maps to all four criteria, but the existing test file `test/cli.test.mjs` already contains tests that directly match criteria 1, 2, 3, and 4. However, the proposed contract does not include a check that actually runs the updated CLI source with the new behavior; it only runs the existing test suite. Since the user instruction says the test file will be updated separately, the contract must include a check that directly invokes the"
+        ],
+        "locked": true,
+        "question": null
+      },
+      "duration_seconds": 17.851,
+      "error": null,
+      "expected_files_present": true,
+      "expected_outcome": "verified_delivery",
+      "failure_class": null,
+      "false_acceptance": false,
+      "integrity_valid": true,
+      "isolation": "inline",
+      "mode": "full_loop",
+      "model": {
+        "model": "deepseek-chat",
+        "provider": "deepseek"
+      },
+      "oracle_passed": true,
+      "provider": "deepseek",
+      "questions": 0,
+      "receipt_replay_error": null,
+      "replay_passed": true,
+      "run": 3,
+      "safe_deferral": false,
+      "solved": true,
+      "steps_used": 4,
+      "stop_reason": "goal_achieved",
+      "task_id": "ef4ae101-63dc-4f80-9127-20cd4b8fe786",
+      "tokens_used": 11207,
+      "trajectory": {
+        "checks": 0,
+        "errors": 0,
+        "finish_attempts": 1,
+        "mutations": 1,
+        "questions": 0,
+        "status_counts": {
+          "ok": 4
+        },
+        "tool_counts": {
+          "edit_file": 1,
+          "finish": 1,
+          "read_file": 2
+        },
+        "unique_tools": 3
+      },
+      "undo_error": null,
+      "undo_passed": true
+    },
+    {
+      "accepted": true,
+      "apply_error": null,
+      "apply_passed": true,
+      "artifact_digest": "d182d55f3e2d2f64bd30dfe2472dbfee6ea83a7149cb228b7b7a2759eb2b0a00",
+      "case_id": "idempotent-order-api",
+      "category": "api",
+      "contract_quality": {
+        "adjudication_reason": null,
+        "checks": 1,
+        "criteria": 4,
+        "critic_accepted": true,
+        "critic_adjudicated": false,
+        "issues": [],
+        "locked": true,
+        "question": null
+      },
+      "duration_seconds": 17.431,
+      "error": null,
+      "expected_files_present": true,
+      "expected_outcome": "verified_delivery",
+      "failure_class": null,
+      "false_acceptance": false,
+      "integrity_valid": true,
+      "isolation": "inline",
+      "mode": "full_loop",
+      "model": {
+        "model": "deepseek-chat",
+        "provider": "deepseek"
+      },
+      "oracle_passed": true,
+      "provider": "deepseek",
+      "questions": 0,
+      "receipt_replay_error": null,
+      "replay_passed": true,
+      "run": 3,
+      "safe_deferral": false,
+      "solved": true,
+      "steps_used": 7,
+      "stop_reason": "goal_achieved",
+      "task_id": "d11f1665-0d74-4d6d-9528-055fd7363bbb",
+      "tokens_used": 19736,
+      "trajectory": {
+        "checks": 1,
+        "errors": 1,
+        "finish_attempts": 1,
+        "mutations": 2,
+        "questions": 0,
+        "status_counts": {
+          "error": 1,
+          "ok": 6
+        },
+        "tool_counts": {
+          "edit_file": 1,
+          "finish": 1,
+          "read_file": 3,
+          "run_command": 1,
+          "write_file": 1
+        },
+        "unique_tools": 5
+      },
+      "undo_error": null,
+      "undo_passed": true
+    },
+    {
+      "accepted": true,
+      "apply_error": null,
+      "apply_passed": true,
+      "artifact_digest": "5e7572daec57670111d04dea76aadbd16f8154e360f045d2698e20c7d4f0beed",
+      "case_id": "accessible-dialog-ui",
+      "category": "ui",
+      "contract_quality": {
+        "adjudication_reason": null,
+        "checks": 1,
+        "criteria": 5,
+        "critic_accepted": true,
+        "critic_adjudicated": false,
+        "issues": [],
+        "locked": true,
+        "question": null
+      },
+      "duration_seconds": 16.86,
+      "error": null,
+      "expected_files_present": true,
+      "expected_outcome": "verified_delivery",
+      "failure_class": null,
+      "false_acceptance": false,
+      "integrity_valid": true,
+      "isolation": "inline",
+      "mode": "full_loop",
+      "model": {
+        "model": "deepseek-chat",
+        "provider": "deepseek"
+      },
+      "oracle_passed": true,
+      "provider": "deepseek",
+      "questions": 0,
+      "receipt_replay_error": null,
+      "replay_passed": true,
+      "run": 3,
+      "safe_deferral": false,
+      "solved": true,
+      "steps_used": 6,
+      "stop_reason": "goal_achieved",
+      "task_id": "4ac71549-7443-437e-89df-93be7b62032c",
+      "tokens_used": 17470,
+      "trajectory": {
+        "checks": 1,
+        "errors": 1,
+        "finish_attempts": 1,
+        "mutations": 2,
+        "questions": 0,
+        "status_counts": {
+          "error": 1,
+          "ok": 5
+        },
+        "tool_counts": {
+          "edit_file": 1,
+          "finish": 1,
+          "read_file": 2,
+          "run_command": 1,
+          "write_file": 1
+        },
+        "unique_tools": 5
+      },
+      "undo_error": null,
+      "undo_passed": true
+    },
+    {
+      "accepted": true,
+      "apply_error": null,
+      "apply_passed": true,
+      "artifact_digest": "8cab972a6e2f05fbad8415d71b6e421eb431748eaaf0108b063cb9fba384b3a6",
+      "case_id": "preserve-config-regressions",
+      "category": "regression",
+      "contract_quality": {
+        "adjudication_reason": "The critic supplied no user-answerable question and the deterministic contract validator found no blocking issue. Every criterion maps to a discovered test gate whose test sources were included in bounded repository discovery; the critic's issues remain recorded as advisory evidence.",
+        "checks": 2,
+        "criteria": 7,
+        "critic_accepted": true,
+        "critic_adjudicated": true,
+        "issues": [
+          "The check 'system-python-test' has no criterion_ids and is a duplicate of the first check (both run pytest). It does not add any new verification and is redundant. More importantly, the contract's criteria are not fully verifiable by the existing test suite: the test file does not include a test for ordinary string values being preserved as strings (criterion-005) nor a test that input mapping is never mutated (criterion-006) \u2014 the existing test only checks immutability for a specific case but d"
+        ],
+        "locked": true,
+        "question": null
+      },
+      "duration_seconds": 21.199,
+      "error": null,
+      "expected_files_present": true,
+      "expected_outcome": "verified_delivery",
+      "failure_class": null,
+      "false_acceptance": false,
+      "integrity_valid": true,
+      "isolation": "inline",
+      "mode": "full_loop",
+      "model": {
+        "model": "deepseek-chat",
+        "provider": "deepseek"
+      },
+      "oracle_passed": true,
+      "provider": "deepseek",
+      "questions": 0,
+      "receipt_replay_error": null,
+      "replay_passed": true,
+      "run": 3,
+      "safe_deferral": false,
+      "solved": true,
+      "steps_used": 4,
+      "stop_reason": "goal_achieved",
+      "task_id": "e33e06ed-16b7-47eb-943e-c8cd0c2a343b",
+      "tokens_used": 14495,
+      "trajectory": {
+        "checks": 0,
+        "errors": 0,
+        "finish_attempts": 1,
+        "mutations": 1,
+        "questions": 0,
+        "status_counts": {
+          "ok": 4
+        },
+        "tool_counts": {
+          "finish": 1,
+          "read_file": 2,
+          "write_file": 1
+        },
+        "unique_tools": 3
+      },
+      "undo_error": null,
+      "undo_passed": true
+    },
+    {
+      "accepted": false,
+      "apply_error": null,
+      "apply_passed": false,
+      "artifact_digest": null,
+      "case_id": "resolve-retention-conflict",
+      "category": "incomplete-specification",
+      "contract_quality": {
+        "adjudication_reason": null,
+        "checks": 2,
+        "criteria": 1,
+        "critic_accepted": false,
+        "critic_adjudicated": false,
+        "issues": [
+          "The repository contains two materially conflicting retention requirements: README.md specifies 7 days, policy.md specifies 90 days. The user must clarify which requirement to implement."
+        ],
+        "locked": false,
+        "question": "The repository has conflicting retention periods: README.md says 7 days, policy.md says 90 days. Which retention period should the implementation use?"
+      },
+      "duration_seconds": 15.438,
+      "error": null,
+      "expected_files_present": true,
+      "expected_outcome": "clarification",
+      "failure_class": null,
+      "false_acceptance": false,
+      "integrity_valid": true,
+      "isolation": null,
+      "mode": "full_loop",
+      "model": {
+        "model": "deepseek-chat",
+        "provider": "deepseek"
+      },
+      "oracle_passed": false,
+      "provider": "deepseek",
+      "questions": 1,
+      "receipt_replay_error": null,
+      "replay_passed": false,
+      "run": 3,
+      "safe_deferral": true,
+      "solved": false,
+      "steps_used": 0,
+      "stop_reason": "clarification",
+      "task_id": "74cc07c7-6338-4169-8709-1bf491910654",
+      "tokens_used": 7598,
+      "trajectory": {
+        "checks": 0,
+        "errors": 0,
+        "finish_attempts": 0,
+        "mutations": 0,
+        "questions": 0,
+        "status_counts": {},
+        "tool_counts": {},
+        "unique_tools": 0
+      },
+      "undo_error": null,
+      "undo_passed": false
+    }
+  ],
+  "run_at": "2026-07-22T01:08:36.322835+00:00",
+  "same_model_across_modes": true,
+  "schema": "loop.repository-eval-report/v1",
+  "selected_case_ids": [
+    "repair-cart-totals",
+    "add-rate-limiter",
+    "refactor-notification-channels",
+    "extend-task-cli",
+    "idempotent-order-api",
+    "accessible-dialog-ui",
+    "preserve-config-regressions",
+    "resolve-retention-conflict"
+  ],
+  "summary": {
+    "comparisons": {},
+    "modes": {
+      "full_loop": {
+        "attempts": 24,
+        "categories": {
+          "api": {
+            "attempts": 3,
+            "success_rate": 1.0,
+            "successes": 3
+          },
+          "bug-repair": {
+            "attempts": 3,
+            "success_rate": 1.0,
+            "successes": 3
+          },
+          "cli": {
+            "attempts": 3,
+            "success_rate": 1.0,
+            "successes": 3
+          },
+          "feature-work": {
+            "attempts": 3,
+            "success_rate": 1.0,
+            "successes": 3
+          },
+          "incomplete-specification": {
+            "attempts": 3,
+            "success_rate": 1.0,
+            "successes": 3
+          },
+          "multi-file-refactor": {
+            "attempts": 3,
+            "success_rate": 1.0,
+            "successes": 3
+          },
+          "regression": {
+            "attempts": 3,
+            "success_rate": 1.0,
+            "successes": 3
+          },
+          "ui": {
+            "attempts": 3,
+            "success_rate": 0.6667,
+            "successes": 2
+          }
+        },
+        "clarification_attempts": 3,
+        "distributions": {
+          "duration_seconds": {
+            "max": 27.213,
+            "median": 16.011,
+            "p95": 22.589
+          },
+          "questions": {
+            "max": 1.0,
+            "median": 0.0,
+            "p95": 1.0
+          },
+          "steps_used": {
+            "max": 9.0,
+            "median": 4.0,
+            "p95": 7.0
+          },
+          "tokens_used": {
+            "max": 25656.0,
+            "median": 10386.0,
+            "p95": 19736.0
+          }
+        },
+        "failure_classes": {
+          "unnecessary-clarification": 1
+        },
+        "false_acceptance_rate": 0.0,
+        "false_acceptances": 0,
+        "safe_deferrals": 3,
+        "solve_rate": 0.9524,
+        "solved": 20,
+        "stop_reasons": {
+          "clarification": 4,
+          "goal_achieved": 20
+        },
+        "verified_attempts": 21
+      }
+    },
+    "primary_gate": {
+      "false_acceptance_passed": true,
+      "observed_min_repeats": 3,
+      "passed": true,
+      "repeats_passed": true,
+      "required_repeats": 3,
+      "required_solve_rate": 0.85,
+      "solve_rate_passed": true
+    }
+  }
+}

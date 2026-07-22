@@ -38,7 +38,7 @@ yourself (an ambiguous goal, a missing value). Never to confirm work or ask \
 - remember: save a durable note for future tasks. args: {"note": "...", "topic": "optional"}
 - finish: you are done. args: {"summary": "...", "checks": [ ... ]}. Provide "checks" \
 the verifier re-runs to PROVE the work: \
-{"kind":"command","command":"...","expect_exit":0,"expect_stdout":"..."}, \
+{"kind":"command","command":"...","expect_exit":0|"nonzero","expect_stdout":"..."}, \
 {"kind":"file_exists","path":"..."}, or {"kind":"file_contains","path":"...","text":"..."}. \
 Every check must include "criterion_ids":["criterion-001", ...] for the success \
 criteria it proves. Always include checks when the goal involves files or runnable code.\

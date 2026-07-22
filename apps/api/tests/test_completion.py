@@ -27,7 +27,7 @@ def test_discovers_python_and_javascript_project_quality_gates(tmp_path) -> None
     assert commands == {
         "pnpm run lint",
         "pnpm run test",
-        "python -m pytest -q",
+        "python3 -m pytest -q",
         "ruff check .",
         "mypy .",
     }
@@ -40,7 +40,7 @@ def test_contract_checks_are_mapped_and_cannot_be_spoofed_by_agent() -> None:
             {
                 "id": "contract-001",
                 "kind": "command",
-                "command": "python -m pytest -q",
+                "command": "python3 -m pytest -q",
                 "source": "contract",
             }
         ],
