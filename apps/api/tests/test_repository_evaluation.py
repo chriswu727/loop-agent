@@ -199,7 +199,39 @@ def test_aggregate_enforces_three_repeats_and_excludes_safe_clarification() -> N
     assert full["solve_rate"] == 0.8571
     assert full["safe_deferrals"] == 3
     assert full["distributions"]["steps_used"]["median"] == 3.5
+    assert full["isolations"] == {"unreported": 24}
     assert summary["primary_gate"]["passed"] is True
+
+
+def test_repository_gate_fails_when_required_isolation_is_not_observed() -> None:
+    results = [
+        {
+            "mode": "full_loop",
+            "case_id": f"case-{case}",
+            "category": "bug-repair",
+            "expected_outcome": "verified_delivery",
+            "solved": True,
+            "false_acceptance": False,
+            "isolation": "inline" if case == 6 and run == 3 else "container",
+        }
+        for run in range(1, 4)
+        for case in range(7)
+    ]
+
+    summary = aggregate_repository_results(results, required_isolation="container")
+
+    assert summary["modes"]["full_loop"]["isolations"] == {
+        "container": 20,
+        "inline": 1,
+    }
+    assert summary["primary_gate"]["solve_rate_passed"] is True
+    assert summary["primary_gate"]["isolation_passed"] is False
+    assert summary["primary_gate"]["passed"] is False
+
+    results[-1]["isolation"] = "container"
+    corrected = aggregate_repository_results(results, required_isolation="container")
+    assert corrected["primary_gate"]["isolation_passed"] is True
+    assert corrected["primary_gate"]["passed"] is True
 
 
 @pytest.mark.asyncio
@@ -278,6 +310,7 @@ def test_repository_matrix_checkpoint_is_atomic_and_resumable(tmp_path: Path) ->
         fixtures_root=fixtures,
         repeats=3,
         timeout=10,
+        require_isolation="container",
     )
     result = {
         "run": 1,
@@ -303,9 +336,88 @@ def test_repository_matrix_checkpoint_is_atomic_and_resumable(tmp_path: Path) ->
     assert results == [result]
     assert json.loads(output.read_text())["complete"] is False
     assert report["manifest"] == str(manifest)
+    assert report["required_isolation"] == "container"
     assert report["model_identity_complete"] is True
     assert output.stat().st_mode & 0o777 == 0o644
     assert not list(output.parent.glob("*.tmp"))
+
+
+def test_repository_gate_rejects_mixed_model_fallbacks(tmp_path: Path) -> None:
+    manifest = tmp_path / "manifest.json"
+    manifest.write_text('{"cases": []}\n')
+    fixtures = tmp_path / "fixtures"
+    fixtures.mkdir()
+    args = Namespace(
+        label="test",
+        manifest=manifest,
+        fixtures_root=fixtures,
+        repeats=3,
+        timeout=10,
+        require_isolation="container",
+    )
+    case_ids = [f"case-{case}" for case in range(7)]
+    results = [
+        {
+            "run": run,
+            "mode": "full_loop",
+            "case_id": f"case-{case}",
+            "category": "bug-repair",
+            "expected_outcome": "verified_delivery",
+            "solved": True,
+            "false_acceptance": False,
+            "isolation": "container",
+            "model": {
+                "provider": "fallback" if case == 6 and run == 3 else "primary",
+                "model": "same-model",
+            },
+        }
+        for run in range(1, 4)
+        for case in range(7)
+    ]
+
+    report = _build_report(
+        args,
+        ["full_loop"],
+        case_ids,
+        results,
+        run_at="2026-01-01T00:00:00+00:00",
+        expected_results=21,
+        complete=True,
+        identity=_evaluation_identity(args),
+    )
+
+    assert report["summary"]["primary_gate"]["solve_rate_passed"] is True
+    assert report["summary"]["primary_gate"]["isolation_passed"] is True
+    assert report["summary"]["primary_gate"]["model_identity_passed"] is False
+    assert report["summary"]["primary_gate"]["passed"] is False
+
+    results[-1]["model"] = {"provider": "primary", "model": "same-model"}
+    corrected = _build_report(
+        args,
+        ["full_loop"],
+        case_ids,
+        results,
+        run_at="2026-01-01T00:00:00+00:00",
+        expected_results=21,
+        complete=True,
+        identity=_evaluation_identity(args),
+    )
+    assert corrected["summary"]["primary_gate"]["model_identity_passed"] is True
+    assert corrected["summary"]["primary_gate"]["passed"] is True
+
+    results[-1]["model"] = {"provider": "unreported", "model": "unreported"}
+    unreported = _build_report(
+        args,
+        ["full_loop"],
+        case_ids,
+        results,
+        run_at="2026-01-01T00:00:00+00:00",
+        expected_results=21,
+        complete=True,
+        identity=_evaluation_identity(args),
+    )
+    assert unreported["summary"]["primary_gate"]["model_identity_passed"] is False
+    assert unreported["summary"]["primary_gate"]["passed"] is False
 
 
 def test_repository_matrix_checkpoint_rejects_changed_identity(tmp_path: Path) -> None:
@@ -320,6 +432,7 @@ def test_repository_matrix_checkpoint_rejects_changed_identity(tmp_path: Path) -
         fixtures_root=fixtures,
         repeats=3,
         timeout=10,
+        require_isolation="container",
     )
     report = _build_report(
         args,
@@ -335,6 +448,11 @@ def test_repository_matrix_checkpoint_rejects_changed_identity(tmp_path: Path) -
 
     with pytest.raises(ValueError, match="modes"):
         _load_checkpoint(output, args, ["one_shot"], ["case-a"], expected_results=3)
+
+    args.require_isolation = "kubernetes"
+    with pytest.raises(ValueError, match="required_isolation"):
+        _load_checkpoint(output, args, ["full_loop"], ["case-a"], expected_results=3)
+    args.require_isolation = "container"
 
     (fixtures / "changed.py").write_text("changed = True\n")
     with pytest.raises(ValueError, match="fixtures_sha256"):

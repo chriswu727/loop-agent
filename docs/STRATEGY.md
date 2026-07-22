@@ -230,7 +230,11 @@ Loop on a versioned manifest. It exposed three one-shot false acceptances and th
 Loop's earlier contract/convergence failures, which became regression tests and runtime
 changes. The current evaluator now protects test hashes, runs external oracles twice,
 requires Receipt replay plus Apply/Undo, checkpoints atomically, rejects runtime or
-fixture drift, and waits through API publication throttling.
+fixture drift, and waits through API publication throttling. It can now launch a
+disposable Docker-required API and bind the isolation requirement into every checkpoint;
+the release gate rejects a single backend downgrade, missing model identity, or mixed-model
+fallback. This closes the measurement loophole, not the evidence subgate: no isolated
+provider result is claimed until the matrix actually runs.
 
 This gate is not marked fully complete because both published repository runs used the
 reduced-isolation `inline` backend. The same current matrix still needs a clean
