@@ -77,6 +77,10 @@ skill-sign: ## Sign a skill: make skill-sign dir=skills/foo key=signing_key.pem
 demo: ## Start the zero-key verified demo (web + API)
 	bash scripts/demo.sh
 
+.PHONY: repository-eval-isolated
+repository-eval-isolated: ## Run the full-Loop repository matrix with required Docker isolation
+	bash scripts/evaluate-repository-matrix-isolated.sh $(args)
+
 # ---------- Database ----------
 .PHONY: migrate
 migrate: ## Apply all database migrations

@@ -272,7 +272,10 @@ def classify_failure(result: dict[str, Any]) -> str | None:
 
 
 def aggregate_repository_results(
-    results: list[dict[str, Any]], *, required_repeats: int = 3
+    results: list[dict[str, Any]],
+    *,
+    required_repeats: int = 3,
+    required_isolation: str | None = None,
 ) -> dict[str, Any]:
     by_mode: dict[str, Any] = {}
     for mode in sorted({str(item.get("mode")) for item in results}):
@@ -314,6 +317,13 @@ def aggregate_repository_results(
             ),
             "distributions": distributions,
             "categories": _category_rates(mode_results),
+            "isolations": dict(
+                sorted(
+                    Counter(
+                        str(item.get("isolation") or "unreported") for item in mode_results
+                    ).items()
+                )
+            ),
         }
     primary = by_mode.get("full_loop", {})
     repeats = Counter(
@@ -324,13 +334,22 @@ def aggregate_repository_results(
     gate = {
         "required_solve_rate": 0.85,
         "required_repeats": required_repeats,
+        "required_isolation": required_isolation,
         "observed_min_repeats": min(repeats.values(), default=0),
         "solve_rate_passed": float(primary.get("solve_rate", 0)) >= 0.85,
         "false_acceptance_passed": primary.get("false_acceptances", 0) == 0,
         "repeats_passed": bool(repeats) and min(repeats.values()) >= required_repeats,
+        "isolation_passed": required_isolation is None
+        or (bool(primary) and set(primary.get("isolations", {})) == {required_isolation}),
     }
     gate["passed"] = all(
-        gate[key] for key in ("solve_rate_passed", "false_acceptance_passed", "repeats_passed")
+        gate[key]
+        for key in (
+            "solve_rate_passed",
+            "false_acceptance_passed",
+            "repeats_passed",
+            "isolation_passed",
+        )
     )
     comparisons: dict[str, Any] = {}
     if primary:

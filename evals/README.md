@@ -48,11 +48,12 @@ The repository evaluator supports three modes with the same configured model:
   external oracle, and Undo path.
 
 Every matrix cell is keyed by repeat, case, and mode. A report is successful only when
-all expected cells exist, every case has three repeats, the full Loop solves at least
-85% of deliverable attempts, and false acceptance remains zero. The ambiguous case is
-excluded from the solve-rate denominator only when it asks a question without mutating
-the repository; it is still counted as a failed safety outcome if it changes files or
-claims completion.
+all expected cells exist, every case has three repeats, every cell reports one common
+model identity, the full Loop solves at least 85% of deliverable attempts, and false
+acceptance remains zero. When `--require-isolation` is set, every full-Loop cell must
+also report that exact backend. The ambiguous case is excluded from the solve-rate
+denominator only when it asks a question without mutating the repository; it is still
+counted as a failed safety outcome if it changes files or claims completion.
 
 The harness protects the evidence boundary as follows:
 
@@ -91,6 +92,28 @@ cd apps/api
 Use `--case <id>` for a canary and `--resume` with the same `--output` after an
 interruption. `--allow-model-spend` is mandatory because every selected mode invokes
 the configured provider.
+
+For the Gate 4 Docker run, configure a real or local provider in the environment and
+use the fail-closed launcher from the repository root:
+
+```bash
+make repository-eval-isolated args='--allow-model-spend \
+  --repeats 3 \
+  --label my-model-container-full-loop \
+  --output evals/results/my-model-container-full-loop.json'
+```
+
+The launcher builds the sandbox image if necessary, starts a disposable SQLite API,
+forces `AGENT_SANDBOX=required` with the Docker backend, runs only `full_loop`, and
+removes its temporary projects and state afterward. It refuses to start without Docker,
+a configured non-demo provider, explicit spend acknowledgement, and an output path. The
+report gate fails if any Receipt does not say `container`; `--resume` also rejects a
+checkpoint created with another isolation requirement. Use `--case <id>` for a cheaper
+canary before the full run.
+
+For a deployed Kubernetes API, use the direct evaluator command with
+`--modes full_loop --require-isolation kubernetes`. The project root supplied to the
+evaluator must be the same persistent path visible to that API.
 
 ## Zero-cost smoke
 

@@ -52,6 +52,9 @@ All notable changes are documented here. The project follows Semantic Versioning
   protected-test hashes, independent double oracle execution, artifact and source
   integrity checks, Receipt replay, Apply/Undo, trajectory taxonomy, and distribution
   reporting.
+- Added a disposable Docker-isolated full-Loop matrix runner. Evaluation gates now
+  reject any required-isolation downgrade, incomplete model identity, or mixed-model
+  fallback, and resume checkpoints bind the requested isolation mode.
 - Published the frozen DeepSeek `deepseek-chat` full-Loop matrix: 20/21 deliverable
   attempts solved (95.24%), 3/3 safe specification deferrals, zero false acceptances,
   and one disclosed fail-closed contract-compilation failure.

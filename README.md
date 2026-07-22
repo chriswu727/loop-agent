@@ -164,6 +164,10 @@ Both repository reports used macOS `inline` execution, visibly reduced isolation
 one model. They establish repeated repository-level evidence for the control loop, not
 cross-model confidence or Docker/Kubernetes sandbox quality. See the
 [evaluation protocol](./evals/README.md) for reproduction and limitations.
+The current harness can launch a disposable API with Docker marked `required`; its
+release gate fails if even one full-Loop cell reports `inline`, `unreported`, or a mixed
+fallback model. No isolated real-provider score is claimed until that matrix actually
+runs and its report is published.
 
 ## The trust boundary
 

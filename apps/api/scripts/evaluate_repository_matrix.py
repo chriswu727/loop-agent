@@ -586,6 +586,14 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--label", default="local")
     parser.add_argument("--output", type=Path)
     parser.add_argument(
+        "--require-isolation",
+        choices=("container", "kubernetes"),
+        help=(
+            "fail the primary gate unless every full_loop cell reports this exact "
+            "execution isolation"
+        ),
+    )
+    parser.add_argument(
         "--resume",
         action="store_true",
         help="resume an interrupted run from --output after validating its matrix identity",
@@ -609,11 +617,30 @@ def _build_report(
     complete: bool,
     identity: dict[str, str],
 ) -> dict[str, Any]:
+    def valid_model_identity(result: dict[str, Any]) -> bool:
+        candidate = result.get("model")
+        return bool(
+            isinstance(candidate, dict)
+            and candidate.get("provider")
+            and candidate.get("provider") != "unreported"
+            and candidate.get("model")
+            and candidate.get("model") != "unreported"
+        )
+
     model_identities = {
         json.dumps(result["model"], sort_keys=True) for result in results if result.get("model")
     }
     models = [json.loads(identity) for identity in sorted(model_identities)]
-    model_identity_complete = all(result.get("model") for result in results)
+    model_identity_complete = bool(results) and all(valid_model_identity(item) for item in results)
+    same_model_across_modes = len(models) == 1 and bool(models) and model_identity_complete
+    summary = aggregate_repository_results(
+        results,
+        required_repeats=3,
+        required_isolation=getattr(args, "require_isolation", None),
+    )
+    primary_gate = summary["primary_gate"]
+    primary_gate["model_identity_passed"] = same_model_across_modes
+    primary_gate["passed"] = bool(primary_gate["passed"] and same_model_across_modes)
     return {
         "schema": "loop.repository-eval-report/v1",
         "run_at": run_at,
@@ -624,13 +651,14 @@ def _build_report(
         "fixtures_sha256": identity["fixtures_sha256"],
         "evaluation_runtime_sha256": identity["evaluation_runtime_sha256"],
         "modes": modes,
+        "required_isolation": getattr(args, "require_isolation", None),
         "repeats": args.repeats,
         "selected_case_ids": case_ids,
         "expected_results": expected_results,
         "completed_results": len(results),
         "complete": complete,
         "models": models,
-        "same_model_across_modes": len(models) == 1 and bool(models) and model_identity_complete,
+        "same_model_across_modes": same_model_across_modes,
         "model_identity_complete": model_identity_complete,
         "limits": {
             "default_token_budget": DEFAULT_EVAL_TOKEN_BUDGET,
@@ -639,7 +667,7 @@ def _build_report(
             "llm_total_timeout_seconds": settings.llm_total_timeout_seconds,
             "llm_max_retries": settings.llm_max_retries,
         },
-        "summary": aggregate_repository_results(results, required_repeats=3),
+        "summary": summary,
         "results": results,
     }
 
@@ -716,6 +744,7 @@ def _load_checkpoint(
         "label": args.label,
         **(identity or _evaluation_identity(args)),
         "modes": modes,
+        "required_isolation": getattr(args, "require_isolation", None),
         "repeats": args.repeats,
         "selected_case_ids": case_ids,
         "expected_results": expected_results,
@@ -755,6 +784,8 @@ async def _run(args: argparse.Namespace) -> dict[str, Any]:
         raise ValueError(f"unknown modes: {sorted(unknown)}")
     if args.repeats < 1:
         raise ValueError("--repeats must be positive")
+    if args.require_isolation and "full_loop" not in modes:
+        raise ValueError("--require-isolation requires full_loop mode")
     cases = manifest["cases"]
     if args.case_ids:
         selected = set(args.case_ids)
