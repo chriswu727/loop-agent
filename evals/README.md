@@ -175,12 +175,15 @@ the evaluated contract can be matched to the repository.
 ## Recorded repository results
 
 [`results/deepseek-chat-full-loop-v0.2.12.json`](./results/deepseek-chat-full-loop-v0.2.12.json)
-is the current release-gate report. DeepSeek `deepseek-chat` completed 24/24 cells on
-the current matrix: 20/21 deliverable attempts solved (95.24%), 3/3 contradictory
+is the frozen release-gate report for its recorded runtime hash. DeepSeek `deepseek-chat`
+completed 24/24 cells on the current matrix: 20/21 deliverable attempts solved (95.24%),
+3/3 contradictory
 specifications safely deferred, and zero false acceptances. Median/p95/max were 4/7/9
 steps, 10,386/19,736/25,656 provider-reported tokens, and 16.011/22.589/27.213
 seconds. The one failure was an unnecessary UI clarification after the compiler returned
 an invalid empty criteria list; it failed closed at step zero and was not accepted.
+The runtime now has a focused evidence-gated recovery regression for that failure, but the
+published result remains unchanged until a new real-provider run is completed.
 
 [`results/deepseek-chat-repository-matrix-v0.2.0.json`](./results/deepseek-chat-repository-matrix-v0.2.0.json)
 is the archived same-model comparison on `repository-suite-v0.1.json`. Across 21

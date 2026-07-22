@@ -28,6 +28,10 @@ All notable changes are documented here. The project follows Semantic Versioning
   cannot multiply the configured timeout across every route.
 - Added integer-or-`nonzero` exit contracts and consistent replay semantics for negative
   command assertions.
+- Recovered an empty compiler criteria list from the bounded explicit user instruction,
+  while still requiring independent criticism and criterion-to-execution evidence; the
+  recovery remains fail-closed when repository evidence does not substantiate the goal
+  and is recorded in the hashed contract, Receipt, and task UI.
 
 ### Reliability
 

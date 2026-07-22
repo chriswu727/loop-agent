@@ -104,6 +104,7 @@ class ContractDraft(ContractProposal):
     checks: list[ContractCheck] = Field(default_factory=list, max_length=96)
     artifacts: list[str] = Field(default_factory=list, max_length=64)
     schema_version: Literal["loop.contract-draft/v1"] = "loop.contract-draft/v1"
+    criteria_recovery: Literal["explicit_user_goal"] | None = None
     compiler: ContractModelIdentity
     discovery: RepositoryDiscovery
     clarifications: list[str] = Field(default_factory=list, max_length=12)

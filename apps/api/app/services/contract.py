@@ -78,6 +78,7 @@ _TAUTOLOGIES = (
 _MIN_AUTO_CONFIDENCE = 80
 _MAX_AUTO_CRITERIA = 8
 _MAX_CONTRACT_ATTEMPTS = 3
+_MAX_GOAL_CRITERION_CHARS = 4_000
 
 
 @dataclass(frozen=True)
@@ -193,8 +194,12 @@ async def compile_project_contract(
         temperature=0.2,
         token_budget=token_budget,
     )
+    criteria_recovered = False
     try:
-        proposal = _proposal_from_result(compiler_result.content)
+        proposal, criteria_recovered = _proposal_from_result(
+            compiler_result.content,
+            fallback_criteria=[goal],
+        )
         proposal = _merge_required_checks(proposal, required_checks or [])
     except (TypeError, ValueError) as exc:
         draft = _failed_draft(
@@ -242,6 +247,7 @@ async def compile_project_contract(
                     ),
                 ),
                 compiler_result,
+                criteria_recovered=criteria_recovered,
             )
             return CompiledContract(
                 draft=draft,
@@ -289,6 +295,7 @@ async def compile_project_contract(
                 known_clarifications,
                 final_critique,
                 compiler_result,
+                criteria_recovered=criteria_recovered,
             )
             return CompiledContract(
                 draft=draft,
@@ -328,6 +335,7 @@ async def compile_project_contract(
                 known_clarifications,
                 repair_critique,
                 compiler_result,
+                criteria_recovered=criteria_recovered,
             )
             return CompiledContract(
                 draft=draft,
@@ -338,7 +346,11 @@ async def compile_project_contract(
             )
         tokens_spent += repair_result.tokens
         try:
-            proposal = _proposal_from_result(repair_result.content)
+            proposal, repair_recovered = _proposal_from_result(
+                repair_result.content,
+                fallback_criteria=[goal],
+            )
+            criteria_recovered = criteria_recovered or repair_recovered
             proposal = _merge_required_checks(proposal, required_checks or [])
         except (TypeError, ValueError) as exc:
             repair_critique = final_critique.model_copy(
@@ -355,6 +367,7 @@ async def compile_project_contract(
                 known_clarifications,
                 repair_critique,
                 compiler_result,
+                criteria_recovered=criteria_recovered,
             )
             return CompiledContract(
                 draft=draft,
@@ -420,10 +433,13 @@ def _draft_from_proposal(
     clarifications: list[str],
     critique: ContractCritique,
     compiler_result: LLMResult,
+    *,
+    criteria_recovered: bool = False,
 ) -> ContractDraft:
     return ContractDraft(
         **proposal.model_dump(exclude={"checks"}),
         checks=_effective_checks(proposal, discovery),
+        criteria_recovery="explicit_user_goal" if criteria_recovered else None,
         compiler=_compiler_identity(compiler_result),
         discovery=discovery,
         clarifications=clarifications,
@@ -438,8 +454,11 @@ def _compiler_identity(result: LLMResult | None) -> ContractModelIdentity:
 
 
 def hash_contract(draft: ContractDraft) -> str:
+    payload = draft.model_dump(mode="json")
+    if payload.get("criteria_recovery") is None:
+        payload.pop("criteria_recovery", None)
     canonical = json.dumps(
-        draft.model_dump(mode="json"),
+        payload,
         ensure_ascii=False,
         sort_keys=True,
         separators=(",", ":"),
@@ -452,7 +471,11 @@ def verify_contract_hash(draft: dict[str, Any] | ContractDraft, expected: str) -
     return bool(expected) and hash_contract(parsed) == expected
 
 
-def _proposal_from_result(content: str) -> ContractProposal:
+def _proposal_from_result(
+    content: str,
+    *,
+    fallback_criteria: list[str] | None = None,
+) -> tuple[ContractProposal, bool]:
     parsed = _extract_json(content)
     if not isinstance(parsed, dict):
         raise ValueError("contract compiler returned no JSON object")
@@ -460,6 +483,10 @@ def _proposal_from_result(content: str) -> ContractProposal:
     criteria = list(
         dict.fromkeys(text for item in raw_criteria if (text := _criterion_text(item)))
     )[:12]
+    recovered = False
+    if not criteria:
+        criteria = _bounded_fallback_criteria(fallback_criteria or [])
+        recovered = bool(criteria)
     parsed["criteria"] = criteria
     count = min(len(criteria), 12)
     valid_ids = {f"criterion-{index:03d}" for index in range(1, count + 1)}
@@ -545,7 +572,20 @@ def _proposal_from_result(content: str) -> ContractProposal:
             "authority_requests": list(dict.fromkeys(authority_requests)),
         }
     )
-    return proposal.model_copy(update={"checks": _deduplicate_contract_checks(proposal.checks)})
+    return (
+        proposal.model_copy(update={"checks": _deduplicate_contract_checks(proposal.checks)}),
+        recovered,
+    )
+
+
+def _bounded_fallback_criteria(values: list[str]) -> list[str]:
+    return list(
+        dict.fromkeys(
+            text
+            for value in values
+            if (text := " ".join(value.split())) and len(text) <= _MAX_GOAL_CRITERION_CHARS
+        )
+    )[:12]
 
 
 def _as_list(value: Any) -> list[Any]:

@@ -75,6 +75,7 @@ export interface ContractCheck {
 
 export interface ContractDraft {
   schema_version: 'loop.contract-draft/v1';
+  criteria_recovery?: 'explicit_user_goal' | null;
   compiler: {
     provider: string;
     model: string;
