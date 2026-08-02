@@ -6,7 +6,7 @@
 # =============================================================================
 ARG PYTHON_VERSION=3.12
 
-FROM node:22-bookworm-slim AS node-runtime
+FROM node:25-bookworm-slim AS node-runtime
 
 FROM python:${PYTHON_VERSION}-slim AS base
 ENV PYTHONUNBUFFERED=1 \
