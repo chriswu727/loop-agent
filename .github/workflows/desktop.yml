@@ -80,7 +80,7 @@ jobs:
           sudo apt-get install --yes "$deb_path"
           LOOP_DESKTOP_EXECUTABLE="$(command -v loop-desktop)" \
             xvfb-run --auto-servernum pnpm --filter desktop smoke:packaged
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: loop-desktop-${{ runner.os }}-${{ runner.arch }}
           path: apps/desktop/out/make/**
