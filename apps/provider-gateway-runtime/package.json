@@ -4,6 +4,6 @@
   "private": true,
   "description": "Pinned browser runtime for the isolated Loop Provider Gateway",
   "dependencies": {
-    "@playwright/mcp": "0.0.78"
+    "@playwright/mcp": "0.0.80"
   }
 }
