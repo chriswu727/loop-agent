@@ -50,7 +50,7 @@ injection is impossible.
 
 ## Positioning rule
 
-Loop should win interviews and users by making one narrow promise demonstrably true:
+Loop focuses on making one narrow promise demonstrably true:
 
 > The agent's claim of completion is not the acceptance decision.
 

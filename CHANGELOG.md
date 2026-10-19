@@ -82,7 +82,7 @@ All notable changes are documented here. The project follows Semantic Versioning
 
 ## [0.1.0] - 2026-07-15
 
-First portfolio/research release of Loop's contract-first autonomous runtime.
+First research release of Loop's contract-first autonomous runtime.
 
 ### Core
 

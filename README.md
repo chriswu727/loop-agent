@@ -298,7 +298,7 @@ docs/              ADRs, operational guides, product/system rationale
 
 ## Status
 
-`v0.1.0` is a serious portfolio/research release, not a claim of production mileage
+`v0.1.0` is a research release, not a claim of production mileage
 or broad adoption. The one-instruction repository path now clears its repeated inline
 evidence threshold, while one fail-closed contract-compilation miss and the production
 isolation rerun remain explicit work. Provider quality still depends on the selected
