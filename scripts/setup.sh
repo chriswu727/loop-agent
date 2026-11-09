@@ -64,7 +64,7 @@ if [[ ! -x "$venv/bin/python" ]]; then
 fi
 
 echo "Installing locked Python dependencies with $("$venv/bin/python" --version)..."
-"$venv/bin/python" -m pip install --quiet uv==0.11.15
+"$venv/bin/python" -m pip install --quiet uv==0.13.4
 (
   cd "$root/apps/api"
   .venv/bin/uv sync --frozen --extra dev --extra office

@@ -2,8 +2,10 @@
 
 # Loop
 
-**Give Loop one instruction. It keeps working, testing, and repairing its own
-result until it can prove the work is ready to deliver.**
+**Give Loop one instruction. It plans, builds, tests and repairs its result in a
+task workspace until its declared checks pass.**
+
+> Research release (v0.1.0). Not intended for unattended production changes.
 
 [![CI](https://github.com/chriswu727/loop-agent/actions/workflows/ci.yml/badge.svg)](https://github.com/chriswu727/loop-agent/actions/workflows/ci.yml)
 [![Desktop](https://github.com/chriswu727/loop-agent/actions/workflows/desktop.yml/badge.svg)](https://github.com/chriswu727/loop-agent/actions/workflows/desktop.yml)
